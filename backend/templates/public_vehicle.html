@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>
+    {% if vehicle %}
+      {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }} · Purple Report
+    {% else %}
+      Vehicle Not Found · Purple Report
+    {% endif %}
+  </title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    :root {
+      --purple: #6d28d9;
+      --purple-soft: #ede9fe;
+      --bg-page: #f9fafb;
+      --bg-card: #ffffff;
+      --border-subtle: #e5e7eb;
+      --text-main: #111827;
+      --text-muted: #6b7280;
+      --badge-bg: #0f172a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg-page);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+
+    .page {
+      width: 100%;
+      max-width: 1000px;
+    }
+
+    header {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .brand-title {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #111827;
+    }
+
+    .brand-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .brand-subtitle span {
+      color: var(--purple);
+      font-weight: 600;
+    }
+
+    .vin-tag {
+      font-size: 0.75rem;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      background: #ffffff;
+      color: var(--text-muted);
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .vin-tag strong {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    /* Card layout */
+
+    .card {
+      background: var(--bg-card);
+      border-radius: 18px;
+      border: 1px solid var(--border-subtle);
+      padding: 20px 20px 22px;
+      box-shadow: 0 12px 25px rgba(15, 23, 42, 0.04);
+    }
+
+    .card-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .vehicle-main {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .vehicle-title {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .vehicle-meta {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: #111827;
+      color: #f9fafb;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .badge span.dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: #22c55e;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr);
+      gap: 18px;
+    }
+
+    @media (max-width: 800px) {
+      .grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .panel {
+      border-radius: 14px;
+      border: 1px solid var(--border-subtle);
+      padding: 14px 14px 16px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+
+    .panel-title {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-muted);
+    }
+
+    .panel-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .info-list {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+      font-size: 0.9rem;
+    }
+
+    .info-item-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    .info-item-value {
+      font-size: 0.95rem;
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    /* Service history list */
+
+    .service-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .service-item {
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border-subtle);
+      background: #f9fafb;
+    }
+
+    .service-row-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .service-date {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .service-type {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--purple);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .service-notes,
+    .service-next {
+      font-size: 0.8rem;
+      color: var(--text-main);
+    }
+
+    .service-next span.label {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.7rem;
+      margin-right: 4px;
+    }
+
+    /* Gallery */
+
+    .gallery-frame {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      background: #f3f4f6;
+      height: 320px;
+    }
+
+    .gallery-frame iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .gallery-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .link-button {
+      font-size: 0.8rem;
+      text-decoration: none;
+      color: #ffffff;
+      background: var(--purple);
+      padding: 5px 11px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: none;
+    }
+
+    .link-button:hover {
+      filter: brightness(1.05);
+    }
+
+    .empty-message {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      padding: 8px 0;
+    }
+
+    /* Not found */
+
+    .not-found-card {
+      margin-top: 16px;
+      padding: 16px 18px;
+      border-radius: 14px;
+      border: 1px solid var(--border-subtle);
+      background: #fef2f2;
+      color: #991b1b;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="brand">
+        <div class="brand-title">Purple Dashboard</div>
+        <div class="brand-subtitle">
+          Vehicle service snapshot by <span>Purple Detailing</span>
+        </div>
+      </div>
+
+      <div class="vin-tag">
+        VIN
+        <strong>{{ vin }}</strong>
+      </div>
+    </header>
+
+    {% if not_found %}
+      <div class="card">
+        <div class="not-found-card">
+          We couldn’t find a vehicle record for this VIN in the Purple Dashboard.
+          If you believe this is an error, please contact Purple Detailing.
+        </div>
+      </div>
+    {% else %}
+      <main class="card">
+        <div class="card-header">
+          <div class="vehicle-main">
+            <div class="vehicle-title">
+              {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}
+            </div>
+            <div class="vehicle-meta">
+              Maintained by Purple Detailing
+            </div>
+          </div>
+          <div class="badge">
+            <span class="dot"></span>
+            Purple Report
+          </div>
+        </div>
+
+        <section class="grid">
+          <!-- Left: quick info + history -->
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Vehicle Overview</div>
+            </div>
+            <div class="info-list" style="margin-bottom: 12px;">
+              <div>
+                <div class="info-item-label">VIN</div>
+                <div class="info-item-value">{{ vehicle.vin_number }}</div>
+              </div>
+              <div>
+                <div class="info-item-label">Make / Model / Year</div>
+                <div class="info-item-value">
+                  {{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-header" style="margin-top: 8px;">
+              <div class="panel-title">Service History</div>
+              <div class="panel-sub">
+                {% if service_history and service_history|length > 0 %}
+                  {{ service_history|length }} visit{{ service_history|length > 1 and 's' or '' }}
+                {% else %}
+                  No recorded visits yet
+                {% endif %}
+              </div>
+            </div>
+
+            {% if service_history and service_history|length > 0 %}
+              <div class="service-list">
+                {% for entry in service_history %}
+                  <article class="service-item">
+                    <div class="service-row-top">
+                      <div class="service-date">
+                        {{ entry.date or 'Date N/A' }}
+                      </div>
+                      <div class="service-type">
+                        {{ entry.service_type or 'SERVICE' }}
+                      </div>
+                    </div>
+                    {% if entry.service_notes %}
+                      <div class="service-notes">
+                        {{ entry.service_notes }}
+                      </div>
+                    {% endif %}
+                    {% if entry.next_recommended_service %}
+                      <div class="service-next">
+                        <span class="label">Next:</span>
+                        {{ entry.next_recommended_service }}
+                      </div>
+                    {% endif %}
+                  </article>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p class="empty-message">
+                Once this vehicle is detailed, its visit history will appear here.
+              </p>
+            {% endif %}
+          </section>
+
+          <!-- Right: gallery -->
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Service Gallery</div>
+              <div class="panel-sub">Before & After Photos</div>
+            </div>
+
+            {% if embed_url %}
+              <div class="gallery-frame">
+                <iframe
+                  src="{{ embed_url }}"
+                  loading="lazy"
+                  referrerpolicy="no-referrer-when-downgrade"
+                ></iframe>
+              </div>
+              <div class="gallery-footer">
+                <span>
+                  Photos are stored securely in Google Drive and linked to this vehicle.
+                </span>
+                <a
+                  href="{{ vehicle.service_history_link }}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="link-button"
+                >
+                  Open full folder ↗
+                </a>
+              </div>
+            {% else %}
+              <p class="empty-message">
+                No photo gallery is linked yet for this vehicle.
+              </p>
+            {% endif %}
+          </section>
+        </section>
+      </main>
+    {% endif %}
+  </div>
+</body>
+</html>

@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Purple Dashboard - VIN Search</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    :root {
+      --purple-main: #5b1fa6;
+      --purple-dark: #3b0764;
+      --text-main: #0f172a;
+      --text-muted: #6b7280;
+      --bg-main: #f9fafb;
+      --card-bg: #ffffff;
+      --border-soft: #e5e7eb;
+      --border-strong: #d1d5db;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg-main);
+      color: var(--text-main);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1000px;
+    }
+
+    /* Header */
+
+    .header {
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .logo-text {
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: #000000;
+    }
+
+    .logo-text span {
+      color: var(--purple-main);
+    }
+
+    .subheading {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      opacity: 0.95;
+    }
+
+    /* Card */
+
+    .card {
+      background: var(--card-bg);
+      border-radius: 18px;
+      border: 1px solid var(--border-soft);
+      padding: 20px 20px 24px;
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .card-title {
+      font-size: 1.3rem;
+      font-weight: 600;
+    }
+
+    .card-tag {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      border: 1px solid var(--border-soft);
+      color: var(--text-muted);
+      background: #f9fafb;
+    }
+
+    /* Search form */
+
+    .search-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .search-row label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    .search-input-wrapper {
+      flex: 1 1 220px;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: #ffffff;
+      border: 1px solid var(--border-soft);
+      color: var(--text-main);
+      font-size: 0.95rem;
+      outline: none;
+      transition: border 0.15s ease, box-shadow 0.15s ease,
+        background 0.15s ease;
+    }
+
+    .search-input::placeholder {
+      color: #9ca3af;
+    }
+
+    .search-input:focus {
+      border-color: var(--purple-main);
+      box-shadow: 0 0 0 1px rgba(91, 31, 166, 0.25);
+      background: #ffffff;
+    }
+
+    .search-button {
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: none;
+      background: linear-gradient(135deg, #000000, var(--purple-main));
+      color: #ffffff;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
+      transition: transform 0.1s ease, box-shadow 0.15s ease,
+        filter 0.12s ease;
+      white-space: nowrap;
+    }
+
+    .search-button:hover {
+      filter: brightness(1.05);
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.3);
+    }
+
+    .search-button:active {
+      transform: translateY(0);
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.2);
+    }
+
+    .search-button span.icon {
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+
+    .hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .divider {
+      height: 1px;
+      width: 100%;
+      background: linear-gradient(
+        90deg,
+        transparent,
+        var(--border-soft),
+        transparent
+      );
+      margin: 14px 0;
+    }
+
+    /* Status / messages */
+
+    .status {
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+      min-height: 1.2em;
+    }
+
+    .status.error {
+      color: #b91c1c;
+    }
+
+    .status.ok {
+      color: #15803d;
+    }
+
+    /* Results layout */
+
+    .results {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr);
+      gap: 18px;
+      margin-top: 4px;
+    }
+
+    @media (max-width: 800px) {
+      .results {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .panel {
+      background: #ffffff;
+      border-radius: 14px;
+      border: 1px solid var(--border-soft);
+      padding: 14px 14px 16px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+      gap: 8px;
+    }
+
+    .panel-title {
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-muted);
+    }
+
+    .small-tag {
+      font-size: 0.7rem;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: #f9fafb;
+      color: var(--text-muted);
+      border: 1px solid var(--border-soft);
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.3fr);
+      gap: 10px 18px;
+      margin-top: 4px;
+    }
+
+    @media (max-width: 700px) {
+      .info-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .info-item {
+      font-size: 0.85rem;
+    }
+
+    .info-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    .info-value {
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.75rem;
+      border-radius: 999px;
+      padding: 2px 8px;
+    }
+
+    .badge.vip {
+      background: #fefce8;
+      color: #854d0e;
+      border: 1px solid #facc15;
+    }
+
+    .badge.one-time {
+      background: #eff6ff;
+      color: #1e40af;
+      border: 1px solid #60a5fa;
+    }
+
+    .badge.active {
+      background: #ecfdf3;
+      color: #166534;
+      border: 1px solid #34d399;
+    }
+
+    .vin-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #f9fafb;
+      border: 1px dashed var(--border-soft);
+      font-size: 0.8rem;
+      color: var(--text-main);
+      margin-top: 4px;
+    }
+
+    .vin-pill small {
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--text-muted);
+      font-size: 0.68rem;
+    }
+
+    /* Notes & dropdown blocks */
+
+    details.notes {
+      margin-top: 10px;
+      border-radius: 12px;
+      background: #f9fafb;
+      border: 1px dashed var(--border-soft);
+      padding: 8px 10px;
+      font-size: 0.85rem;
+    }
+
+    details.notes summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-main);
+    }
+
+    details.notes summary::marker {
+      display: none;
+    }
+
+    details.notes summary span.label {
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    details.notes p {
+      margin-top: 6px;
+      color: var(--text-main);
+    }
+
+    /* Service history / gallery */
+
+    .gallery-wrapper {
+      margin-top: 6px;
+    }
+
+    .gallery-frame {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border-soft);
+      background: #020617;
+      height: 320px;
+    }
+
+    .gallery-frame iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #020617;
+    }
+
+    .gallery-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .link-button {
+      font-size: 0.8rem;
+      text-decoration: none;
+      color: #ffffff;
+      padding: 4px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--purple-main);
+      background: var(--purple-main);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .link-button:hover {
+      background: var(--purple-dark);
+      border-color: var(--purple-dark);
+    }
+
+    .muted {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    /* Customer portal share */
+
+    .section-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-muted);
+      margin-top: 14px;
+      margin-bottom: 6px;
+    }
+
+    .share-box {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .share-input {
+      flex: 1;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      background: #f9fafb;
+      font-size: 0.8rem;
+      color: var(--text-main);
+      outline: none;
+    }
+
+    .share-input:focus {
+      border-color: var(--purple-main);
+      box-shadow: 0 0 0 1px rgba(91, 31, 166, 0.2);
+      background: #ffffff;
+    }
+
+    .share-button {
+      border-radius: 999px;
+      border: none;
+      padding: 7px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #000000;
+      color: #ffffff;
+      cursor: pointer;
+    }
+
+    .share-button:hover {
+      background: var(--purple-main);
+    }
+
+    .share-hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo-text"><span>Purple</span> Dashboard</div>
+      <p class="subheading">
+        Internal vehicle profile & service gallery — powered by Purple Detailing
+      </p>
+    </header>
+
+    <main class="card">
+      <div class="card-header">
+        <div class="left">
+          <div class="card-title">VIN Lookup</div>
+          <div class="hint">
+            Enter a full 17-character VIN from your client list.
+          </div>
+        </div>
+        <div class="card-tag">Internal Use Only</div>
+      </div>
+
+      <form id="vinForm">
+        <div class="search-row">
+          <div class="search-input-wrapper">
+            <label for="vinInput">VIN Number</label>
+            <input
+              type="text"
+              id="vinInput"
+              class="search-input"
+              placeholder="e.g. 4JGFB4FB9RB121790"
+              maxlength="17"
+            />
+          </div>
+          <div style="display:flex;align-items:flex-end;">
+            <button type="submit" class="search-button">
+              <span class="icon">🔍</span>
+              <span>Search</span>
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <div class="status" id="statusMessage"></div>
+
+      <div class="divider"></div>
+
+      <section id="resultsSection" style="display:none;">
+        <div class="results">
+          <!-- Left: Customer & vehicle -->
+          <div class="panel" id="infoPanel">
+            <div class="panel-header">
+              <div class="panel-title">Customer & Vehicle</div>
+              <div id="statusBadge"></div>
+            </div>
+            <div class="info-grid">
+              <div class="info-item">
+                <div class="info-label">Customer</div>
+                <div class="info-value" id="customerName"></div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Phone</div>
+                <div class="info-value" id="phoneNumber"></div>
+              </div>
+
+              <div class="info-item">
+                <div class="info-label">Address</div>
+                <div class="info-value" id="address"></div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Zip</div>
+                <div class="info-value" id="zipCode"></div>
+              </div>
+
+              <div class="info-item">
+                <div class="info-label">Vehicle</div>
+                <div class="info-value" id="vehicleNickname"></div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Make / Model / Year</div>
+                <div class="info-value" id="mmYear"></div>
+              </div>
+            </div>
+
+            <div style="margin-top:10px;">
+              <div class="vin-pill">
+                <div>
+                  <small>VIN</small><br />
+                  <span id="vinNumber"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Notes dropdown -->
+            <details class="notes" id="notesBlock" style="display:none;">
+              <summary>
+                <span class="label">Notes</span>
+                <span style="font-size:0.75rem;color:#6b7280;">Tap to expand</span>
+              </summary>
+              <p id="notesText"></p>
+            </details>
+
+            <!-- Service history dropdown -->
+            <details class="notes" id="historyBlock" style="display:none;">
+              <summary>
+                <span class="label">Service History</span>
+                <span id="historyCountLabel" style="font-size:0.75rem;color:#6b7280;"></span>
+              </summary>
+              <div id="historyList" style="margin-top:8px;"></div>
+            </details>
+
+            <!-- Customer portal link -->
+            <div class="section-label">Customer Portal Link</div>
+            <div class="share-box">
+              <input
+                id="shareLink"
+                class="share-input"
+                type="text"
+                readonly
+                value=""
+              />
+              <button type="button" id="copyShareBtn" class="share-button">
+                Copy
+              </button>
+            </div>
+            <div id="shareHint" class="share-hint">
+              This link shows a read-only version of this vehicle for the customer.
+            </div>
+          </div>
+
+          <!-- Right: Service history gallery -->
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Service Gallery</div>
+              <span class="small-tag">Photo Grid</span>
+            </div>
+
+            <div id="noGalleryMsg" class="muted" style="display:none;">
+              No service history media linked yet for this vehicle.
+            </div>
+
+            <div class="gallery-wrapper" id="galleryWrapper" style="display:none;">
+              <div class="gallery-frame">
+                <iframe
+                  id="driveGallery"
+                  loading="lazy"
+                  referrerpolicy="no-referrer-when-downgrade"
+                ></iframe>
+              </div>
+              <div class="gallery-footer">
+                <span class="muted">
+                  Thumbnails pulled from Google Drive folder for this vehicle.
+                </span>
+                <a
+                  href="#"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  id="openFolderLink"
+                  class="link-button"
+                >
+                  Open full service folder ↗
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const form = document.getElementById("vinForm");
+    const vinInput = document.getElementById("vinInput");
+    const statusMessage = document.getElementById("statusMessage");
+    const resultsSection = document.getElementById("resultsSection");
+
+    const customerNameEl = document.getElementById("customerName");
+    const phoneNumberEl = document.getElementById("phoneNumber");
+    const addressEl = document.getElementById("address");
+    const zipCodeEl = document.getElementById("zipCode");
+    const vehicleNicknameEl = document.getElementById("vehicleNickname");
+    const mmYearEl = document.getElementById("mmYear");
+    const vinNumberEl = document.getElementById("vinNumber");
+    const statusBadgeEl = document.getElementById("statusBadge");
+
+    const notesBlock = document.getElementById("notesBlock");
+    const notesText = document.getElementById("notesText");
+
+    const historyBlock = document.getElementById("historyBlock");
+    const historyList = document.getElementById("historyList");
+    const historyCountLabel = document.getElementById("historyCountLabel");
+
+    const galleryWrapper = document.getElementById("galleryWrapper");
+    const driveGalleryFrame = document.getElementById("driveGallery");
+    const openFolderLink = document.getElementById("openFolderLink");
+    const noGalleryMsg = document.getElementById("noGalleryMsg");
+
+    const shareLinkEl = document.getElementById("shareLink");
+    const copyShareBtn = document.getElementById("copyShareBtn");
+    const shareHintEl = document.getElementById("shareHint");
+
+    function setStatus(message, type = "") {
+      statusMessage.textContent = message || "";
+      statusMessage.className = "status";
+      if (type) {
+        statusMessage.classList.add(type);
+      }
+    }
+
+    function makeStatusBadge(status) {
+      if (!status) return "";
+      const normalized = status.trim().toUpperCase();
+
+      let badgeClass = "badge";
+      if (normalized === "VIP") {
+        badgeClass += " vip";
+      } else if (normalized === "ONE-TIME" || normalized === "ONE TIME") {
+        badgeClass += " one-time";
+      } else if (normalized === "ACTIVE") {
+        badgeClass += " active";
+      }
+
+      return `<span class="${badgeClass}">${normalized}</span>`;
+    }
+
+    function getDriveEmbedUrl(folderUrl) {
+      if (!folderUrl) return null;
+      try {
+        const match = folderUrl.match(/\/folders\/([^/?]+)/);
+        if (!match) return null;
+        const folderId = match[1];
+        return `https://drive.google.com/embeddedfolderview?id=${folderId}#grid`;
+      } catch (e) {
+        console.error("Error parsing Drive folder URL:", e);
+        return null;
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const vin = vinInput.value.trim();
+
+      if (!vin || vin.length !== 17) {
+        setStatus("Please enter a full 17-character VIN.", "error");
+        resultsSection.style.display = "none";
+        return;
+      }
+
+      setStatus("Searching...", "ok");
+      resultsSection.style.display = "none";
+
+      try {
+        const resp = await fetch(`/search?vin=${encodeURIComponent(vin)}`);
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          const msg =
+            (data && data.error) || "Something went wrong while searching.";
+          setStatus(msg, "error");
+          resultsSection.style.display = "none";
+          shareLinkEl.value = "";
+          return;
+        }
+
+        // Populate main info
+        customerNameEl.textContent = data.customer_name || "—";
+        phoneNumberEl.textContent = data.phone_number || "—";
+        addressEl.textContent = data.address || "—";
+        zipCodeEl.textContent = data.zip_code || "—";
+        vehicleNicknameEl.textContent = data.vehicle_nickname || "—";
+        mmYearEl.textContent = `${data.make || "—"} · ${
+          data.model || "—"
+        } · ${data.year || "—"}`;
+        vinNumberEl.textContent = data.vin_number || vin;
+
+        // Status badge
+        statusBadgeEl.innerHTML = makeStatusBadge(data.status);
+
+        // Notes dropdown
+        const notes = (data.notes || "").trim();
+        if (notes) {
+          notesText.textContent = notes;
+          notesBlock.style.display = "block";
+          notesBlock.open = false;
+        } else {
+          notesBlock.style.display = "none";
+        }
+
+        // Service history dropdown
+        const history = Array.isArray(data.service_history)
+          ? data.service_history
+          : [];
+
+        if (history.length > 0) {
+          historyBlock.style.display = "block";
+          historyBlock.open = false;
+          historyCountLabel.textContent =
+            history.length === 1 ? "1 visit" : `${history.length} visits`;
+
+          historyList.innerHTML = history
+            .map((entry) => {
+              const date = entry.date || "Date N/A";
+              const type = entry.service_type || "—";
+              const notes = entry.service_notes || "—";
+              const next = entry.next_recommended_service || "—";
+
+              return `
+                <div style="
+                  border-radius:10px;
+                  border:1px solid ${"rgba(209,213,219,1)"};
+                  padding:8px 10px;
+                  margin-bottom:8px;
+                  background:#ffffff;
+                ">
+                  <div style="font-size:0.8rem;color:#6b7280;margin-bottom:2px;">
+                    ${date}
+                  </div>
+                  <div style="font-size:0.9rem;color:#111827;font-weight:500;">
+                    ${type}
+                  </div>
+                  <div style="margin-top:4px;font-size:0.8rem;color:#111827;">
+                    <strong>Notes:</strong> ${notes}
+                  </div>
+                  <div style="margin-top:2px;font-size:0.8rem;color:#6b7280;">
+                    <strong>Next:</strong> ${next}
+                  </div>
+                </div>
+              `;
+            })
+            .join("");
+        } else {
+          historyBlock.style.display = "none";
+          historyList.innerHTML = "";
+        }
+
+        // Gallery / service history images
+        const folderUrl = (data.service_history_link || "").trim();
+        const embedUrl = getDriveEmbedUrl(folderUrl);
+
+        if (embedUrl) {
+          driveGalleryFrame.src = embedUrl;
+          openFolderLink.href = folderUrl;
+          galleryWrapper.style.display = "block";
+          noGalleryMsg.style.display = "none";
+        } else {
+          galleryWrapper.style.display = "none";
+          noGalleryMsg.style.display = "block";
+        }
+
+        // Customer portal link
+        const publicUrl = `${window.location.origin}/public/${vin}`;
+        shareLinkEl.value = publicUrl;
+        shareHintEl.textContent =
+          "Copy this link to share a read-only vehicle page with your customer.";
+
+        resultsSection.style.display = "block";
+        setStatus("Vehicle found and loaded.", "ok");
+      } catch (err) {
+        console.error(err);
+        setStatus(
+          "Unexpected error talking to the server. Check if Flask is running.",
+          "error"
+        );
+        resultsSection.style.display = "none";
+        shareLinkEl.value = "";
+      }
+    });
+
+    copyShareBtn.addEventListener("click", () => {
+      if (!shareLinkEl.value) return;
+      shareLinkEl.select();
+      shareLinkEl.setSelectionRange(0, 99999);
+      try {
+        document.execCommand("copy");
+        shareHintEl.textContent = "Copied to clipboard.";
+      } catch (e) {
+        shareHintEl.textContent = "Select and copy the link manually.";
+      }
+    });
+  </script>
+</body>
+</html>
