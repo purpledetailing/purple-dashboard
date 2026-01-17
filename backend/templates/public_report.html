@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>
+    {% if vehicle %}
+      {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }} · Purple Report
+    {% else %}
+      Vehicle Not Found · Purple Report
+    {% endif %}
+  </title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    :root {
+      --purple: #6d28d9;
+      --purple-soft: #ede9fe;
+      --bg-page: #f9fafb;
+      --bg-card: #ffffff;
+      --border-subtle: #e5e7eb;
+      --text-main: #111827;
+      --text-muted: #6b7280;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg-page);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+
+    .page {
+      width: 100%;
+      max-width: 1000px;
+    }
+
+    header {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .brand-title {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .brand-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .brand-subtitle span {
+      color: var(--purple);
+      font-weight: 600;
+    }
+
+    .vin-tag {
+      font-size: 0.75rem;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      background: #ffffff;
+      color: var(--text-muted);
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .vin-tag strong {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border-radius: 18px;
+      border: 1px solid var(--border-subtle);
+      padding: 20px 22px 24px;
+      box-shadow: 0 12px 25px rgba(15, 23, 42, 0.04);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .vehicle-title {
+      font-size: 1.35rem;
+      font-weight: 600;
+    }
+
+    .vehicle-meta {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 4px 12px;
+      background: #111827;
+      color: #ffffff;
+      font-size: 0.7rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr);
+      gap: 18px;
+    }
+
+    @media (max-width: 800px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      border-radius: 14px;
+      border: 1px solid var(--border-subtle);
+      padding: 14px 16px 16px;
+    }
+
+    .panel-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .info-item {
+      margin-bottom: 10px;
+    }
+
+    .info-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-muted);
+    }
+
+    .info-value {
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+
+    .service-item {
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border-subtle);
+      background: #f9fafb;
+      margin-bottom: 10px;
+    }
+
+    .service-date {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .service-type {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--purple);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .service-notes,
+    .service-next {
+      font-size: 0.8rem;
+      margin-top: 4px;
+    }
+
+    .gallery-frame {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      height: 320px;
+    }
+
+    .gallery-frame iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .gallery-footer {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .link-button {
+      background: var(--purple);
+      color: white;
+      text-decoration: none;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+    }
+
+    .not-found {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      border-radius: 14px;
+      padding: 18px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <header>
+      <div>
+        <div class="brand-title">Purple Dashboard</div>
+        <div class="brand-subtitle">
+          Vehicle service snapshot by <span>Purple Detailing</span>
+        </div>
+      </div>
+      <div class="vin-tag">
+        VIN <strong>{{ vin }}</strong>
+      </div>
+    </header>
+
+    {% if not_found %}
+      <div class="card">
+        <div class="not-found">
+          We couldn’t find a vehicle record for this VIN.
+          If you believe this is an error, please contact Purple Detailing.
+        </div>
+      </div>
+    {% else %}
+      <main class="card">
+        <div class="card-header">
+          <div>
+            <div class="vehicle-title">
+              {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}
+            </div>
+            <div class="vehicle-meta">
+              Maintained by Purple Detailing
+            </div>
+          </div>
+          <div class="badge">Purple Report</div>
+        </div>
+
+        <section class="grid">
+          <section class="panel">
+            <div class="panel-title">Vehicle Overview</div>
+
+            <div class="info-item">
+              <div class="info-label">VIN</div>
+              <div class="info-value">{{ vehicle.vin_number }}</div>
+            </div>
+
+            <div class="info-item">
+              <div class="info-label">Make / Model / Year</div>
+              <div class="info-value">
+                {{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}
+              </div>
+            </div>
+
+            <div class="panel-title" style="margin-top:14px;">Service History</div>
+
+            {% if service_history %}
+              {% for entry in service_history %}
+                <div class="service-item">
+                  <div class="service-date">{{ entry.date }}</div>
+                  <div class="service-type">{{ entry.service_type }}</div>
+                  {% if entry.service_notes %}
+                    <div class="service-notes">{{ entry.service_notes }}</div>
+                  {% endif %}
+                  {% if entry.next_recommended_service %}
+                    <div class="service-next">
+                      <strong>Next:</strong> {{ entry.next_recommended_service }}
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            {% else %}
+              <p style="font-size:0.85rem;color:var(--text-muted);">
+                No service records available yet.
+              </p>
+            {% endif %}
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">Service Gallery</div>
+
+            {% if embed_url %}
+              <div class="gallery-frame">
+                <iframe src="{{ embed_url }}" loading="lazy"></iframe>
+              </div>
+              <div class="gallery-footer">
+                <span>Service photos stored securely</span>
+                <a
+                  href="{{ vehicle.service_history_link }}"
+                  target="_blank"
+                  class="link-button"
+                >
+                  Open Full Gallery ↗
+                </a>
+              </div>
+            {% else %}
+              <p style="font-size:0.85rem;color:var(--text-muted);">
+                No service photos available yet.
+              </p>
+            {% endif %}
+          </section>
+        </section>
+      </main>
+    {% endif %}
+  </div>
+</body>
+</html>
