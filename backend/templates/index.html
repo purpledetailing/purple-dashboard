@@ -653,6 +653,10 @@
   </div>
 
   <script>
+    // ✅ OPTIONAL: If you already know your final public domain, set it here.
+    // Leave as "" to automatically use the current site domain (Render URL).
+    const PUBLIC_BASE_URL = ""; // e.g. "https://secure.purpledetailing.com"
+
     const form = document.getElementById("vinForm");
     const vinInput = document.getElementById("vinInput");
     const statusMessage = document.getElementById("statusMessage");
@@ -686,9 +690,7 @@
     function setStatus(message, type = "") {
       statusMessage.textContent = message || "";
       statusMessage.className = "status";
-      if (type) {
-        statusMessage.classList.add(type);
-      }
+      if (type) statusMessage.classList.add(type);
     }
 
     function makeStatusBadge(status) {
@@ -696,13 +698,9 @@
       const normalized = status.trim().toUpperCase();
 
       let badgeClass = "badge";
-      if (normalized === "VIP") {
-        badgeClass += " vip";
-      } else if (normalized === "ONE-TIME" || normalized === "ONE TIME") {
-        badgeClass += " one-time";
-      } else if (normalized === "ACTIVE") {
-        badgeClass += " active";
-      }
+      if (normalized === "VIP") badgeClass += " vip";
+      else if (normalized === "ONE-TIME" || normalized === "ONE TIME") badgeClass += " one-time";
+      else if (normalized === "ACTIVE") badgeClass += " active";
 
       return `<span class="${badgeClass}">${normalized}</span>`;
     }
@@ -720,9 +718,41 @@
       }
     }
 
+    function getPublicBaseUrl() {
+      // If you set PUBLIC_BASE_URL, use it. Otherwise use current origin.
+      return (PUBLIC_BASE_URL || window.location.origin).replace(/\/$/, "");
+    }
+
+    async function copyToClipboard(text) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (e) {
+        // fall back below
+      }
+      // Fallback for older browsers
+      const temp = document.createElement("textarea");
+      temp.value = text;
+      temp.style.position = "fixed";
+      temp.style.left = "-9999px";
+      document.body.appendChild(temp);
+      temp.focus();
+      temp.select();
+      let ok = false;
+      try {
+        ok = document.execCommand("copy");
+      } catch (e) {
+        ok = false;
+      }
+      document.body.removeChild(temp);
+      return ok;
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const vin = vinInput.value.trim();
+      const vin = vinInput.value.trim().toUpperCase();
 
       if (!vin || vin.length !== 17) {
         setStatus("Please enter a full 17-character VIN.", "error");
@@ -738,8 +768,7 @@
         const data = await resp.json();
 
         if (!resp.ok) {
-          const msg =
-            (data && data.error) || "Something went wrong while searching.";
+          const msg = (data && data.error) || "Something went wrong while searching.";
           setStatus(msg, "error");
           resultsSection.style.display = "none";
           shareLinkEl.value = "";
@@ -752,9 +781,7 @@
         addressEl.textContent = data.address || "—";
         zipCodeEl.textContent = data.zip_code || "—";
         vehicleNicknameEl.textContent = data.vehicle_nickname || "—";
-        mmYearEl.textContent = `${data.make || "—"} · ${
-          data.model || "—"
-        } · ${data.year || "—"}`;
+        mmYearEl.textContent = `${data.make || "—"} · ${data.model || "—"} · ${data.year || "—"}`;
         vinNumberEl.textContent = data.vin_number || vin;
 
         // Status badge
@@ -771,15 +798,12 @@
         }
 
         // Service history dropdown
-        const history = Array.isArray(data.service_history)
-          ? data.service_history
-          : [];
+        const history = Array.isArray(data.service_history) ? data.service_history : [];
 
         if (history.length > 0) {
           historyBlock.style.display = "block";
           historyBlock.open = false;
-          historyCountLabel.textContent =
-            history.length === 1 ? "1 visit" : `${history.length} visits`;
+          historyCountLabel.textContent = history.length === 1 ? "1 visit" : `${history.length} visits`;
 
           historyList.innerHTML = history
             .map((entry) => {
@@ -791,7 +815,7 @@
               return `
                 <div style="
                   border-radius:10px;
-                  border:1px solid ${"rgba(209,213,219,1)"};
+                  border:1px solid rgba(209,213,219,1);
                   padding:8px 10px;
                   margin-bottom:8px;
                   background:#ffffff;
@@ -831,35 +855,26 @@
           noGalleryMsg.style.display = "block";
         }
 
-        // Customer portal link
-        const publicUrl = `${window.location.origin}/public/${vin}`;
+        // ✅ Customer portal link (THIS IS THE FIX)
+        // Public customer view is /vin/<VIN> based on your Flask route.
+        const publicUrl = `${window.location.origin}/vin/${vin}`;
         shareLinkEl.value = publicUrl;
-        shareHintEl.textContent =
-          "Copy this link to share a read-only vehicle page with your customer.";
+        shareHintEl.textContent = "Copy this link to share a read-only vehicle page with your customer.";
 
         resultsSection.style.display = "block";
         setStatus("Vehicle found and loaded.", "ok");
       } catch (err) {
         console.error(err);
-        setStatus(
-          "Unexpected error talking to the server. Check if Flask is running.",
-          "error"
-        );
+        setStatus("Unexpected error talking to the server. Check if Flask is running.", "error");
         resultsSection.style.display = "none";
         shareLinkEl.value = "";
       }
     });
 
-    copyShareBtn.addEventListener("click", () => {
+    copyShareBtn.addEventListener("click", async () => {
       if (!shareLinkEl.value) return;
-      shareLinkEl.select();
-      shareLinkEl.setSelectionRange(0, 99999);
-      try {
-        document.execCommand("copy");
-        shareHintEl.textContent = "Copied to clipboard.";
-      } catch (e) {
-        shareHintEl.textContent = "Select and copy the link manually.";
-      }
+      const ok = await copyToClipboard(shareLinkEl.value);
+      shareHintEl.textContent = ok ? "Copied to clipboard." : "Select and copy the link manually.";
     });
   </script>
 </body>
