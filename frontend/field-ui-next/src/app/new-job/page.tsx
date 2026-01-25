@@ -23,6 +23,8 @@ type Vehicle = {
   make: string | null;
   model: string | null;
   trim: string | null;
+  // Optional in your schema (safe to keep as optional)
+  service_history_link?: string | null;
 };
 
 type Customer = {
@@ -87,6 +89,7 @@ type PendingJob = {
   vin: string;
   customer_name: string;
   customer_phone: string;
+  service_history_link: string; // ✅ NEW (Drive folder link)
   service_type: "full" | "interior" | "exterior" | "ceramic";
   selected_package_id: string;
   addon_ids: string[];
@@ -184,6 +187,7 @@ function NewJobInner() {
   // Customer fields
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [serviceHistoryLink, setServiceHistoryLink] = useState(""); // ✅ NEW input (Step 2)
 
   // Services selection
   const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">("full");
@@ -255,6 +259,75 @@ function NewJobInner() {
     if (!veh) return true;
     return !veh.year || !veh.make || !veh.model;
   };
+
+  /** =========================
+   * Legacy helpers (customer_data_legacy)
+   * ========================= */
+
+  function phoneToLegacyCustomerId(rawPhone: string) {
+    // customer_data_legacy.customer_id is bigint
+    // We’ll store 10-digit phone as bigint when present; else null
+    const d = normalizePhone(rawPhone || "");
+    if (!d) return null;
+    const asNum = Number(d);
+    return Number.isFinite(asNum) ? asNum : null;
+  }
+
+  function normalizeDriveFolderLink(raw: string) {
+    const s = (raw || "").trim();
+    if (!s) return "";
+    // basic “is it a URL-ish thing” filter; you can tighten later
+    if (!/^https?:\/\//i.test(s)) return s; // allow pasting without protocol (won't block)
+    return s;
+  }
+
+  async function upsertLegacyByVin(params: {
+    vin: string;
+    customerName: string;
+    customerPhone: string;
+    vehicle: Vehicle | null;
+    notes?: string;
+    status?: string;
+    serviceHistoryLink?: string;
+  }) {
+    const vin = normalizeVin(params.vin);
+    const customer_id = phoneToLegacyCustomerId(params.customerPhone);
+
+    const payload: any = {
+      vin,
+      customer_id,
+      customer_name: params.customerName.trim(),
+      phone_number: params.customerPhone.trim() || null,
+      status: params.status ?? "active",
+      notes: params.notes?.trim() || null,
+
+      // mirror vehicle fields for convenience/search
+      make: params.vehicle?.make ?? null,
+      model: params.vehicle?.model ?? null,
+      year: params.vehicle?.year ?? null,
+    };
+
+    // only set if provided (so we don’t wipe it)
+    const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
+    if (link) payload.service_history_link = link;
+
+    const { error } = await supabase.from("customer_data_legacy").upsert(payload, { onConflict: "vin" });
+    if (error) throw error;
+  }
+
+  async function autofillLegacyLinkForVin(vin17: string) {
+    const v = normalizeVin(vin17);
+    const { data, error } = await supabase
+      .from("customer_data_legacy")
+      .select("service_history_link")
+      .eq("vin", v)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return;
+    const link = (data as any)?.service_history_link as string | undefined;
+    if (link && !serviceHistoryLink.trim()) setServiceHistoryLink(link);
+  }
 
   // Autofill customer from last job on that vehicle
   const autofillCustomerFromVehicle = async (vehicleId: string) => {
@@ -350,7 +423,7 @@ function NewJobInner() {
     try {
       const { data, error } = await supabase
         .from("vehicles")
-        .select("id,vin,year,make,model,trim")
+        .select("id,vin,year,make,model,trim,service_history_link")
         .ilike("vin", v)
         .limit(1)
         .maybeSingle();
@@ -367,13 +440,13 @@ function NewJobInner() {
         const createdVeh = await supabase
           .from("vehicles")
           .insert({ vin: v })
-          .select("id,vin,year,make,model,trim")
+          .select("id,vin,year,make,model,trim,service_history_link")
           .single();
 
         if (createdVeh.error) {
           const retry = await supabase
             .from("vehicles")
-            .select("id,vin,year,make,model,trim")
+            .select("id,vin,year,make,model,trim,service_history_link")
             .ilike("vin", v)
             .limit(1)
             .single();
@@ -391,7 +464,9 @@ function NewJobInner() {
       setVehicle(veh);
       setVinStatus("VIN linked ✅");
 
+      // Fill customer + legacy link
       await autofillCustomerFromVehicle(veh.id);
+      await autofillLegacyLinkForVin(v);
 
       if (needsDecode(veh)) {
         await decodeVinAndUpdateVehicle(veh.id, v);
@@ -415,6 +490,7 @@ function NewJobInner() {
 
     setCustomerName("");
     setCustomerPhone("");
+    setServiceHistoryLink(""); // ✅ reset new field
 
     setServiceType("full");
     setSelectedAddonIds({});
@@ -433,61 +509,6 @@ function NewJobInner() {
   /** =========================
    * SAVE + OFFLINE SYNC
    * ========================= */
-function digitsOnly(raw: string) {
-  return (raw || "").replace(/\D/g, "");
-}
-
-function phoneToLegacyCustomerId(rawPhone: string) {
-  // customer_data_legacy.customer_id is bigint
-  // Use normalized 10-digit phone as bigint if present; else null
-  const d = normalizePhone(rawPhone || "");
-  if (!d) return null;
-  const asNum = Number(d);
-  return Number.isFinite(asNum) ? asNum : null;
-}
-// optional: keep link in vehicles too if you have it later
-// await supabase.from("vehicles").update({ service_history_link: someLink }).eq("id", vehicleId);
-
-async function upsertLegacyByVin(params: {
-  vin: string;
-  customerName: string;
-  customerPhone: string;
-  vehicle: Vehicle | null;
-  notes?: string;
-  status?: string;
-  serviceHistoryLink?: string; // optional for now
-}) {
-  const vin = normalizeVin(params.vin);
-  const customer_id = phoneToLegacyCustomerId(params.customerPhone);
-
-  const payload: any = {
-    vin,
-    customer_id, // bigint or null
-    customer_name: params.customerName.trim(),
-    phone_number: params.customerPhone.trim() || null,
-    status: params.status ?? "active",
-    notes: params.notes?.trim() || null,
-
-    // mirror vehicle fields (nice for search / fallback)
-    make: params.vehicle?.make ?? null,
-    model: params.vehicle?.model ?? null,
-    year: params.vehicle?.year ?? null,
-  };
-
-  // only set if provided (so we don’t wipe it)
-  if (params.serviceHistoryLink && params.serviceHistoryLink.trim()) {
-    payload.service_history_link = params.serviceHistoryLink.trim();
-  }
-
-  // IMPORTANT:
-  // Upsert requires a unique constraint on (vin) in customer_data_legacy.
-  // Your screenshot shows a pkey on vin, so this is perfect.
-  const { error } = await supabase
-    .from("customer_data_legacy")
-    .upsert(payload, { onConflict: "vin" });
-
-  if (error) throw error;
-}
 
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
@@ -497,10 +518,11 @@ async function upsertLegacyByVin(params: {
 
     const foundVeh = await supabase
       .from("vehicles")
-      .select("id,vin,year,make,model,trim")
+      .select("id,vin,year,make,model,trim,service_history_link")
       .ilike("vin", v)
       .limit(1)
       .maybeSingle();
+
     if (foundVeh.error) throw foundVeh.error;
 
     if (foundVeh.data?.id) {
@@ -510,13 +532,13 @@ async function upsertLegacyByVin(params: {
       const createdVeh = await supabase
         .from("vehicles")
         .insert({ vin: v })
-        .select("id,vin,year,make,model,trim")
+        .select("id,vin,year,make,model,trim,service_history_link")
         .single();
 
       if (createdVeh.error) {
         const retry = await supabase
           .from("vehicles")
-          .select("id,vin,year,make,model,trim")
+          .select("id,vin,year,make,model,trim,service_history_link")
           .ilike("vin", v)
           .limit(1)
           .single();
@@ -530,22 +552,33 @@ async function upsertLegacyByVin(params: {
       }
     }
 
+    // Decode + refresh (so legacy mirrors year/make/model)
     if (isOnline() && needsDecode(vehicleForDecode)) {
-  await decodeVinAndUpdateVehicle(vehicleId, v);
+      await decodeVinAndUpdateVehicle(vehicleId, v);
 
-  // re-fetch vehicle to ensure year/make/model are present for legacy mirror
-  const refreshed = await supabase
-    .from("vehicles")
-    .select("id,vin,year,make,model,trim")
-    .eq("id", vehicleId)
-    .single();
+      const refreshed = await supabase
+        .from("vehicles")
+        .select("id,vin,year,make,model,trim,service_history_link")
+        .eq("id", vehicleId)
+        .single();
 
-  if (!refreshed.error) {
-    vehicleForDecode = refreshed.data as Vehicle;
-  }
-}
+      if (!refreshed.error) {
+        vehicleForDecode = refreshed.data as Vehicle;
+      }
+    }
 
+    // Mirror Drive link into vehicles (recommended, but safe)
+    const link = normalizeDriveFolderLink(payload.service_history_link || "");
+    if (link) {
+      // Do not throw if this fails (optional column/RLS/etc)
+      try {
+        await supabase.from("vehicles").update({ service_history_link: link }).eq("id", vehicleId);
+      } catch {
+        // ignore
+      }
+    }
 
+    // Customers (dedupe by phone_norm)
     const phoneNorm = normalizePhone(payload.customer_phone);
     let customerId: string;
 
@@ -556,6 +589,7 @@ async function upsertLegacyByVin(params: {
         .eq("phone_norm", phoneNorm)
         .limit(1)
         .maybeSingle();
+
       if (existingCust.error) throw existingCust.error;
 
       if (existingCust.data?.id) {
@@ -574,6 +608,7 @@ async function upsertLegacyByVin(params: {
           })
           .select("id")
           .single();
+
         if (createdCust.error) throw createdCust.error;
         customerId = createdCust.data.id;
       }
@@ -587,10 +622,12 @@ async function upsertLegacyByVin(params: {
         })
         .select("id")
         .single();
+
       if (createdCust.error) throw createdCust.error;
       customerId = createdCust.data.id;
     }
 
+    // Jobs
     const totalCents = dollarsToCents(payload.total_charged);
 
     const jobRes = await supabase
@@ -606,8 +643,10 @@ async function upsertLegacyByVin(params: {
       })
       .select("id")
       .single();
+
     if (jobRes.error) throw jobRes.error;
 
+    // Job services
     const serviceRows = [payload.selected_package_id, ...payload.addon_ids].map((sid) => ({
       job_id: jobRes.data.id,
       service_id: sid,
@@ -617,21 +656,21 @@ async function upsertLegacyByVin(params: {
     }));
 
     const jsRes = await supabase.from("job_services").insert(serviceRows);
-if (jsRes.error) throw jsRes.error;
+    if (jsRes.error) throw jsRes.error;
 
-// ✅ NEW: ensure customer_data_legacy stays current moving forward
-await upsertLegacyByVin({
-  vin: v,
-  customerName: payload.customer_name,
-  customerPhone: payload.customer_phone,
-  vehicle: vehicleForDecode,
-  notes: payload.notes,
-  status: "active",
-  // serviceHistoryLink: "" // later we’ll wire this into UI
-});
+    // ✅ Keep legacy table current going forward
+    await upsertLegacyByVin({
+      vin: v,
+      customerName: payload.customer_name,
+      customerPhone: payload.customer_phone,
+      vehicle: vehicleForDecode,
+      notes: payload.notes,
+      status: "active",
+      serviceHistoryLink: link,
+    });
 
-return jobRes.data.id as string;
-
+    return jobRes.data.id as string;
+  };
 
   const flushQueue = async () => {
     if (!isOnline()) return;
@@ -708,9 +747,12 @@ return jobRes.data.id as string;
       vin: v,
       customer_name: customerName,
       customer_phone: customerPhone,
+      service_history_link: serviceHistoryLink, // ✅ NEW
       service_type: serviceType,
       selected_package_id: selectedPackageId,
-      addon_ids: Object.entries(selectedAddonIds).filter(([, on]) => on).map(([id]) => id),
+      addon_ids: Object.entries(selectedAddonIds)
+        .filter(([, on]) => on)
+        .map(([id]) => id),
       total_charged: totalCharged,
       notes,
       performed_at: new Date().toISOString(),
@@ -774,7 +816,6 @@ return jobRes.data.id as string;
       <button
         type="button"
         onClick={() => {
-          // allow back-navigation, not forward-skipping
           if (n <= step) setStep(n);
         }}
         className={[
@@ -827,12 +868,13 @@ return jobRes.data.id as string;
       {/* Schema canvas */}
       <div className="fixed inset-0 -z-10 bg-slate-950">
         {/* subtle grid */}
-        <div className="absolute inset-0 opacity-[0.08]"
-             style={{
-               backgroundImage:
-                 "linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)",
-               backgroundSize: "48px 48px",
-             }}
+        <div
+          className="absolute inset-0 opacity-[0.08]"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+          }}
         />
         {/* purple glow */}
         <div className="absolute -top-40 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-purple-600/20 blur-[90px]" />
@@ -899,11 +941,7 @@ return jobRes.data.id as string;
                     autoCapitalize="characters"
                     autoCorrect="off"
                   />
-                  <SchemaButton
-                    onClick={lookupVin}
-                    disabled={vinBusy || !normalizeVin(vin).length}
-                    variant="primary"
-                  >
+                  <SchemaButton onClick={lookupVin} disabled={vinBusy || !normalizeVin(vin).length} variant="primary">
                     {vinBusy ? "…" : "Lookup"}
                   </SchemaButton>
                 </div>
@@ -957,6 +995,20 @@ return jobRes.data.id as string;
                     inputMode="tel"
                   />
                   <div className="mt-2 text-[11px] text-slate-300/70">Any format is fine — we normalize digits.</div>
+                </div>
+
+                {/* ✅ NEW INPUT BOX */}
+                <div className="mt-4">
+                  <SchemaLabel>Google Drive folder link (optional)</SchemaLabel>
+                  <SchemaInput
+                    value={serviceHistoryLink}
+                    onChange={(e) => setServiceHistoryLink(e.target.value)}
+                    placeholder="https://drive.google.com/drive/folders/…"
+                    inputMode="url"
+                  />
+                  <div className="mt-2 text-[11px] text-slate-300/70">
+                    Paste the Drive <b>folder</b> link where photos live.
+                  </div>
                 </div>
 
                 <div className="mt-5 flex gap-2">
@@ -1047,7 +1099,12 @@ return jobRes.data.id as string;
                         >
                           <div className="text-sm font-semibold">{a.name}</div>
                           {sub ? (
-                            <div className={["text-[11px] mt-0.5", on ? "text-purple-100/70" : "text-slate-300/70"].join(" ")}>
+                            <div
+                              className={[
+                                "text-[11px] mt-0.5",
+                                on ? "text-purple-100/70" : "text-slate-300/70",
+                              ].join(" ")}
+                            >
                               {sub}
                             </div>
                           ) : null}
@@ -1114,7 +1171,11 @@ return jobRes.data.id as string;
           <div className="min-w-0 text-[11px] text-slate-300/80">
             <div className="font-semibold text-white/80">Step {step}/4</div>
             <div className="truncate">
-              {vehicle ? `${vehicleLabel(vehicle)} • ${maskVin(vehicle.vin)}` : normalizeVin(vin).length ? `VIN • ${maskVin(vin)}` : "No vehicle yet"}
+              {vehicle
+                ? `${vehicleLabel(vehicle)} • ${maskVin(vehicle.vin)}`
+                : normalizeVin(vin).length
+                  ? `VIN • ${maskVin(vin)}`
+                  : "No vehicle yet"}
             </div>
           </div>
 
@@ -1139,7 +1200,15 @@ return jobRes.data.id as string;
                 : "bg-purple-500/15 text-purple-100 ring-purple-400/25 hover:bg-purple-500/20",
             ].join(" ")}
           >
-            {step === 1 ? "Lookup" : step === 4 ? (busy ? "Saving…" : online ? "Save" : `Save (Queue ${queuedCount + 1})`) : "Continue"}
+            {step === 1
+              ? "Lookup"
+              : step === 4
+                ? busy
+                  ? "Saving…"
+                  : online
+                    ? "Save"
+                    : `Save (Queue ${queuedCount + 1})`
+                : "Continue"}
           </button>
         </div>
         <div className="h-2" />
@@ -1168,9 +1237,7 @@ function SchemaLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-[11px] font-semibold text-slate-300/80 mb-2">{children}</div>;
 }
 
-function SchemaInput(
-  props: React.InputHTMLAttributes<HTMLInputElement> & { className?: string }
-) {
+function SchemaInput(props: React.InputHTMLAttributes<HTMLInputElement> & { className?: string }) {
   const { className, ...rest } = props;
   return (
     <input
@@ -1207,8 +1274,7 @@ function SchemaButton({
   disabled?: boolean;
   variant: "primary" | "ghost";
 }) {
-  const base =
-    "w-full h-12 rounded-2xl font-extrabold text-sm transition ring-1";
+  const base = "w-full h-12 rounded-2xl font-extrabold text-sm transition ring-1";
   const cls =
     variant === "primary"
       ? disabled
