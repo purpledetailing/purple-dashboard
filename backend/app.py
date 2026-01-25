@@ -11,25 +11,14 @@ app = Flask(__name__, template_folder="templates", static_folder="../static")
 CORS(app)
 
 # ============================================================
-# Debug route: confirms WHICH app.py is running in Render/prod
+# DEBUG: confirm which file is running in production
 # ============================================================
-@app.route("/debug/sb/<vin>")
-def debug_sb(vin):
-    if not supabase_ready():
-        return jsonify({
-            "ok": False,
-            "supabase_ready": False,
-            "supabase_url": SUPABASE_URL,
-        }), 500
-    try:
-        veh = supabase_get_vehicle_by_vin(vin)
-        return jsonify({"ok": bool(veh), "vin": normalize_vin(vin), "vehicle": veh}), (200 if veh else 404)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+APP_VERSION = "2026-01-25-supabase-public-report-v1"
 
-@app.route("/file")
-def show_file():
+@app.route("/version")
+def version():
     return jsonify({
+        "version": APP_VERSION,
         "running_file": __file__,
         "cwd": os.getcwd(),
     })
@@ -56,7 +45,6 @@ def supabase_headers():
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
-
 
 def supabase_ready():
     return USE_SUPABASE and bool(SUPABASE_URL) and bool(SUPABASE_SERVICE_ROLE_KEY)
@@ -231,13 +219,12 @@ def _sb_get(path: str, params: dict):
 def supabase_get_vehicle_by_vin(vin: str):
     """
     Robust VIN lookup:
-      - Works whether Supabase column is `vin` or `vin_number`
-      - Uses PostgREST `or` syntax
+      - Works if your column is vin OR vin_number
       - Case-insensitive match via ilike
     """
     vin = normalize_vin(vin)
 
-    # Try exact-ish match (ilike without wildcards behaves like case-insensitive exact)
+    # exact-ish (ilike without wildcards behaves like case-insensitive exact)
     rows = _sb_get("vehicles", {
         "select": "id,vin,vin_number,year,make,model,trim",
         "or": f"(vin.ilike.{vin},vin_number.ilike.{vin})",
@@ -246,7 +233,7 @@ def supabase_get_vehicle_by_vin(vin: str):
     if rows:
         return rows[0]
 
-    # Fallback: handle accidental spaces/extra chars by using wildcard pattern
+    # fallback wildcard (handles accidental spaces)
     rows = _sb_get("vehicles", {
         "select": "id,vin,vin_number,year,make,model,trim",
         "or": f"(vin.ilike.%{vin}%,vin_number.ilike.%{vin}%)",
@@ -324,13 +311,13 @@ def supabase_vehicle_payload(vin: str):
         "customer_id": None,
         "customer_name": "—",
 
-        # HIDE these always
+        # ALWAYS HIDE
         "phone_number": "",
         "address": "",
         "zip_code": "",
 
         "vehicle_nickname": "",
-        "vin_number": veh.get("vin") or vin,
+        "vin_number": veh.get("vin") or veh.get("vin_number") or vin,
         "make": veh.get("make") or "",
         "model": veh.get("model") or "",
         "year": veh.get("year") or "",
@@ -338,7 +325,6 @@ def supabase_vehicle_payload(vin: str):
         "notes": "",
         "service_history_link": "",
         "service_history": history_out,
-
         "access_token": None,
         "customer_portal_url": f"{PUBLIC_BASE_URL}/vin/{vin}",
     }
@@ -401,7 +387,7 @@ def supabase_public_report_data_by_vin(vin: str):
         "vehicle_nickname": "",
         "customer_name": (cust.get("full_name") or ""),
 
-        # HIDE these always
+        # ALWAYS HIDE
         "phone_number": "",
         "address": "",
         "zip_code": "",
@@ -421,7 +407,6 @@ def supabase_public_report_data_by_vin(vin: str):
 # ============================================================
 # Routes
 # ============================================================
-
 @app.route("/health")
 def health():
     return jsonify({
@@ -436,16 +421,16 @@ def health_supabase():
     try:
         if not supabase_ready():
             return jsonify({"ok": False, "error": "Supabase env vars not set", "supabase_url": SUPABASE_URL}), 500
-        rows = _sb_get("vehicles", {"select": "vin", "limit": "1"})
+        rows = _sb_get("vehicles", {"select": "vin,vin_number", "limit": "1"})
         return jsonify({"ok": True, "status_code": 200, "body": rows}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-@app.route("/health/public_vin/<vin>")
-def health_public_vin(vin):
+@app.route("/debug/supabase/vehicle/<vin>")
+def debug_supabase_vehicle(vin):
+    if not supabase_ready():
+        return jsonify({"ok": False, "error": "Supabase not ready"}), 500
     try:
-        if not supabase_ready():
-            return jsonify({"ok": False, "error": "Supabase not ready"}), 500
         veh = supabase_get_vehicle_by_vin(vin)
         return jsonify({"ok": bool(veh), "vin": normalize_vin(vin), "vehicle": veh}), (200 if veh else 404)
     except Exception as e:
@@ -480,15 +465,13 @@ def search():
     token = ensure_access_token_for_vin_sqlite(vin)
     customer_portal_url = f"{PUBLIC_BASE_URL}/vin/{token}" if token else None
 
+    # HIDE phone/address/zip for dashboard responses too (optional)
     return jsonify({
         "customer_id":            vehicle.get("customer_id"),
         "customer_name":          vehicle.get("customer_name") or "—",
-
-        # HIDE
         "phone_number":           "",
         "address":                "",
         "zip_code":               "",
-
         "vehicle_nickname":       vehicle.get("vehicle_nickname") or "",
         "vin_number":             vehicle.get("vin_number") or vin,
         "make":                   vehicle.get("make") or "",
@@ -506,58 +489,20 @@ def search():
 def public_report(value):
     """
     Public:
-      - /vin/<VIN>   (17 chars) -> Supabase first (render even if jobs missing), fallback SQLite
+      - /vin/<VIN>   (17 chars) -> Supabase first, fallback SQLite
       - /vin/<TOKEN> (not 17)   -> SQLite token (legacy)
     """
     value = (value or "").strip()
 
-    # ----------------------------
-    # VIN path (17 chars)
-    # ----------------------------
+    # VIN path
     if len(value) == 17:
         vin = normalize_vin(value)
 
-        # 1) Supabase first (DO NOT 404 just because jobs/history fails)
+        # 1) Supabase first
         if supabase_ready():
             try:
-                veh = supabase_get_vehicle_by_vin(vin)
-                if veh:
-                    # Try to build history; if anything fails, just show empty history
-                    data = None
-                    try:
-                        data = supabase_public_report_data_by_vin(vin)
-                    except Exception as e:
-                        print("Supabase public report history failed; rendering minimal:", str(e))
-
-                    if not data:
-                        # Minimal render (vehicle exists)
-                        vehicle_for_template = {
-                            "vin_number": vin,
-                            "make": (veh.get("make") or ""),
-                            "model": (veh.get("model") or ""),
-                            "year": (veh.get("year") or ""),
-                            "vehicle_nickname": "",
-                            "customer_name": "",
-
-                            # ALWAYS HIDE
-                            "phone_number": "",
-                            "address": "",
-                            "zip_code": "",
-
-                            "status": "",
-                            "notes": "",
-                            "service_history_link": "",
-                        }
-                        return render_template(
-                            "public_report.html",
-                            not_found=False,
-                            vin=vin,
-                            vehicle=vehicle_for_template,
-                            service_history=[],
-                            embed_url=None,
-                        )
-
-                    # Normal Supabase render
+                data = supabase_public_report_data_by_vin(vin)
+                if data:
                     return render_template(
                         "public_report.html",
                         not_found=False,
@@ -566,7 +511,6 @@ def public_report(value):
                         service_history=data["service_history"],
                         embed_url=data["embed_url"],
                     )
-
             except Exception as e:
                 print("Supabase public_report error, falling back to SQLite:", str(e))
 
@@ -575,7 +519,7 @@ def public_report(value):
         if not vehicle:
             return render_template("public_report.html", not_found=True, vin=vin), 404
 
-        # ALWAYS HIDE
+        # ALWAYS HIDE on public
         vehicle["phone_number"] = ""
         vehicle["address"] = ""
         vehicle["zip_code"] = ""
@@ -592,9 +536,7 @@ def public_report(value):
             embed_url=embed_url
         )
 
-    # ----------------------------
     # TOKEN path (legacy)
-    # ----------------------------
     token = normalize_token(value)
     vehicle = get_vehicle_by_token_sqlite(token)
     if not vehicle:
@@ -602,7 +544,7 @@ def public_report(value):
 
     vin = normalize_vin(vehicle.get("vin_number"))
 
-    # ALWAYS HIDE
+    # ALWAYS HIDE on public
     vehicle["phone_number"] = ""
     vehicle["address"] = ""
     vehicle["zip_code"] = ""
