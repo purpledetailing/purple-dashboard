@@ -10,6 +10,30 @@ from datetime import datetime
 app = Flask(__name__, template_folder="templates", static_folder="../static")
 CORS(app)
 
+# ============================================================
+# Debug route: confirms WHICH app.py is running in Render/prod
+# ============================================================
+@app.route("/debug/sb/<vin>")
+def debug_sb(vin):
+    if not supabase_ready():
+        return jsonify({
+            "ok": False,
+            "supabase_ready": False,
+            "supabase_url": SUPABASE_URL,
+        }), 500
+    try:
+        veh = supabase_get_vehicle_by_vin(vin)
+        return jsonify({"ok": bool(veh), "vin": normalize_vin(vin), "vehicle": veh}), (200 if veh else 404)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/file")
+def show_file():
+    return jsonify({
+        "running_file": __file__,
+        "cwd": os.getcwd(),
+    })
+
 # ---------------------------
 # SQLite (legacy) config
 # ---------------------------
@@ -19,19 +43,20 @@ DB_PATH = os.path.join(BASE_DIR, "Customer_Data.db")
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:5000").rstrip("/")
 
 # ---------------------------
-# Supabase config (NEW)
+# Supabase config
 # ---------------------------
 USE_SUPABASE = os.environ.get("USE_SUPABASE", "1").strip() == "1"
 SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
-SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or ""
+SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
 
 def supabase_headers():
-    # IMPORTANT: Supabase REST requires both apikey + Authorization
     return {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
         "Content-Type": "application/json",
+        "Accept": "application/json",
     }
+
 
 def supabase_ready():
     return USE_SUPABASE and bool(SUPABASE_URL) and bool(SUPABASE_SERVICE_ROLE_KEY)
@@ -133,7 +158,6 @@ def ensure_access_token_for_vin_sqlite(vin):
 
     con = get_db()
     cur = con.cursor()
-
     cur.execute(
         """
         SELECT access_token
@@ -195,41 +219,116 @@ def get_service_history_for_vin_sqlite(vin):
     return rows
 
 # ============================================================
-# SUPABASE
+# SUPABASE helpers
 # ============================================================
+def _sb_get(path: str, params: dict):
+    url = f"{SUPABASE_URL}/rest/v1/{path.lstrip('/')}"
+    r = requests.get(url, headers=supabase_headers(), params=params, timeout=20)
+    if r.status_code != 200:
+        raise RuntimeError(f"Supabase GET {path} failed: {r.status_code} {r.text}")
+    return r.json() or []
+
 def supabase_get_vehicle_by_vin(vin: str):
     """
-    Pull from public.vehicles by VIN.
-    NOTE: we make it case-insensitive by normalizing VIN and querying exact match.
+    Robust VIN lookup:
+      - Works whether Supabase column is `vin` or `vin_number`
+      - Uses PostgREST `or` syntax
+      - Case-insensitive match via ilike
     """
     vin = normalize_vin(vin)
-    url = f"{SUPABASE_URL}/rest/v1/vehicles"
-    params = {
-        "select": "id,vin,year,make,model,trim",
-        "vin": f"eq.{vin}",
+
+    # Try exact-ish match (ilike without wildcards behaves like case-insensitive exact)
+    rows = _sb_get("vehicles", {
+        "select": "id,vin,vin_number,year,make,model,trim",
+        "or": f"(vin.ilike.{vin},vin_number.ilike.{vin})",
         "limit": "1",
-    }
-    r = requests.get(url, headers=supabase_headers(), params=params, timeout=15)
-    if r.status_code != 200:
-        raise RuntimeError(f"Supabase vehicles query failed: {r.status_code} {r.text}")
-    data = r.json()
-    return data[0] if data else None
+    })
+    if rows:
+        return rows[0]
+
+    # Fallback: handle accidental spaces/extra chars by using wildcard pattern
+    rows = _sb_get("vehicles", {
+        "select": "id,vin,vin_number,year,make,model,trim",
+        "or": f"(vin.ilike.%{vin}%,vin_number.ilike.%{vin}%)",
+        "limit": "1",
+    })
+    return rows[0] if rows else None
+
+def supabase_get_latest_job_for_vehicle(vehicle_id: str):
+    rows = _sb_get("jobs", {
+        "select": "id,performed_at,notes,total_price_cents,customer_id,customers(id,full_name,phone)",
+        "vehicle_id": f"eq.{vehicle_id}",
+        "order": "performed_at.desc",
+        "limit": "1",
+    })
+    return rows[0] if rows else None
+
+def supabase_get_job_history(vehicle_id: str, limit: int = 25):
+    return _sb_get("jobs", {
+        "select": "id,performed_at,notes,total_price_cents",
+        "vehicle_id": f"eq.{vehicle_id}",
+        "order": "performed_at.desc",
+        "limit": str(limit),
+    })
+
+def supabase_get_services_for_job(job_id: str):
+    return _sb_get("job_services", {
+        "select": "service_id,services(name,category)",
+        "job_id": f"eq.{job_id}",
+    })
 
 def supabase_vehicle_payload(vin: str):
     """
-    Minimal payload matching the dashboard keys.
+    Payload for /search (dashboard).
+    Requirement: hide phone/address/zip.
     """
     vin = normalize_vin(vin)
     veh = supabase_get_vehicle_by_vin(vin)
     if not veh:
         return None
 
+    history_out = []
+    try:
+        jobs = supabase_get_job_history(veh["id"], limit=25)
+        for j in jobs:
+            service_label = ""
+            try:
+                js = supabase_get_services_for_job(j["id"])
+                names = []
+                for row in js:
+                    s = row.get("services") or {}
+                    nm = (s.get("name") or "").strip()
+                    if nm:
+                        names.append(nm)
+                if names:
+                    service_label = names[0]
+                    if len(names) > 1:
+                        service_label = f"{names[0]} (+{len(names)-1})"
+            except Exception:
+                service_label = ""
+
+            history_out.append({
+                "date": fmt_date(j.get("performed_at")),
+                "service_type": service_label or "",
+                "service_notes": (j.get("notes") or ""),
+                "next_recommended_service": "",
+                "photos_link": "",
+                "technician": "",
+                "price": "",
+                "customer_feedback": "",
+            })
+    except Exception:
+        history_out = []
+
     return {
         "customer_id": None,
-        "customer_name": "",
+        "customer_name": "—",
+
+        # HIDE these always
         "phone_number": "",
         "address": "",
         "zip_code": "",
+
         "vehicle_nickname": "",
         "vin_number": veh.get("vin") or vin,
         "make": veh.get("make") or "",
@@ -238,14 +337,91 @@ def supabase_vehicle_payload(vin: str):
         "status": "",
         "notes": "",
         "service_history_link": "",
-        "service_history": [],
+        "service_history": history_out,
+
         "access_token": None,
         "customer_portal_url": f"{PUBLIC_BASE_URL}/vin/{vin}",
+    }
+
+def supabase_public_report_data_by_vin(vin: str):
+    """
+    Data for public_report.html.
+    Requirement: hide phone/address/zip.
+    """
+    vin = normalize_vin(vin)
+    veh = supabase_get_vehicle_by_vin(vin)
+    if not veh:
+        return None
+
+    cust = {}
+    try:
+        latest = supabase_get_latest_job_for_vehicle(veh["id"])
+        cust = (latest or {}).get("customers") or {}
+    except Exception:
+        cust = {}
+
+    history_out = []
+    try:
+        jobs = supabase_get_job_history(veh["id"], limit=25)
+        for j in jobs:
+            service_label = ""
+            try:
+                js = supabase_get_services_for_job(j["id"])
+                names = []
+                for row in js:
+                    s = row.get("services") or {}
+                    nm = (s.get("name") or "").strip()
+                    if nm:
+                        names.append(nm)
+                if names:
+                    service_label = names[0]
+                    if len(names) > 1:
+                        service_label = f"{names[0]} (+{len(names)-1})"
+            except Exception:
+                service_label = ""
+
+            history_out.append({
+                "date": fmt_date(j.get("performed_at")),
+                "service_type": service_label or "",
+                "service_notes": (j.get("notes") or ""),
+                "next_recommended_service": "",
+                "photos_link": "",
+                "technician": "",
+                "price": "",
+                "customer_feedback": "",
+            })
+    except Exception:
+        history_out = []
+
+    vehicle_for_template = {
+        "vin_number": vin,
+        "make": (veh.get("make") or ""),
+        "model": (veh.get("model") or ""),
+        "year": (veh.get("year") or ""),
+        "vehicle_nickname": "",
+        "customer_name": (cust.get("full_name") or ""),
+
+        # HIDE these always
+        "phone_number": "",
+        "address": "",
+        "zip_code": "",
+
+        "status": "",
+        "notes": "",
+        "service_history_link": "",
+    }
+
+    return {
+        "vin": vin,
+        "vehicle": vehicle_for_template,
+        "service_history": history_out,
+        "embed_url": None,
     }
 
 # ============================================================
 # Routes
 # ============================================================
+
 @app.route("/health")
 def health():
     return jsonify({
@@ -257,33 +433,21 @@ def health():
 
 @app.route("/health/supabase")
 def health_supabase():
-    """
-    Quick probe to confirm prod can reach Supabase.
-    """
     try:
         if not supabase_ready():
-            return jsonify({
-                "ok": False,
-                "error": "Supabase env vars not set",
-                "supabase_url": SUPABASE_URL
-            }), 500
+            return jsonify({"ok": False, "error": "Supabase env vars not set", "supabase_url": SUPABASE_URL}), 500
+        rows = _sb_get("vehicles", {"select": "vin", "limit": "1"})
+        return jsonify({"ok": True, "status_code": 200, "body": rows}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
-        url = f"{SUPABASE_URL}/rest/v1/vehicles"
-        params = {"select": "vin", "limit": "1"}
-        r = requests.get(url, headers=supabase_headers(), params=params, timeout=15)
-
-        # try json safely
-        try:
-            body = r.json()
-        except Exception:
-            body = r.text
-
-        return jsonify({
-            "ok": r.status_code == 200,
-            "status_code": r.status_code,
-            "body": body
-        }), (200 if r.status_code == 200 else 500)
-
+@app.route("/health/public_vin/<vin>")
+def health_public_vin(vin):
+    try:
+        if not supabase_ready():
+            return jsonify({"ok": False, "error": "Supabase not ready"}), 500
+        veh = supabase_get_vehicle_by_vin(vin)
+        return jsonify({"ok": bool(veh), "vin": normalize_vin(vin), "vehicle": veh}), (200 if veh else 404)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -318,18 +482,21 @@ def search():
 
     return jsonify({
         "customer_id":            vehicle.get("customer_id"),
-        "customer_name":          vehicle.get("customer_name"),
-        "phone_number":           vehicle.get("phone_number"),
-        "address":                vehicle.get("address"),
-        "zip_code":               vehicle.get("zip_code"),
-        "vehicle_nickname":       vehicle.get("vehicle_nickname"),
-        "vin_number":             vehicle.get("vin_number"),
-        "make":                   vehicle.get("make"),
-        "model":                  vehicle.get("model"),
-        "year":                   vehicle.get("year"),
-        "status":                 vehicle.get("status"),
-        "notes":                  vehicle.get("notes"),
-        "service_history_link":   vehicle.get("service_history_link"),
+        "customer_name":          vehicle.get("customer_name") or "—",
+
+        # HIDE
+        "phone_number":           "",
+        "address":                "",
+        "zip_code":               "",
+
+        "vehicle_nickname":       vehicle.get("vehicle_nickname") or "",
+        "vin_number":             vehicle.get("vin_number") or vin,
+        "make":                   vehicle.get("make") or "",
+        "model":                  vehicle.get("model") or "",
+        "year":                   vehicle.get("year") or "",
+        "status":                 vehicle.get("status") or "",
+        "notes":                  vehicle.get("notes") or "",
+        "service_history_link":   vehicle.get("service_history_link") or "",
         "service_history":        history,
         "access_token":           token,
         "customer_portal_url":    customer_portal_url,
@@ -337,22 +504,108 @@ def search():
 
 @app.route("/vin/<value>")
 def public_report(value):
-    # Keep public report on SQLite for now
+    """
+    Public:
+      - /vin/<VIN>   (17 chars) -> Supabase first (render even if jobs missing), fallback SQLite
+      - /vin/<TOKEN> (not 17)   -> SQLite token (legacy)
+    """
     value = (value or "").strip()
-    vehicle = None
-    vin = "—"
 
+    # ----------------------------
+    # VIN path (17 chars)
+    # ----------------------------
     if len(value) == 17:
         vin = normalize_vin(value)
-        vehicle = get_vehicle_by_vin_sqlite(vin)
-    else:
-        token = normalize_token(value)
-        vehicle = get_vehicle_by_token_sqlite(token)
-        if vehicle:
-            vin = normalize_vin(vehicle.get("vin_number"))
 
+        # 1) Supabase first (DO NOT 404 just because jobs/history fails)
+        if supabase_ready():
+            try:
+                veh = supabase_get_vehicle_by_vin(vin)
+                if veh:
+                    # Try to build history; if anything fails, just show empty history
+                    data = None
+                    try:
+                        data = supabase_public_report_data_by_vin(vin)
+                    except Exception as e:
+                        print("Supabase public report history failed; rendering minimal:", str(e))
+
+                    if not data:
+                        # Minimal render (vehicle exists)
+                        vehicle_for_template = {
+                            "vin_number": vin,
+                            "make": (veh.get("make") or ""),
+                            "model": (veh.get("model") or ""),
+                            "year": (veh.get("year") or ""),
+                            "vehicle_nickname": "",
+                            "customer_name": "",
+
+                            # ALWAYS HIDE
+                            "phone_number": "",
+                            "address": "",
+                            "zip_code": "",
+
+                            "status": "",
+                            "notes": "",
+                            "service_history_link": "",
+                        }
+                        return render_template(
+                            "public_report.html",
+                            not_found=False,
+                            vin=vin,
+                            vehicle=vehicle_for_template,
+                            service_history=[],
+                            embed_url=None,
+                        )
+
+                    # Normal Supabase render
+                    return render_template(
+                        "public_report.html",
+                        not_found=False,
+                        vin=data["vin"],
+                        vehicle=data["vehicle"],
+                        service_history=data["service_history"],
+                        embed_url=data["embed_url"],
+                    )
+
+            except Exception as e:
+                print("Supabase public_report error, falling back to SQLite:", str(e))
+
+        # 2) SQLite fallback
+        vehicle = get_vehicle_by_vin_sqlite(vin)
+        if not vehicle:
+            return render_template("public_report.html", not_found=True, vin=vin), 404
+
+        # ALWAYS HIDE
+        vehicle["phone_number"] = ""
+        vehicle["address"] = ""
+        vehicle["zip_code"] = ""
+
+        history = get_service_history_for_vin_sqlite(vin)
+        embed_url = drive_embed_from_folder(vehicle.get("service_history_link"))
+
+        return render_template(
+            "public_report.html",
+            not_found=False,
+            vin=vin,
+            vehicle=vehicle,
+            service_history=history,
+            embed_url=embed_url
+        )
+
+    # ----------------------------
+    # TOKEN path (legacy)
+    # ----------------------------
+    token = normalize_token(value)
+    vehicle = get_vehicle_by_token_sqlite(token)
     if not vehicle:
-        return render_template("public_report.html", not_found=True, vin=vin if vin else "—"), 404
+        return render_template("public_report.html", not_found=True, vin="—"), 404
+
+    vin = normalize_vin(vehicle.get("vin_number"))
+
+    # ALWAYS HIDE
+    vehicle["phone_number"] = ""
+    vehicle["address"] = ""
+    vehicle["zip_code"] = ""
 
     history = get_service_history_for_vin_sqlite(vin)
     embed_url = drive_embed_from_folder(vehicle.get("service_history_link"))
