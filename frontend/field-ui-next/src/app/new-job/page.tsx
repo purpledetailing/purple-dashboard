@@ -265,8 +265,6 @@ function NewJobInner() {
    * ========================= */
 
   function phoneToLegacyCustomerId(rawPhone: string) {
-    // customer_data_legacy.customer_id is bigint
-    // We’ll store 10-digit phone as bigint when present; else null
     const d = normalizePhone(rawPhone || "");
     if (!d) return null;
     const asNum = Number(d);
@@ -276,8 +274,7 @@ function NewJobInner() {
   function normalizeDriveFolderLink(raw: string) {
     const s = (raw || "").trim();
     if (!s) return "";
-    // basic “is it a URL-ish thing” filter; you can tighten later
-    if (!/^https?:\/\//i.test(s)) return s; // allow pasting without protocol (won't block)
+    if (!/^https?:\/\//i.test(s)) return s;
     return s;
   }
 
@@ -300,14 +297,11 @@ function NewJobInner() {
       phone_number: params.customerPhone.trim() || null,
       status: params.status ?? "active",
       notes: params.notes?.trim() || null,
-
-      // mirror vehicle fields for convenience/search
       make: params.vehicle?.make ?? null,
       model: params.vehicle?.model ?? null,
       year: params.vehicle?.year ?? null,
     };
 
-    // only set if provided (so we don’t wipe it)
     const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
     if (link) payload.service_history_link = link;
 
@@ -329,7 +323,6 @@ function NewJobInner() {
     if (link && !serviceHistoryLink.trim()) setServiceHistoryLink(link);
   }
 
-  // Autofill customer from last job on that vehicle
   const autofillCustomerFromVehicle = async (vehicleId: string) => {
     const { data, error } = await supabase
       .from("jobs")
@@ -348,7 +341,6 @@ function NewJobInner() {
     if (!customerPhone.trim() && cust.phone) setCustomerPhone(cust.phone);
   };
 
-  // Decode VIN via /api/vin-decode and update vehicles (online only)
   const decodeVinAndUpdateVehicle = async (vehicleId: string, vin17: string) => {
     if (!isOnline()) {
       setVinStatus("Offline — will identify vehicle when back online.");
@@ -395,7 +387,6 @@ function NewJobInner() {
     }
   };
 
-  // VIN lookup (create if missing, then decode)
   const lookupVin = async () => {
     if (vinBusy) return;
 
@@ -464,7 +455,6 @@ function NewJobInner() {
       setVehicle(veh);
       setVinStatus("VIN linked ✅");
 
-      // Fill customer + legacy link
       await autofillCustomerFromVehicle(veh.id);
       await autofillLegacyLinkForVin(v);
 
@@ -490,7 +480,7 @@ function NewJobInner() {
 
     setCustomerName("");
     setCustomerPhone("");
-    setServiceHistoryLink(""); // ✅ reset new field
+    setServiceHistoryLink("");
 
     setServiceType("full");
     setSelectedAddonIds({});
@@ -505,10 +495,6 @@ function NewJobInner() {
   const canGoStep2 = () => normalizeVin(vin).length === 17;
   const canGoStep3 = () => customerName.trim().length > 0;
   const canGoStep4 = () => !!selectedPackageId;
-
-  /** =========================
-   * SAVE + OFFLINE SYNC
-   * ========================= */
 
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
@@ -552,7 +538,6 @@ function NewJobInner() {
       }
     }
 
-    // Decode + refresh (so legacy mirrors year/make/model)
     if (isOnline() && needsDecode(vehicleForDecode)) {
       await decodeVinAndUpdateVehicle(vehicleId, v);
 
@@ -567,10 +552,8 @@ function NewJobInner() {
       }
     }
 
-    // Mirror Drive link into vehicles (recommended, but safe)
     const link = normalizeDriveFolderLink(payload.service_history_link || "");
     if (link) {
-      // Do not throw if this fails (optional column/RLS/etc)
       try {
         await supabase.from("vehicles").update({ service_history_link: link }).eq("id", vehicleId);
       } catch {
@@ -578,7 +561,6 @@ function NewJobInner() {
       }
     }
 
-    // Customers (dedupe by phone_norm)
     const phoneNorm = normalizePhone(payload.customer_phone);
     let customerId: string;
 
@@ -627,7 +609,6 @@ function NewJobInner() {
       customerId = createdCust.data.id;
     }
 
-    // Jobs
     const totalCents = dollarsToCents(payload.total_charged);
 
     const jobRes = await supabase
@@ -646,7 +627,6 @@ function NewJobInner() {
 
     if (jobRes.error) throw jobRes.error;
 
-    // Job services
     const serviceRows = [payload.selected_package_id, ...payload.addon_ids].map((sid) => ({
       job_id: jobRes.data.id,
       service_id: sid,
@@ -658,7 +638,6 @@ function NewJobInner() {
     const jsRes = await supabase.from("job_services").insert(serviceRows);
     if (jsRes.error) throw jsRes.error;
 
-    // ✅ Keep legacy table current going forward
     await upsertLegacyByVin({
       vin: v,
       customerName: payload.customer_name,
@@ -684,7 +663,7 @@ function NewJobInner() {
 
     setSyncingQueue(true);
     try {
-      const ordered = [...q].reverse(); // oldest first
+      const ordered = [...q].reverse();
       for (const item of ordered) {
         try {
           bumpAttempt(item.id);
@@ -747,7 +726,7 @@ function NewJobInner() {
       vin: v,
       customer_name: customerName,
       customer_phone: customerPhone,
-      service_history_link: serviceHistoryLink, // ✅ NEW
+      service_history_link: serviceHistoryLink,
       service_type: serviceType,
       selected_package_id: selectedPackageId,
       addon_ids: Object.entries(selectedAddonIds)
@@ -864,10 +843,9 @@ function NewJobInner() {
     );
 
   return (
-    <div className="min-h-screen text-slate-100">
+    <div className="min-h-[100dvh] text-slate-100">
       {/* Schema canvas */}
       <div className="fixed inset-0 -z-10 bg-slate-950">
-        {/* subtle grid */}
         <div
           className="absolute inset-0 opacity-[0.08]"
           style={{
@@ -876,7 +854,6 @@ function NewJobInner() {
             backgroundSize: "48px 48px",
           }}
         />
-        {/* purple glow */}
         <div className="absolute -top-40 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-purple-600/20 blur-[90px]" />
       </div>
 
@@ -921,7 +898,8 @@ function NewJobInner() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-md px-4 pt-4 pb-28">
+      {/* ✅ mobile-safe bottom padding */}
+      <div className="mx-auto max-w-md px-4 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
         {loadingServices ? (
           <SchemaCard title="Loading">
             <div className="text-sm text-slate-300">Loading services…</div>
@@ -997,7 +975,6 @@ function NewJobInner() {
                   <div className="mt-2 text-[11px] text-slate-300/70">Any format is fine — we normalize digits.</div>
                 </div>
 
-                {/* ✅ NEW INPUT BOX */}
                 <div className="mt-4">
                   <SchemaLabel>Google Drive folder link (optional)</SchemaLabel>
                   <SchemaInput
@@ -1099,12 +1076,7 @@ function NewJobInner() {
                         >
                           <div className="text-sm font-semibold">{a.name}</div>
                           {sub ? (
-                            <div
-                              className={[
-                                "text-[11px] mt-0.5",
-                                on ? "text-purple-100/70" : "text-slate-300/70",
-                              ].join(" ")}
-                            >
+                            <div className={["text-[11px] mt-0.5", on ? "text-purple-100/70" : "text-slate-300/70"].join(" ")}>
                               {sub}
                             </div>
                           ) : null}
@@ -1165,8 +1137,8 @@ function NewJobInner() {
         )}
       </div>
 
-      {/* Sticky bottom bar */}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-white/10 bg-slate-950/80 backdrop-blur">
+      {/* ✅ Sticky bottom bar with safe-area padding */}
+      <div className="fixed bottom-0 left-0 right-0 border-t border-white/10 bg-slate-950/80 backdrop-blur pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto max-w-md px-4 py-3 flex items-center justify-between gap-3">
           <div className="min-w-0 text-[11px] text-slate-300/80">
             <div className="font-semibold text-white/80">Step {step}/4</div>
@@ -1211,7 +1183,6 @@ function NewJobInner() {
                 : "Continue"}
           </button>
         </div>
-        <div className="h-2" />
       </div>
     </div>
   );
