@@ -6,9 +6,6 @@ import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 type Service = {
   id: string;
   name: string;
