@@ -194,6 +194,7 @@ function NewJobInner() {
   const [selectedPackageId, setSelectedPackageId] = useState<string>("");
   const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>({});
   const [addonQuery, setAddonQuery] = useState("");
+  const [addonsOpen, setAddonsOpen] = useState(false); // ✅ collapsed by default
 
   // Pricing + notes
   const [totalCharged, setTotalCharged] = useState("");
