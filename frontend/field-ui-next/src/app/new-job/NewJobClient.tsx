@@ -851,8 +851,7 @@ function NewJobInner() {
 
       {/* Top bar */}
       <div className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/80 backdrop-blur">
-        {/* ✅ FULL WIDTH */}
-        <div className="w-full px-4 sm:px-6 py-3">
+        <div className="mx-auto max-w-md px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -864,8 +863,7 @@ function NewJobInner() {
 
               <div className="mt-1 text-xs text-slate-300/80 truncate">{headerSubtitle}</div>
 
-              {/* ✅ edge-to-edge scroll on mobile */}
-              <div className="mt-3 flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:-mx-6 sm:px-6">
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
                 <StepPill n={1} label="VIN" />
                 <StepPill n={2} label="Customer" />
                 <StepPill n={3} label="Services" />
@@ -893,8 +891,7 @@ function NewJobInner() {
       </div>
 
       {/* mobile-safe bottom padding */}
-      {/* ✅ FULL WIDTH */}
-      <div className="w-full px-4 sm:px-6 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
+      <div className="mx-auto max-w-md px-4 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
         {loadingServices ? (
           <SchemaCard title="Loading">
             <div className="text-sm text-slate-300">Loading services…</div>
@@ -1166,8 +1163,7 @@ function NewJobInner() {
 
       {/* Sticky bottom bar */}
       <div className="fixed bottom-0 left-0 right-0 border-t border-white/10 bg-slate-950/80 backdrop-blur pb-[env(safe-area-inset-bottom)]">
-        {/* ✅ FULL WIDTH */}
-        <div className="w-full px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+        <div className="mx-auto max-w-md px-4 py-3 flex items-center justify-between gap-3">
           <div className="min-w-0 text-[11px] text-slate-300/80">
             <div className="font-semibold text-white/80">Step {step}/4</div>
             <div className="truncate">
@@ -1265,13 +1261,16 @@ function SchemaButton({
   onClick,
   disabled,
   variant,
+  className,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
   variant: "primary" | "ghost";
+  className?: string;
 }) {
-  const base = "w-full h-12 rounded-2xl font-extrabold text-sm transition ring-1 touch-manipulation";
+  const base = "h-12 rounded-2xl font-extrabold text-sm transition ring-1 touch-manipulation";
+  const width = className?.includes("w-") ? "" : "w-full";
   const cls =
     variant === "primary"
       ? disabled
@@ -1280,8 +1279,9 @@ function SchemaButton({
       : "bg-white/3 text-slate-200 ring-white/10 hover:ring-white/20 hover:text-white";
 
   return (
-    <button onClick={onClick} disabled={!!disabled} className={[base, cls].join(" ")}>
+    <button onClick={onClick} disabled={!!disabled} className={[base, width, cls, className ?? ""].join(" ")}>
       {children}
     </button>
   );
 }
+
