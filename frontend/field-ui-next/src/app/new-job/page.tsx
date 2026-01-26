@@ -1,6 +1,3 @@
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -8,6 +5,9 @@ import { Protected } from "@/components/Protected";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type Service = {
   id: string;
