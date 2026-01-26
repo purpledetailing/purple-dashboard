@@ -1,2 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* Minimal default styling */
+html, body { margin: 0; padding: 0; }
 /* Minimal default styling */
 html, body { margin: 0; padding: 0; }
