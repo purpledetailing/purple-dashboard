@@ -1,7 +1,3 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-/* Minimal default styling */
-html, body { margin: 0; padding: 0; }
+@import "tailwindcss";
 /* Minimal default styling */
 html, body { margin: 0; padding: 0; }
