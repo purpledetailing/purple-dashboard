@@ -89,6 +89,8 @@ type PendingJob = {
   vin: string;
   customer_name: string;
   customer_phone: string;
+  customer_address: string;
+  customer_zip: string;
   service_history_link: string;
   service_type: "full" | "interior" | "exterior" | "ceramic";
   selected_package_id: string;
@@ -184,6 +186,8 @@ function NewJobInner() {
 
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
+  const [customerZip, setCustomerZip] = useState("");
   const [serviceHistoryLink, setServiceHistoryLink] = useState("");
 
   const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">("full");
@@ -271,15 +275,17 @@ function NewJobInner() {
     return s;
   }
 
-  async function upsertLegacyByVin(params: {
-    vin: string;
-    customerName: string;
-    customerPhone: string;
-    vehicle: Vehicle | null;
-    notes?: string;
-    status?: string;
-    serviceHistoryLink?: string;
-  }) {
+async function upsertLegacyByVin(params: {
+  vin: string;
+  customerName: string;
+  customerPhone: string;
+  customerAddress?: string;
+  customerZip?: string;
+  vehicle: Vehicle | null;
+  notes?: string;
+  status?: string;
+  serviceHistoryLink?: string;
+}) { ... }
     const vin = normalizeVin(params.vin);
 
     // 🚫 hard stop for invalid VINs (prevents NAN/garbage in legacy)
@@ -292,16 +298,19 @@ function NewJobInner() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
-      vin,
-      customer_id,
-      customer_name: params.customerName.trim(),
-      phone_number: params.customerPhone.trim() || null,
-      status: params.status ?? "active",
-      notes: params.notes?.trim() || null,
-      make: params.vehicle?.make ?? null,
-      model: params.vehicle?.model ?? null,
-      year: params.vehicle?.year ?? null,
-    };
+  vin,
+  customer_id,
+  customer_name: params.customerName.trim(),
+  phone_number: params.customerPhone.trim() || null,
+  address: params.customerAddress?.trim() || null,
+  zip_code: params.customerZip?.trim() || null,
+  status: params.status ?? "active",
+  notes: params.notes?.trim() || null,
+  make: params.vehicle?.make ?? null,
+  model: params.vehicle?.model ?? null,
+  year: params.vehicle?.year ?? null,
+};
+
 
     const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
     if (link) payload.service_history_link = link;
@@ -329,7 +338,7 @@ function NewJobInner() {
   const autofillCustomerFromVehicle = async (vehicleId: string) => {
     const { data, error } = await supabase
       .from("jobs")
-      .select("id, performed_at, customers:customer_id (id, full_name, phone, phone_norm)")
+      .select("id, performed_at, customers:customer_id (id, full_name, phone, phone_norm, address, zip_code)")
       .eq("vehicle_id", vehicleId)
       .order("performed_at", { ascending: false })
       .limit(1)
@@ -342,6 +351,9 @@ function NewJobInner() {
 
     if (!customerName.trim()) setCustomerName(cust.full_name ?? "");
     if (!customerPhone.trim() && cust.phone) setCustomerPhone(cust.phone);
+    if (!customerAddress && cust.address) setCustomerAddress(cust.address);
+    if (!customerZip && cust.zip_code) setCustomerZip(cust.zip_code);
+
   };
 
   const decodeVinAndUpdateVehicle = async (vehicleId: string, vin17: string) => {
@@ -587,18 +599,28 @@ function NewJobInner() {
         customerId = existingCust.data.id;
         const typedName = payload.customer_name.trim();
         if (typedName && typedName !== existingCust.data.full_name) {
-          await supabase.from("customers").update({ full_name: typedName }).eq("id", customerId);
+          await supabase
+  .from("customers")
+  .update({
+    full_name: typedName,
+    address: payload.customer_address || null,
+    zip_code: payload.customer_zip || null,
+  })
+  .eq("id", customerId);
+
         }
       } else {
         const createdCust = await supabase
-          .from("customers")
-          .insert({
-            full_name: payload.customer_name.trim(),
-            phone: payload.customer_phone.trim() || null,
-            phone_norm: phoneNorm,
-          })
-          .select("id")
-          .single();
+  .from("customers")
+  .insert({
+    full_name: payload.customer_name.trim(),
+    phone: payload.customer_phone.trim() || null,
+    phone_norm: phoneNorm,
+    address: payload.customer_address || null,
+    zip_code: payload.customer_zip || null,
+  })
+  .select("id")
+  .single();
 
         if (createdCust.error) throw createdCust.error;
         customerId = createdCust.data.id;
@@ -732,19 +754,22 @@ function NewJobInner() {
     if (totalCents <= 0) return setMsg("Total charged must be > $0.");
 
     const payloadBase = {
-      vin: v,
-      customer_name: customerName,
-      customer_phone: customerPhone,
-      service_history_link: serviceHistoryLink,
-      service_type: serviceType,
-      selected_package_id: selectedPackageId,
-      addon_ids: Object.entries(selectedAddonIds)
-        .filter(([, on]) => on)
-        .map(([id]) => id),
-      total_charged: totalCharged,
-      notes,
-      performed_at: new Date().toISOString(),
-    };
+  vin: v,
+  customer_name: customerName,
+  customer_phone: customerPhone,
+  customer_address: customerAddress,
+  customer_zip: customerZip,
+  service_history_link: serviceHistoryLink,
+  service_type: serviceType,
+  selected_package_id: selectedPackageId,
+  addon_ids: Object.entries(selectedAddonIds)
+    .filter(([, on]) => on)
+    .map(([id]) => id),
+  total_charged: totalCharged,
+  notes,
+  performed_at: new Date().toISOString(),
+};
+
 
     if (!isOnline()) {
       enqueueJob(payloadBase);
@@ -974,15 +999,24 @@ function NewJobInner() {
                 />
 
                 <div className="mt-4">
-                  <SchemaLabel>Phone (dedupe)</SchemaLabel>
-                  <SchemaInput
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="(919) 555-1234"
-                    inputMode="tel"
-                  />
-                  <div className="mt-2 text-[11px] text-slate-300/70">Any format is fine — we normalize digits.</div>
-                </div>
+  <SchemaLabel>Address</SchemaLabel>
+  <SchemaInput
+    value={customerAddress}
+    onChange={(e) => setCustomerAddress(e.target.value)}
+    placeholder="123 Main St"
+  />
+</div>
+
+<div className="mt-4">
+  <SchemaLabel>ZIP code</SchemaLabel>
+  <SchemaInput
+    value={customerZip}
+    onChange={(e) => setCustomerZip(e.target.value)}
+    placeholder="27604"
+    inputMode="numeric"
+  />
+</div>
+
 
                 <div className="mt-4">
                   <SchemaLabel>Google Drive folder link (optional)</SchemaLabel>
