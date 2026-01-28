@@ -53,12 +53,17 @@ function dollarsToCents(input: string): number {
   return Math.round(num * 100);
 }
 
+/** VIN utils */
 function normalizeVin(raw: string) {
-  return raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return (raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+function isValidVin(vin: string) {
+  // Standard VIN excludes I, O, Q
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(vin);
 }
 
 function normalizePhone(raw: string) {
-  const digits = raw.replace(/\D/g, "");
+  const digits = (raw || "").replace(/\D/g, "");
   if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
   return digits;
 }
@@ -186,13 +191,11 @@ function NewJobInner() {
   const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>({});
   const [addonQuery, setAddonQuery] = useState("");
 
-  // ✅ collapsed by default (wireframe #1)
   const [addonsOpen, setAddonsOpen] = useState(false);
 
   const [totalCharged, setTotalCharged] = useState("");
   const [notes, setNotes] = useState("");
 
-  // ✅ quick totals for mobile speed
   const quickTotals = useMemo(() => ["200", "250", "300", "350", "400"], []);
 
   useEffect(() => {
@@ -269,21 +272,22 @@ function NewJobInner() {
   }
 
   async function upsertLegacyByVin(params: {
-  vin: string;
-  customerName: string;
-  customerPhone: string;
-  vehicle: Vehicle | null;
-  notes?: string;
-  status?: string;
-  serviceHistoryLink?: string;
-}) {
-  const vin = normalizeVin(params.vin);
+    vin: string;
+    customerName: string;
+    customerPhone: string;
+    vehicle: Vehicle | null;
+    notes?: string;
+    status?: string;
+    serviceHistoryLink?: string;
+  }) {
+    const vin = normalizeVin(params.vin);
 
-  // 🚫 Hard stop: never write legacy data for invalid VINs
-  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
-    console.warn("Skipping legacy upsert for invalid VIN:", vin);
-    return;
-  }
+    // 🚫 hard stop for invalid VINs (prevents NAN/garbage in legacy)
+    if (!isValidVin(vin)) {
+      console.warn("Skipping legacy upsert for invalid VIN:", vin);
+      return;
+    }
+
     const customer_id = phoneToLegacyCustomerId(params.customerPhone);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -308,6 +312,8 @@ function NewJobInner() {
 
   async function autofillLegacyLinkForVin(vin17: string) {
     const v = normalizeVin(vin17);
+    if (!isValidVin(v)) return;
+
     const { data, error } = await supabase
       .from("customer_data_legacy")
       .select("service_history_link")
@@ -392,8 +398,10 @@ function NewJobInner() {
     setVehicle(null);
 
     const v = normalizeVin(vin);
-    if (v.length !== 17) {
-      setVinStatus("VIN must be 17 characters.");
+
+    // ✅ validate VIN (no I/O/Q + must be 17)
+    if (!isValidVin(v)) {
+      setVinStatus("VIN must be 17 characters (no I, O, Q).");
       return;
     }
 
@@ -412,7 +420,7 @@ function NewJobInner() {
       const { data, error } = await supabase
         .from("vehicles")
         .select("id,vin,year,make,model,trim,service_history_link")
-        .ilike("vin", v)
+        .eq("vin", v)
         .limit(1)
         .maybeSingle();
 
@@ -435,7 +443,7 @@ function NewJobInner() {
           const retry = await supabase
             .from("vehicles")
             .select("id,vin,year,make,model,trim,service_history_link")
-            .ilike("vin", v)
+            .eq("vin", v)
             .limit(1)
             .single();
 
@@ -490,12 +498,15 @@ function NewJobInner() {
     if (packages[0]?.id) setSelectedPackageId(packages[0].id);
   };
 
-  const canGoStep2 = () => normalizeVin(vin).length === 17;
+  const canGoStep2 = () => isValidVin(normalizeVin(vin));
   const canGoStep3 = () => customerName.trim().length > 0;
   const canGoStep4 = () => !!selectedPackageId;
 
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
+
+    // ✅ hard stop (should never happen, but prevents bad writes)
+    if (!isValidVin(v)) throw new Error("Invalid VIN (must be 17 chars, no I/O/Q).");
 
     let vehicleId: string;
     let vehicleForDecode: Vehicle | null = null;
@@ -503,7 +514,7 @@ function NewJobInner() {
     const foundVeh = await supabase
       .from("vehicles")
       .select("id,vin,year,make,model,trim,service_history_link")
-      .ilike("vin", v)
+      .eq("vin", v)
       .limit(1)
       .maybeSingle();
 
@@ -523,7 +534,7 @@ function NewJobInner() {
         const retry = await supabase
           .from("vehicles")
           .select("id,vin,year,make,model,trim,service_history_link")
-          .ilike("vin", v)
+          .eq("vin", v)
           .limit(1)
           .single();
 
@@ -714,7 +725,7 @@ function NewJobInner() {
     setMsg(null);
 
     const v = normalizeVin(vin);
-    if (v.length !== 17) return setMsg("VIN is required and must be 17 characters.");
+    if (!isValidVin(v)) return setMsg("VIN must be 17 characters (no I, O, Q).");
     if (!customerName.trim()) return setMsg("Customer name is required.");
     if (!selectedPackageId) return setMsg("Select a package.");
     const totalCents = dollarsToCents(totalCharged);
@@ -1025,7 +1036,7 @@ function NewJobInner() {
                   )}
                 </div>
 
-                {/* ✅ Add-ons (collapsed by default) */}
+                {/* Add-ons */}
                 <div className="mt-5 pt-5 border-t border-white/10">
                   <button
                     type="button"
@@ -1039,7 +1050,6 @@ function NewJobInner() {
                     <div className="text-slate-200 font-extrabold">{addonsOpen ? "−" : "+"}</div>
                   </button>
 
-                  {/* Always show selected chips */}
                   {selectedAddons.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {selectedAddons.map((a) => (
@@ -1085,12 +1095,7 @@ function NewJobInner() {
                             >
                               <div className="text-sm font-semibold">{a.name}</div>
                               {sub ? (
-                                <div
-                                  className={[
-                                    "text-[11px] mt-0.5",
-                                    on ? "text-purple-100/70" : "text-slate-300/70",
-                                  ].join(" ")}
-                                >
+                                <div className={["text-[11px] mt-0.5", on ? "text-purple-100/70" : "text-slate-300/70"].join(" ")}>
                                   {sub}
                                 </div>
                               ) : null}
@@ -1129,7 +1134,6 @@ function NewJobInner() {
                   />
                 </div>
 
-                {/* ✅ quick totals */}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {quickTotals.map((v) => (
                     <button
@@ -1165,54 +1169,6 @@ function NewJobInner() {
             )}
           </div>
         )}
-      </div>
-
-      {/* Sticky bottom bar */}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-white/10 bg-slate-950/80 backdrop-blur pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-auto max-w-md px-4 py-3 flex items-center justify-between gap-3">
-          <div className="min-w-0 text-[11px] text-slate-300/80">
-            <div className="font-semibold text-white/80">Step {step}/4</div>
-            <div className="truncate">
-              {vehicle
-                ? `${vehicleLabel(vehicle)} • ${maskVin(vehicle.vin)}`
-                : normalizeVin(vin).length
-                  ? `VIN • ${maskVin(vin)}`
-                  : "No vehicle yet"}
-            </div>
-          </div>
-
-          <button
-            onClick={() => {
-              if (step === 1) lookupVin();
-              else if (step === 2) setStep(canGoStep3() ? 3 : 2);
-              else if (step === 3) setStep(canGoStep4() ? 4 : 3);
-              else onSave();
-            }}
-            disabled={
-              (step === 1 && vinBusy) ||
-              (step === 1 && !normalizeVin(vin).length) ||
-              (step === 2 && !canGoStep3()) ||
-              (step === 3 && !canGoStep4()) ||
-              (step === 4 && busy)
-            }
-            className={[
-              "h-12 px-5 rounded-2xl font-extrabold text-sm transition ring-1 touch-manipulation",
-              (step === 4 ? busy : vinBusy)
-                ? "bg-white/5 text-slate-500 cursor-not-allowed ring-white/10"
-                : "bg-purple-500/15 text-purple-100 ring-purple-400/25 hover:bg-purple-500/20",
-            ].join(" ")}
-          >
-            {step === 1
-              ? "Lookup"
-              : step === 4
-                ? busy
-                  ? "Saving…"
-                  : online
-                    ? "Save"
-                    : `Save (Queue ${queuedCount + 1})`
-                : "Continue"}
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -1290,4 +1246,3 @@ function SchemaButton({
     </button>
   );
 }
-
