@@ -31,7 +31,10 @@ type Customer = {
   full_name: string;
   phone: string | null;
   phone_norm: string | null;
-};
+  // NOTE: these fields must exist in your `customers` table to be returned
+  // If they don't exist, remove these lines + the related logic.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} & any;
 
 const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
   full: "full_service",
@@ -89,8 +92,10 @@ type PendingJob = {
   vin: string;
   customer_name: string;
   customer_phone: string;
+
   customer_address: string;
   customer_zip: string;
+
   service_history_link: string;
   service_type: "full" | "interior" | "exterior" | "ceramic";
   selected_package_id: string;
@@ -275,22 +280,22 @@ function NewJobInner() {
     return s;
   }
 
-async function upsertLegacyByVin(params: {
-  vin: string;
-  customerName: string;
-  customerPhone: string;
-  customerAddress?: string;
-  customerZip?: string;
-  vehicle: Vehicle | null;
-  notes?: string;
-  status?: string;
-  serviceHistoryLink?: string;
-}) { ... }
-    const vin = normalizeVin(params.vin);
+  async function upsertLegacyByVin(params: {
+    vin: string;
+    customerName: string;
+    customerPhone: string;
+    customerAddress?: string;
+    customerZip?: string;
+    vehicle: Vehicle | null;
+    notes?: string;
+    status?: string;
+    serviceHistoryLink?: string;
+  }) {
+    const v = normalizeVin(params.vin);
 
-    // 🚫 hard stop for invalid VINs (prevents NAN/garbage in legacy)
-    if (!isValidVin(vin)) {
-      console.warn("Skipping legacy upsert for invalid VIN:", vin);
+    // hard stop for invalid VINs (prevents garbage in legacy)
+    if (!isValidVin(v)) {
+      console.warn("Skipping legacy upsert for invalid VIN:", v);
       return;
     }
 
@@ -298,19 +303,18 @@ async function upsertLegacyByVin(params: {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
-  vin,
-  customer_id,
-  customer_name: params.customerName.trim(),
-  phone_number: params.customerPhone.trim() || null,
-  address: params.customerAddress?.trim() || null,
-  zip_code: params.customerZip?.trim() || null,
-  status: params.status ?? "active",
-  notes: params.notes?.trim() || null,
-  make: params.vehicle?.make ?? null,
-  model: params.vehicle?.model ?? null,
-  year: params.vehicle?.year ?? null,
-};
-
+      vin: v,
+      customer_id,
+      customer_name: params.customerName.trim(),
+      phone_number: params.customerPhone.trim() || null,
+      address: params.customerAddress?.trim() || null,
+      zip_code: params.customerZip?.trim() || null,
+      status: params.status ?? "active",
+      notes: params.notes?.trim() || null,
+      make: params.vehicle?.make ?? null,
+      model: params.vehicle?.model ?? null,
+      year: params.vehicle?.year ?? null,
+    };
 
     const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
     if (link) payload.service_history_link = link;
@@ -346,14 +350,15 @@ async function upsertLegacyByVin(params: {
 
     if (error) return;
 
-    const cust = (data as any)?.customers as Customer | undefined;
+    const cust = (data as any)?.customers as any;
     if (!cust) return;
 
     if (!customerName.trim()) setCustomerName(cust.full_name ?? "");
     if (!customerPhone.trim() && cust.phone) setCustomerPhone(cust.phone);
-    if (!customerAddress && cust.address) setCustomerAddress(cust.address);
-    if (!customerZip && cust.zip_code) setCustomerZip(cust.zip_code);
 
+    // only autofill if empty so you can override onsite
+    if (!customerAddress.trim() && cust.address) setCustomerAddress(String(cust.address));
+    if (!customerZip.trim() && cust.zip_code) setCustomerZip(String(cust.zip_code));
   };
 
   const decodeVinAndUpdateVehicle = async (vehicleId: string, vin17: string) => {
@@ -411,7 +416,6 @@ async function upsertLegacyByVin(params: {
 
     const v = normalizeVin(vin);
 
-    // ✅ validate VIN (no I/O/Q + must be 17)
     if (!isValidVin(v)) {
       setVinStatus("VIN must be 17 characters (no I, O, Q).");
       return;
@@ -497,6 +501,8 @@ async function upsertLegacyByVin(params: {
 
     setCustomerName("");
     setCustomerPhone("");
+    setCustomerAddress("");
+    setCustomerZip("");
     setServiceHistoryLink("");
 
     setServiceType("full");
@@ -517,7 +523,6 @@ async function upsertLegacyByVin(params: {
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
 
-    // ✅ hard stop (should never happen, but prevents bad writes)
     if (!isValidVin(v)) throw new Error("Invalid VIN (must be 17 chars, no I/O/Q).");
 
     let vehicleId: string;
@@ -585,10 +590,16 @@ async function upsertLegacyByVin(params: {
     const phoneNorm = normalizePhone(payload.customer_phone);
     let customerId: string;
 
+    // Normalized, clean values
+    const typedName = payload.customer_name.trim();
+    const typedPhone = payload.customer_phone.trim();
+    const typedAddress = payload.customer_address.trim() || null;
+    const typedZip = payload.customer_zip.trim() || null;
+
     if (phoneNorm) {
       const existingCust = await supabase
         .from("customers")
-        .select("id, full_name, phone, phone_norm")
+        .select("id, full_name, phone, phone_norm, address, zip_code")
         .eq("phone_norm", phoneNorm)
         .limit(1)
         .maybeSingle();
@@ -597,30 +608,38 @@ async function upsertLegacyByVin(params: {
 
       if (existingCust.data?.id) {
         customerId = existingCust.data.id;
-        const typedName = payload.customer_name.trim();
-        if (typedName && typedName !== existingCust.data.full_name) {
-          await supabase
-  .from("customers")
-  .update({
-    full_name: typedName,
-    address: payload.customer_address || null,
-    zip_code: payload.customer_zip || null,
-  })
-  .eq("id", customerId);
 
+        // Update customer if anything differs (name/address/zip/phone)
+        const shouldUpdate =
+          (typedName && typedName !== (existingCust.data.full_name ?? "")) ||
+          (typedPhone && typedPhone !== (existingCust.data.phone ?? "")) ||
+          (typedAddress && typedAddress !== (existingCust.data.address ?? null)) ||
+          (typedZip && typedZip !== (existingCust.data.zip_code ?? null));
+
+        if (shouldUpdate) {
+          await supabase
+            .from("customers")
+            .update({
+              full_name: typedName || existingCust.data.full_name,
+              phone: typedPhone || existingCust.data.phone,
+              phone_norm: phoneNorm,
+              address: typedAddress,
+              zip_code: typedZip,
+            })
+            .eq("id", customerId);
         }
       } else {
         const createdCust = await supabase
-  .from("customers")
-  .insert({
-    full_name: payload.customer_name.trim(),
-    phone: payload.customer_phone.trim() || null,
-    phone_norm: phoneNorm,
-    address: payload.customer_address || null,
-    zip_code: payload.customer_zip || null,
-  })
-  .select("id")
-  .single();
+          .from("customers")
+          .insert({
+            full_name: typedName,
+            phone: typedPhone || null,
+            phone_norm: phoneNorm,
+            address: typedAddress,
+            zip_code: typedZip,
+          })
+          .select("id")
+          .single();
 
         if (createdCust.error) throw createdCust.error;
         customerId = createdCust.data.id;
@@ -629,9 +648,11 @@ async function upsertLegacyByVin(params: {
       const createdCust = await supabase
         .from("customers")
         .insert({
-          full_name: payload.customer_name.trim(),
-          phone: payload.customer_phone.trim() || null,
+          full_name: typedName,
+          phone: typedPhone || null,
           phone_norm: null,
+          address: typedAddress,
+          zip_code: typedZip,
         })
         .select("id")
         .single();
@@ -669,10 +690,13 @@ async function upsertLegacyByVin(params: {
     const jsRes = await supabase.from("job_services").insert(serviceRows);
     if (jsRes.error) throw jsRes.error;
 
+    // ✅ legacy upsert includes address + zip so secure dashboard can show them
     await upsertLegacyByVin({
       vin: v,
       customerName: payload.customer_name,
       customerPhone: payload.customer_phone,
+      customerAddress: payload.customer_address,
+      customerZip: payload.customer_zip,
       vehicle: vehicleForDecode,
       notes: payload.notes,
       status: "active",
@@ -754,22 +778,21 @@ async function upsertLegacyByVin(params: {
     if (totalCents <= 0) return setMsg("Total charged must be > $0.");
 
     const payloadBase = {
-  vin: v,
-  customer_name: customerName,
-  customer_phone: customerPhone,
-  customer_address: customerAddress,
-  customer_zip: customerZip,
-  service_history_link: serviceHistoryLink,
-  service_type: serviceType,
-  selected_package_id: selectedPackageId,
-  addon_ids: Object.entries(selectedAddonIds)
-    .filter(([, on]) => on)
-    .map(([id]) => id),
-  total_charged: totalCharged,
-  notes,
-  performed_at: new Date().toISOString(),
-};
-
+      vin: v,
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      customer_address: customerAddress,
+      customer_zip: customerZip,
+      service_history_link: serviceHistoryLink,
+      service_type: serviceType,
+      selected_package_id: selectedPackageId,
+      addon_ids: Object.entries(selectedAddonIds)
+        .filter(([, on]) => on)
+        .map(([id]) => id),
+      total_charged: totalCharged,
+      notes,
+      performed_at: new Date().toISOString(),
+    };
 
     if (!isOnline()) {
       enqueueJob(payloadBase);
@@ -999,24 +1022,35 @@ async function upsertLegacyByVin(params: {
                 />
 
                 <div className="mt-4">
-  <SchemaLabel>Address</SchemaLabel>
-  <SchemaInput
-    value={customerAddress}
-    onChange={(e) => setCustomerAddress(e.target.value)}
-    placeholder="123 Main St"
-  />
-</div>
+                  <SchemaLabel>Phone (dedupe)</SchemaLabel>
+                  <SchemaInput
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="(919) 555-1234"
+                    inputMode="tel"
+                  />
+                  <div className="mt-2 text-[11px] text-slate-300/70">Any format is fine — we normalize digits.</div>
+                </div>
 
-<div className="mt-4">
-  <SchemaLabel>ZIP code</SchemaLabel>
-  <SchemaInput
-    value={customerZip}
-    onChange={(e) => setCustomerZip(e.target.value)}
-    placeholder="27604"
-    inputMode="numeric"
-  />
-</div>
+                <div className="mt-4">
+                  <SchemaLabel>Address (optional)</SchemaLabel>
+                  <SchemaInput
+                    value={customerAddress}
+                    onChange={(e) => setCustomerAddress(e.target.value)}
+                    placeholder="123 Main St, Raleigh, NC"
+                    inputMode="text"
+                  />
+                </div>
 
+                <div className="mt-4">
+                  <SchemaLabel>ZIP (optional)</SchemaLabel>
+                  <SchemaInput
+                    value={customerZip}
+                    onChange={(e) => setCustomerZip(e.target.value)}
+                    placeholder="27604"
+                    inputMode="numeric"
+                  />
+                </div>
 
                 <div className="mt-4">
                   <SchemaLabel>Google Drive folder link (optional)</SchemaLabel>
@@ -1160,12 +1194,7 @@ async function upsertLegacyByVin(params: {
                   <div className="h-12 w-10 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-slate-300/80 font-semibold">
                     $
                   </div>
-                  <SchemaInput
-                    value={totalCharged}
-                    onChange={(e) => setTotalCharged(e.target.value)}
-                    placeholder="250"
-                    inputMode="decimal"
-                  />
+                  <SchemaInput value={totalCharged} onChange={(e) => setTotalCharged(e.target.value)} placeholder="250" inputMode="decimal" />
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
