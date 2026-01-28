@@ -31,10 +31,9 @@ type Customer = {
   full_name: string;
   phone: string | null;
   phone_norm: string | null;
-  // NOTE: these fields must exist in your `customers` table to be returned
-  // If they don't exist, remove these lines + the related logic.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} & any;
+  address?: string | null;
+  zip_code?: string | null;
+};
 
 const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
   full: "full_service",
@@ -280,6 +279,7 @@ function NewJobInner() {
     return s;
   }
 
+  // ✅ FIXED: no ON CONFLICT requirement; update-or-insert by vin
   async function upsertLegacyByVin(params: {
     vin: string;
     customerName: string;
@@ -295,7 +295,7 @@ function NewJobInner() {
 
     // hard stop for invalid VINs (prevents garbage in legacy)
     if (!isValidVin(v)) {
-      console.warn("Skipping legacy upsert for invalid VIN:", v);
+      console.warn("Skipping legacy write for invalid VIN:", v);
       return;
     }
 
@@ -305,12 +305,12 @@ function NewJobInner() {
     const payload: any = {
       vin: v,
       customer_id,
-      customer_name: params.customerName.trim(),
-      phone_number: params.customerPhone.trim() || null,
-      address: params.customerAddress?.trim() || null,
-      zip_code: params.customerZip?.trim() || null,
+      customer_name: (params.customerName || "").trim() || null,
+      phone_number: (params.customerPhone || "").trim() || null,
+      address: (params.customerAddress || "").trim() || null,
+      zip_code: (params.customerZip || "").trim() || null,
       status: params.status ?? "active",
-      notes: params.notes?.trim() || null,
+      notes: (params.notes || "").trim() || null,
       make: params.vehicle?.make ?? null,
       model: params.vehicle?.model ?? null,
       year: params.vehicle?.year ?? null,
@@ -319,8 +319,22 @@ function NewJobInner() {
     const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
     if (link) payload.service_history_link = link;
 
-    const { error } = await supabase.from("customer_data_legacy").upsert(payload, { onConflict: "vin" });
-    if (error) throw error;
+    const { data: existing, error: findErr } = await supabase
+      .from("customer_data_legacy")
+      .select("id, vin")
+      .eq("vin", v)
+      .limit(1)
+      .maybeSingle();
+
+    if (findErr) throw findErr;
+
+    if (existing?.id) {
+      const { error: updErr } = await supabase.from("customer_data_legacy").update(payload).eq("id", existing.id);
+      if (updErr) throw updErr;
+    } else {
+      const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
+      if (insErr) throw insErr;
+    }
   }
 
   async function autofillLegacyLinkForVin(vin17: string) {
@@ -350,7 +364,7 @@ function NewJobInner() {
 
     if (error) return;
 
-    const cust = (data as any)?.customers as any;
+    const cust = (data as any)?.customers as Customer | undefined;
     if (!cust) return;
 
     if (!customerName.trim()) setCustomerName(cust.full_name ?? "");
@@ -609,12 +623,11 @@ function NewJobInner() {
       if (existingCust.data?.id) {
         customerId = existingCust.data.id;
 
-        // Update customer if anything differs (name/address/zip/phone)
         const shouldUpdate =
           (typedName && typedName !== (existingCust.data.full_name ?? "")) ||
           (typedPhone && typedPhone !== (existingCust.data.phone ?? "")) ||
-          (typedAddress && typedAddress !== (existingCust.data.address ?? null)) ||
-          (typedZip && typedZip !== (existingCust.data.zip_code ?? null));
+          (typedAddress && typedAddress !== ((existingCust.data as any).address ?? null)) ||
+          (typedZip && typedZip !== ((existingCust.data as any).zip_code ?? null));
 
         if (shouldUpdate) {
           await supabase
@@ -690,18 +703,23 @@ function NewJobInner() {
     const jsRes = await supabase.from("job_services").insert(serviceRows);
     if (jsRes.error) throw jsRes.error;
 
-    // ✅ legacy upsert includes address + zip so secure dashboard can show them
-    await upsertLegacyByVin({
-      vin: v,
-      customerName: payload.customer_name,
-      customerPhone: payload.customer_phone,
-      customerAddress: payload.customer_address,
-      customerZip: payload.customer_zip,
-      vehicle: vehicleForDecode,
-      notes: payload.notes,
-      status: "active",
-      serviceHistoryLink: link,
-    });
+    // ✅ legacy write includes address + zip
+    // ✅ non-blocking so UI always confirms + resets even if legacy has issues
+    try {
+      await upsertLegacyByVin({
+        vin: v,
+        customerName: payload.customer_name,
+        customerPhone: payload.customer_phone,
+        customerAddress: payload.customer_address,
+        customerZip: payload.customer_zip,
+        vehicle: vehicleForDecode,
+        notes: payload.notes,
+        status: "active",
+        serviceHistoryLink: link,
+      });
+    } catch (e) {
+      console.error("Legacy write failed (non-blocking):", e);
+    }
 
     return jobRes.data.id as string;
   };
