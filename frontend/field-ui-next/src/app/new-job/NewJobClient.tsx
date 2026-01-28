@@ -269,15 +269,21 @@ function NewJobInner() {
   }
 
   async function upsertLegacyByVin(params: {
-    vin: string;
-    customerName: string;
-    customerPhone: string;
-    vehicle: Vehicle | null;
-    notes?: string;
-    status?: string;
-    serviceHistoryLink?: string;
-  }) {
-    const vin = normalizeVin(params.vin);
+  vin: string;
+  customerName: string;
+  customerPhone: string;
+  vehicle: Vehicle | null;
+  notes?: string;
+  status?: string;
+  serviceHistoryLink?: string;
+}) {
+  const vin = normalizeVin(params.vin);
+
+  // 🚫 Hard stop: never write legacy data for invalid VINs
+  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
+    console.warn("Skipping legacy upsert for invalid VIN:", vin);
+    return;
+  }
     const customer_id = phoneToLegacyCustomerId(params.customerPhone);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
