@@ -1,19 +1,18 @@
 import type { Metadata } from "next";
+import Providers from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Purple Field",
-  description: "Purple Detailing Field Tool",
+   title: "Purple Intel",
+  description: "Purple Detailing Intel Platform",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-slate-950 text-slate-100">{children}</body>
+      <body className="bg-slate-950 text-slate-100">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

@@ -23,7 +23,6 @@ type Vehicle = {
   make: string | null;
   model: string | null;
   trim: string | null;
-  // Optional in your schema (safe to keep as optional)
   service_history_link?: string | null;
 };
 
@@ -32,7 +31,10 @@ type Customer = {
   full_name: string;
   phone: string | null;
   phone_norm: string | null;
-};
+  // NOTE: these fields must exist in your `customers` table to be returned
+  // If they don't exist, remove these lines + the related logic.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} & any;
 
 const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
   full: "full_service",
@@ -54,12 +56,17 @@ function dollarsToCents(input: string): number {
   return Math.round(num * 100);
 }
 
+/** VIN utils */
 function normalizeVin(raw: string) {
-  return raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return (raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+function isValidVin(vin: string) {
+  // Standard VIN excludes I, O, Q
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(vin);
 }
 
 function normalizePhone(raw: string) {
-  const digits = raw.replace(/\D/g, "");
+  const digits = (raw || "").replace(/\D/g, "");
   if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
   return digits;
 }
@@ -77,10 +84,6 @@ function vehicleLabel(v: Vehicle) {
 
 type Step = 1 | 2 | 3 | 4;
 
-/** =========================
- * OFFLINE QUEUE (localStorage)
- * ========================= */
-
 type PendingJob = {
   id: string;
   created_at: string;
@@ -89,13 +92,17 @@ type PendingJob = {
   vin: string;
   customer_name: string;
   customer_phone: string;
-  service_history_link: string; // ✅ NEW (Drive folder link)
+
+  customer_address: string;
+  customer_zip: string;
+
+  service_history_link: string;
   service_type: "full" | "interior" | "exterior" | "ceramic";
   selected_package_id: string;
   addon_ids: string[];
   total_charged: string;
   notes: string;
-  performed_at: string; // ISO
+  performed_at: string;
 };
 
 const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
@@ -173,33 +180,33 @@ function NewJobInner() {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // ONLINE/OFFLINE status + queue
   const [online, setOnline] = useState(true);
   const [queuedCount, setQueuedCount] = useState(0);
   const [syncingQueue, setSyncingQueue] = useState(false);
 
-  // VIN-first
   const [vin, setVin] = useState("");
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [vinStatus, setVinStatus] = useState<string>("");
   const [vinBusy, setVinBusy] = useState(false);
 
-  // Customer fields
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [serviceHistoryLink, setServiceHistoryLink] = useState(""); // ✅ NEW input (Step 2)
+  const [customerAddress, setCustomerAddress] = useState("");
+  const [customerZip, setCustomerZip] = useState("");
+  const [serviceHistoryLink, setServiceHistoryLink] = useState("");
 
-  // Services selection
   const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">("full");
   const [selectedPackageId, setSelectedPackageId] = useState<string>("");
   const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>({});
   const [addonQuery, setAddonQuery] = useState("");
 
-  // Pricing + notes
+  const [addonsOpen, setAddonsOpen] = useState(false);
+
   const [totalCharged, setTotalCharged] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Load services
+  const quickTotals = useMemo(() => ["200", "250", "300", "350", "400"], []);
+
   useEffect(() => {
     (async () => {
       setLoadingServices(true);
@@ -223,7 +230,6 @@ function NewJobInner() {
   const packages = useMemo(() => services.filter((s) => s.category === packageCategory), [services, packageCategory]);
   const addons = useMemo(() => services.filter((s) => s.category === "addon"), [services]);
 
-  // Auto-pick first package for chosen category
   useEffect(() => {
     if (packages.length === 0) {
       setSelectedPackageId("");
@@ -260,10 +266,6 @@ function NewJobInner() {
     return !veh.year || !veh.make || !veh.model;
   };
 
-  /** =========================
-   * Legacy helpers (customer_data_legacy)
-   * ========================= */
-
   function phoneToLegacyCustomerId(rawPhone: string) {
     const d = normalizePhone(rawPhone || "");
     if (!d) return null;
@@ -282,19 +284,31 @@ function NewJobInner() {
     vin: string;
     customerName: string;
     customerPhone: string;
+    customerAddress?: string;
+    customerZip?: string;
     vehicle: Vehicle | null;
     notes?: string;
     status?: string;
     serviceHistoryLink?: string;
   }) {
-    const vin = normalizeVin(params.vin);
+    const v = normalizeVin(params.vin);
+
+    // hard stop for invalid VINs (prevents garbage in legacy)
+    if (!isValidVin(v)) {
+      console.warn("Skipping legacy upsert for invalid VIN:", v);
+      return;
+    }
+
     const customer_id = phoneToLegacyCustomerId(params.customerPhone);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
-      vin,
+      vin: v,
       customer_id,
       customer_name: params.customerName.trim(),
       phone_number: params.customerPhone.trim() || null,
+      address: params.customerAddress?.trim() || null,
+      zip_code: params.customerZip?.trim() || null,
       status: params.status ?? "active",
       notes: params.notes?.trim() || null,
       make: params.vehicle?.make ?? null,
@@ -311,6 +325,8 @@ function NewJobInner() {
 
   async function autofillLegacyLinkForVin(vin17: string) {
     const v = normalizeVin(vin17);
+    if (!isValidVin(v)) return;
+
     const { data, error } = await supabase
       .from("customer_data_legacy")
       .select("service_history_link")
@@ -326,7 +342,7 @@ function NewJobInner() {
   const autofillCustomerFromVehicle = async (vehicleId: string) => {
     const { data, error } = await supabase
       .from("jobs")
-      .select("id, performed_at, customers:customer_id (id, full_name, phone, phone_norm)")
+      .select("id, performed_at, customers:customer_id (id, full_name, phone, phone_norm, address, zip_code)")
       .eq("vehicle_id", vehicleId)
       .order("performed_at", { ascending: false })
       .limit(1)
@@ -334,11 +350,15 @@ function NewJobInner() {
 
     if (error) return;
 
-    const cust = (data as any)?.customers as Customer | undefined;
+    const cust = (data as any)?.customers as any;
     if (!cust) return;
 
     if (!customerName.trim()) setCustomerName(cust.full_name ?? "");
     if (!customerPhone.trim() && cust.phone) setCustomerPhone(cust.phone);
+
+    // only autofill if empty so you can override onsite
+    if (!customerAddress.trim() && cust.address) setCustomerAddress(String(cust.address));
+    if (!customerZip.trim() && cust.zip_code) setCustomerZip(String(cust.zip_code));
   };
 
   const decodeVinAndUpdateVehicle = async (vehicleId: string, vin17: string) => {
@@ -395,8 +415,9 @@ function NewJobInner() {
     setVehicle(null);
 
     const v = normalizeVin(vin);
-    if (v.length !== 17) {
-      setVinStatus("VIN must be 17 characters.");
+
+    if (!isValidVin(v)) {
+      setVinStatus("VIN must be 17 characters (no I, O, Q).");
       return;
     }
 
@@ -415,7 +436,7 @@ function NewJobInner() {
       const { data, error } = await supabase
         .from("vehicles")
         .select("id,vin,year,make,model,trim,service_history_link")
-        .ilike("vin", v)
+        .eq("vin", v)
         .limit(1)
         .maybeSingle();
 
@@ -438,7 +459,7 @@ function NewJobInner() {
           const retry = await supabase
             .from("vehicles")
             .select("id,vin,year,make,model,trim,service_history_link")
-            .ilike("vin", v)
+            .eq("vin", v)
             .limit(1)
             .single();
 
@@ -480,11 +501,14 @@ function NewJobInner() {
 
     setCustomerName("");
     setCustomerPhone("");
+    setCustomerAddress("");
+    setCustomerZip("");
     setServiceHistoryLink("");
 
     setServiceType("full");
     setSelectedAddonIds({});
     setAddonQuery("");
+    setAddonsOpen(false);
 
     setTotalCharged("");
     setNotes("");
@@ -492,12 +516,14 @@ function NewJobInner() {
     if (packages[0]?.id) setSelectedPackageId(packages[0].id);
   };
 
-  const canGoStep2 = () => normalizeVin(vin).length === 17;
+  const canGoStep2 = () => isValidVin(normalizeVin(vin));
   const canGoStep3 = () => customerName.trim().length > 0;
   const canGoStep4 = () => !!selectedPackageId;
 
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
+
+    if (!isValidVin(v)) throw new Error("Invalid VIN (must be 17 chars, no I/O/Q).");
 
     let vehicleId: string;
     let vehicleForDecode: Vehicle | null = null;
@@ -505,7 +531,7 @@ function NewJobInner() {
     const foundVeh = await supabase
       .from("vehicles")
       .select("id,vin,year,make,model,trim,service_history_link")
-      .ilike("vin", v)
+      .eq("vin", v)
       .limit(1)
       .maybeSingle();
 
@@ -525,7 +551,7 @@ function NewJobInner() {
         const retry = await supabase
           .from("vehicles")
           .select("id,vin,year,make,model,trim,service_history_link")
-          .ilike("vin", v)
+          .eq("vin", v)
           .limit(1)
           .single();
 
@@ -564,10 +590,16 @@ function NewJobInner() {
     const phoneNorm = normalizePhone(payload.customer_phone);
     let customerId: string;
 
+    // Normalized, clean values
+    const typedName = payload.customer_name.trim();
+    const typedPhone = payload.customer_phone.trim();
+    const typedAddress = payload.customer_address.trim() || null;
+    const typedZip = payload.customer_zip.trim() || null;
+
     if (phoneNorm) {
       const existingCust = await supabase
         .from("customers")
-        .select("id, full_name, phone, phone_norm")
+        .select("id, full_name, phone, phone_norm, address, zip_code")
         .eq("phone_norm", phoneNorm)
         .limit(1)
         .maybeSingle();
@@ -576,17 +608,35 @@ function NewJobInner() {
 
       if (existingCust.data?.id) {
         customerId = existingCust.data.id;
-        const typedName = payload.customer_name.trim();
-        if (typedName && typedName !== existingCust.data.full_name) {
-          await supabase.from("customers").update({ full_name: typedName }).eq("id", customerId);
+
+        // Update customer if anything differs (name/address/zip/phone)
+        const shouldUpdate =
+          (typedName && typedName !== (existingCust.data.full_name ?? "")) ||
+          (typedPhone && typedPhone !== (existingCust.data.phone ?? "")) ||
+          (typedAddress && typedAddress !== (existingCust.data.address ?? null)) ||
+          (typedZip && typedZip !== (existingCust.data.zip_code ?? null));
+
+        if (shouldUpdate) {
+          await supabase
+            .from("customers")
+            .update({
+              full_name: typedName || existingCust.data.full_name,
+              phone: typedPhone || existingCust.data.phone,
+              phone_norm: phoneNorm,
+              address: typedAddress,
+              zip_code: typedZip,
+            })
+            .eq("id", customerId);
         }
       } else {
         const createdCust = await supabase
           .from("customers")
           .insert({
-            full_name: payload.customer_name.trim(),
-            phone: payload.customer_phone.trim() || null,
+            full_name: typedName,
+            phone: typedPhone || null,
             phone_norm: phoneNorm,
+            address: typedAddress,
+            zip_code: typedZip,
           })
           .select("id")
           .single();
@@ -598,9 +648,11 @@ function NewJobInner() {
       const createdCust = await supabase
         .from("customers")
         .insert({
-          full_name: payload.customer_name.trim(),
-          phone: payload.customer_phone.trim() || null,
+          full_name: typedName,
+          phone: typedPhone || null,
           phone_norm: null,
+          address: typedAddress,
+          zip_code: typedZip,
         })
         .select("id")
         .single();
@@ -638,10 +690,13 @@ function NewJobInner() {
     const jsRes = await supabase.from("job_services").insert(serviceRows);
     if (jsRes.error) throw jsRes.error;
 
+    // ✅ legacy upsert includes address + zip so secure dashboard can show them
     await upsertLegacyByVin({
       vin: v,
       customerName: payload.customer_name,
       customerPhone: payload.customer_phone,
+      customerAddress: payload.customer_address,
+      customerZip: payload.customer_zip,
       vehicle: vehicleForDecode,
       notes: payload.notes,
       status: "active",
@@ -716,7 +771,7 @@ function NewJobInner() {
     setMsg(null);
 
     const v = normalizeVin(vin);
-    if (v.length !== 17) return setMsg("VIN is required and must be 17 characters.");
+    if (!isValidVin(v)) return setMsg("VIN must be 17 characters (no I, O, Q).");
     if (!customerName.trim()) return setMsg("Customer name is required.");
     if (!selectedPackageId) return setMsg("Select a package.");
     const totalCents = dollarsToCents(totalCharged);
@@ -726,6 +781,8 @@ function NewJobInner() {
       vin: v,
       customer_name: customerName,
       customer_phone: customerPhone,
+      customer_address: customerAddress,
+      customer_zip: customerZip,
       service_history_link: serviceHistoryLink,
       service_type: serviceType,
       selected_package_id: selectedPackageId,
@@ -798,7 +855,7 @@ function NewJobInner() {
           if (n <= step) setStep(n);
         }}
         className={[
-          "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold transition",
+          "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold transition touch-manipulation",
           active
             ? "bg-purple-600/15 text-purple-200 ring-1 ring-purple-500/30"
             : done
@@ -832,7 +889,7 @@ function NewJobInner() {
       <button
         type="button"
         onClick={flushQueue}
-        className="inline-flex items-center gap-2 rounded-full bg-purple-500/10 text-purple-200 ring-1 ring-purple-400/20 px-3 py-1 text-[11px] font-semibold hover:bg-purple-500/15 transition"
+        className="inline-flex items-center gap-2 rounded-full bg-purple-500/10 text-purple-200 ring-1 ring-purple-400/20 px-3 py-1 text-[11px] font-semibold hover:bg-purple-500/15 transition touch-manipulation"
       >
         QUEUED {queuedCount} {syncingQueue ? "• Syncing…" : "• Tap to sync"}
       </button>
@@ -843,7 +900,7 @@ function NewJobInner() {
     );
 
   return (
-    <div className="min-h-[100dvh] text-slate-100">
+    <div className="min-h-[100dvh] text-slate-100 overscroll-contain">
       {/* Schema canvas */}
       <div className="fixed inset-0 -z-10 bg-slate-950">
         <div
@@ -884,7 +941,7 @@ function NewJobInner() {
                 await signOut();
                 router.replace("/login");
               }}
-              className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-white/10 text-slate-200 hover:ring-white/20 hover:text-white transition"
+              className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-white/10 text-slate-200 hover:ring-white/20 hover:text-white transition touch-manipulation"
             >
               Sign out
             </button>
@@ -898,7 +955,7 @@ function NewJobInner() {
         </div>
       </div>
 
-      {/* ✅ mobile-safe bottom padding */}
+      {/* mobile-safe bottom padding */}
       <div className="mx-auto max-w-md px-4 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
         {loadingServices ? (
           <SchemaCard title="Loading">
@@ -943,7 +1000,7 @@ function NewJobInner() {
                     onClick={() => setStep(2)}
                     disabled={!canGoStep2()}
                     className={[
-                      "text-sm font-semibold transition",
+                      "text-sm font-semibold transition touch-manipulation",
                       canGoStep2() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
                     ].join(" ")}
                   >
@@ -973,6 +1030,26 @@ function NewJobInner() {
                     inputMode="tel"
                   />
                   <div className="mt-2 text-[11px] text-slate-300/70">Any format is fine — we normalize digits.</div>
+                </div>
+
+                <div className="mt-4">
+                  <SchemaLabel>Address (optional)</SchemaLabel>
+                  <SchemaInput
+                    value={customerAddress}
+                    onChange={(e) => setCustomerAddress(e.target.value)}
+                    placeholder="123 Main St, Raleigh, NC"
+                    inputMode="text"
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <SchemaLabel>ZIP (optional)</SchemaLabel>
+                  <SchemaInput
+                    value={customerZip}
+                    onChange={(e) => setCustomerZip(e.target.value)}
+                    placeholder="27604"
+                    inputMode="numeric"
+                  />
                 </div>
 
                 <div className="mt-4">
@@ -1027,18 +1104,19 @@ function NewJobInner() {
                   )}
                 </div>
 
+                {/* Add-ons */}
                 <div className="mt-5 pt-5 border-t border-white/10">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-extrabold text-white/90">Add-ons</div>
-                    <div className="text-[11px] text-slate-300/70">{selectedAddons.length} selected</div>
-                  </div>
-
-                  <SchemaInput
-                    className="mt-3"
-                    value={addonQuery}
-                    onChange={(e) => setAddonQuery(e.target.value)}
-                    placeholder="Search add-ons…"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setAddonsOpen((v) => !v)}
+                    className="w-full flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3 hover:ring-white/20 transition touch-manipulation"
+                  >
+                    <div className="text-left">
+                      <div className="text-sm font-extrabold text-white/90">Add-ons</div>
+                      <div className="text-[11px] text-slate-300/70">{selectedAddons.length} selected</div>
+                    </div>
+                    <div className="text-slate-200 font-extrabold">{addonsOpen ? "−" : "+"}</div>
+                  </button>
 
                   {selectedAddons.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -1046,7 +1124,7 @@ function NewJobInner() {
                         <button
                           key={a.id}
                           onClick={() => toggleAddon(a.id)}
-                          className="rounded-full px-3 py-1.5 text-[11px] font-semibold bg-purple-500/10 text-purple-200 ring-1 ring-purple-400/20 hover:bg-purple-500/15 transition"
+                          className="rounded-full px-3 py-1.5 text-[11px] font-semibold bg-purple-500/10 text-purple-200 ring-1 ring-purple-400/20 hover:bg-purple-500/15 transition touch-manipulation"
                           type="button"
                         >
                           {a.name} ✕
@@ -1055,35 +1133,46 @@ function NewJobInner() {
                     </div>
                   )}
 
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {filteredAddons.map((a) => {
-                      const on = !!selectedAddonIds[a.id];
-                      const hint = suggestedRangeText(a);
-                      const note = a.price_note || "";
-                      const sub = [hint, note].filter(Boolean).join(" • ");
+                  {addonsOpen && (
+                    <div className="mt-3">
+                      <SchemaInput
+                        className="mt-1"
+                        value={addonQuery}
+                        onChange={(e) => setAddonQuery(e.target.value)}
+                        placeholder="Search add-ons…"
+                      />
 
-                      return (
-                        <button
-                          key={a.id}
-                          type="button"
-                          onClick={() => toggleAddon(a.id)}
-                          className={[
-                            "text-left rounded-2xl px-3 py-2 ring-1 transition",
-                            on
-                              ? "bg-purple-500/15 ring-purple-400/25 text-purple-100"
-                              : "bg-white/5 ring-white/10 text-white/90 hover:ring-white/20",
-                          ].join(" ")}
-                        >
-                          <div className="text-sm font-semibold">{a.name}</div>
-                          {sub ? (
-                            <div className={["text-[11px] mt-0.5", on ? "text-purple-100/70" : "text-slate-300/70"].join(" ")}>
-                              {sub}
-                            </div>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {filteredAddons.map((a) => {
+                          const on = !!selectedAddonIds[a.id];
+                          const hint = suggestedRangeText(a);
+                          const note = a.price_note || "";
+                          const sub = [hint, note].filter(Boolean).join(" • ");
+
+                          return (
+                            <button
+                              key={a.id}
+                              type="button"
+                              onClick={() => toggleAddon(a.id)}
+                              className={[
+                                "text-left rounded-2xl px-3 py-2 ring-1 transition touch-manipulation",
+                                on
+                                  ? "bg-purple-500/15 ring-purple-400/25 text-purple-100"
+                                  : "bg-white/5 ring-white/10 text-white/90 hover:ring-white/20",
+                              ].join(" ")}
+                            >
+                              <div className="text-sm font-semibold">{a.name}</div>
+                              {sub ? (
+                                <div className={["text-[11px] mt-0.5", on ? "text-purple-100/70" : "text-slate-300/70"].join(" ")}>
+                                  {sub}
+                                </div>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-5 flex gap-2">
@@ -1105,12 +1194,20 @@ function NewJobInner() {
                   <div className="h-12 w-10 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-slate-300/80 font-semibold">
                     $
                   </div>
-                  <SchemaInput
-                    value={totalCharged}
-                    onChange={(e) => setTotalCharged(e.target.value)}
-                    placeholder="250"
-                    inputMode="decimal"
-                  />
+                  <SchemaInput value={totalCharged} onChange={(e) => setTotalCharged(e.target.value)} placeholder="250" inputMode="decimal" />
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {quickTotals.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setTotalCharged(v)}
+                      className="rounded-full px-3 py-1.5 text-[11px] font-semibold bg-white/5 ring-1 ring-white/10 hover:ring-white/20 transition touch-manipulation"
+                    >
+                      ${v}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="mt-4">
@@ -1136,61 +1233,11 @@ function NewJobInner() {
           </div>
         )}
       </div>
-
-      {/* ✅ Sticky bottom bar with safe-area padding */}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-white/10 bg-slate-950/80 backdrop-blur pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-auto max-w-md px-4 py-3 flex items-center justify-between gap-3">
-          <div className="min-w-0 text-[11px] text-slate-300/80">
-            <div className="font-semibold text-white/80">Step {step}/4</div>
-            <div className="truncate">
-              {vehicle
-                ? `${vehicleLabel(vehicle)} • ${maskVin(vehicle.vin)}`
-                : normalizeVin(vin).length
-                  ? `VIN • ${maskVin(vin)}`
-                  : "No vehicle yet"}
-            </div>
-          </div>
-
-          <button
-            onClick={() => {
-              if (step === 1) lookupVin();
-              else if (step === 2) setStep(canGoStep3() ? 3 : 2);
-              else if (step === 3) setStep(canGoStep4() ? 4 : 3);
-              else onSave();
-            }}
-            disabled={
-              (step === 1 && vinBusy) ||
-              (step === 1 && !normalizeVin(vin).length) ||
-              (step === 2 && !canGoStep3()) ||
-              (step === 3 && !canGoStep4()) ||
-              (step === 4 && busy)
-            }
-            className={[
-              "h-12 px-5 rounded-2xl font-extrabold text-sm transition ring-1",
-              (step === 4 ? busy : vinBusy)
-                ? "bg-white/5 text-slate-500 cursor-not-allowed ring-white/10"
-                : "bg-purple-500/15 text-purple-100 ring-purple-400/25 hover:bg-purple-500/20",
-            ].join(" ")}
-          >
-            {step === 1
-              ? "Lookup"
-              : step === 4
-                ? busy
-                  ? "Saving…"
-                  : online
-                    ? "Save"
-                    : `Save (Queue ${queuedCount + 1})`
-                : "Continue"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
 
-/** =========================
- * Schema UI components
- * ========================= */
+/** Schema UI components */
 
 function SchemaCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -1239,13 +1286,16 @@ function SchemaButton({
   onClick,
   disabled,
   variant,
+  className,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
   variant: "primary" | "ghost";
+  className?: string;
 }) {
-  const base = "w-full h-12 rounded-2xl font-extrabold text-sm transition ring-1";
+  const base = "h-12 rounded-2xl font-extrabold text-sm transition ring-1 touch-manipulation";
+  const width = className?.includes("w-") ? "" : "w-full";
   const cls =
     variant === "primary"
       ? disabled
@@ -1254,7 +1304,7 @@ function SchemaButton({
       : "bg-white/3 text-slate-200 ring-white/10 hover:ring-white/20 hover:text-white";
 
   return (
-    <button onClick={onClick} disabled={!!disabled} className={[base, cls].join(" ")}>
+    <button onClick={onClick} disabled={!!disabled} className={[base, width, cls, className ?? ""].join(" ")}>
       {children}
     </button>
   );
