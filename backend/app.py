@@ -171,23 +171,50 @@ def get_service_history_for_vin_sqlite(vin):
 def sb_vehicle_by_vin(vin: str):
     """
     public.vehicles has column: vin (text)
+    Use eq (exact match) because we normalize to uppercase.
     """
     vin = normalize_vin(vin)
     rows = sb_get("vehicles", {
         "select": "id,vin,year,make,model,trim,color,notes,nickname,service_history_link,access_token,status",
-        "vin": f"ilike.{vin}",
+        "vin": f"eq.{vin}",
         "limit": "1",
     })
     return rows[0] if rows else None
 
 def sb_legacy_by_vin(vin: str):
     """
-    public.customer_data_legacy has column: vin (text) + customer fields + service_history_link
+    public.customer_data_legacy has column: vin (text)
+    Use eq (exact match).
     """
     vin = normalize_vin(vin)
     rows = sb_get("customer_data_legacy", {
         "select": "id,customer_id,customer_name,status,phone_number,email,address,zip_code,vehicle_nickname,vin,make,model,year,license_plate_optional,odometer_at_last_service,lease_or_owned,primary_use,notes,service_history_link",
-        "vin": f"ilike.{vin}",
+        "vin": f"eq.{vin}",
+        "limit": "1",
+    })
+    return rows[0] if rows else None
+
+def sb_latest_job_for_vehicle(vehicle_id: str):
+    """
+    Returns latest job row for a vehicle (if any).
+    """
+    rows = sb_get("jobs", {
+        "select": "id,performed_at,customer_id",
+        "vehicle_id": f"eq.{vehicle_id}",
+        "order": "performed_at.desc",
+        "limit": "1",
+    })
+    return rows[0] if rows else None
+
+def sb_customer_by_id(customer_id: str):
+    """
+    Returns customer row (if any).
+    """
+    if not customer_id:
+        return None
+    rows = sb_get("customers", {
+        "select": "id,full_name,phone,phone_norm",
+        "id": f"eq.{customer_id}",
         "limit": "1",
     })
     return rows[0] if rows else None
@@ -263,7 +290,7 @@ def merged_profile_by_vin(vin: str):
     Merge record from:
       - vehicles (authoritative for VIN + core vehicle)
       - customer_data_legacy (authoritative for customer info + drive folder link)
-    Either table can be missing; if both missing -> None
+      - NEW: latest job + customers fallback (for modern data)
     """
     vin = normalize_vin(vin)
 
@@ -277,15 +304,36 @@ def merged_profile_by_vin(vin: str):
     model = first_truthy((veh or {}).get("model"), (legacy or {}).get("model"))
     year = (veh or {}).get("year") or (legacy or {}).get("year") or ""
 
-    # Prefer legacy for customer fields (that’s your old CSV)
-    customer_name = first_truthy((legacy or {}).get("customer_name"), "—")
-    status = first_truthy((legacy or {}).get("status"), (veh or {}).get("status"), "")
-    notes = first_truthy((legacy or {}).get("notes"), (veh or {}).get("notes"), "")
-
     vehicle_nickname = first_truthy((legacy or {}).get("vehicle_nickname"), (veh or {}).get("nickname"), "")
 
     # Drive folder link: legacy first, then vehicles
-    service_history_link = first_truthy((legacy or {}).get("service_history_link"), (veh or {}).get("service_history_link"), "")
+    service_history_link = first_truthy(
+        (legacy or {}).get("service_history_link"),
+        (veh or {}).get("service_history_link"),
+        ""
+    )
+
+    status = first_truthy((legacy or {}).get("status"), (veh or {}).get("status"), "")
+    notes = first_truthy((legacy or {}).get("notes"), (veh or {}).get("notes"), "")
+
+    # --- NEW: Pull customer from latest job if legacy is missing ---
+    customer_name = first_truthy((legacy or {}).get("customer_name"), "")
+    phone_number = first_truthy((legacy or {}).get("phone_number"), "")
+
+    latest_customer = None
+    if veh and veh.get("id"):
+        try:
+            latest_job = sb_latest_job_for_vehicle(veh["id"])
+            if latest_job and latest_job.get("customer_id"):
+                latest_customer = sb_customer_by_id(latest_job["customer_id"])
+        except Exception:
+            latest_customer = None
+
+    # fallback from modern customers table
+    if not customer_name and latest_customer:
+        customer_name = first_truthy(latest_customer.get("full_name"), "")
+    if not phone_number and latest_customer:
+        phone_number = first_truthy(latest_customer.get("phone"), "")
 
     # Service history from jobs requires vehicle_id
     service_history = []
@@ -295,6 +343,7 @@ def merged_profile_by_vin(vin: str):
     return {
         "veh": veh or {},
         "legacy": legacy or {},
+        "latest_customer": latest_customer or {},
         "merged": {
             "vin": vin,
             "make": make,
@@ -303,7 +352,8 @@ def merged_profile_by_vin(vin: str):
             "status": status,
             "notes": notes,
             "vehicle_nickname": vehicle_nickname,
-            "customer_name": customer_name,
+            "customer_name": customer_name or "—",
+            "phone_number": phone_number or "",
             "service_history_link": service_history_link,
             "service_history": service_history,
         }
@@ -375,7 +425,7 @@ def search():
         payload = {
             "customer_id": legacy.get("customer_id"),
             "customer_name": m.get("customer_name") or "—",
-            "phone_number": legacy.get("phone_number") or "",
+            "phone_number": m.get("phone_number") or "",
             "email": legacy.get("email") or "",
             "address": legacy.get("address") or "",
             "zip_code": legacy.get("zip_code") or "",
