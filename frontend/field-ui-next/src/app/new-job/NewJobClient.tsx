@@ -26,13 +26,27 @@ type Vehicle = {
   service_history_link?: string | null;
 };
 
-type Customer = {
+type Step = 1 | 2 | 3 | 4;
+
+type PendingJob = {
   id: string;
-  full_name: string;
-  phone: string | null;
-  phone_norm: string | null;
-  address?: string | null;
-  zip_code?: string | null;
+  created_at: string;
+  attempt_count: number;
+
+  vin: string;
+  customer_name: string;
+  customer_phone: string;
+
+  customer_address: string;
+  customer_zip: string;
+
+  service_history_link: string;
+  service_type: "full" | "interior" | "exterior" | "ceramic";
+  selected_package_id: string;
+  addon_ids: string[];
+  total_charged: string;
+  notes: string;
+  performed_at: string;
 };
 
 const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
@@ -41,6 +55,8 @@ const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
   exterior: "exterior_service",
   ceramic: "ceramic_service",
 };
+
+const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
 
 function centsToDollars(cents: number | null) {
   if (cents === null || cents === undefined) return "";
@@ -80,31 +96,6 @@ function vehicleLabel(v: Vehicle) {
   const parts = [v.year, v.make, v.model, v.trim].filter(Boolean).join(" ");
   return parts || "Vehicle";
 }
-
-type Step = 1 | 2 | 3 | 4;
-
-type PendingJob = {
-  id: string;
-  created_at: string;
-  attempt_count: number;
-
-  vin: string;
-  customer_name: string;
-  customer_phone: string;
-
-  customer_address: string;
-  customer_zip: string;
-
-  service_history_link: string;
-  service_type: "full" | "interior" | "exterior" | "ceramic";
-  selected_package_id: string;
-  addon_ids: string[];
-  total_charged: string;
-  notes: string;
-  performed_at: string;
-};
-
-const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
 
 function isOnline() {
   return typeof navigator === "undefined" ? true : navigator.onLine;
@@ -157,6 +148,16 @@ function removeFromQueue(id: string) {
 function bumpAttempt(id: string) {
   const q = getQueue().map((x) => (x.id === id ? { ...x, attempt_count: x.attempt_count + 1 } : x));
   setQueue(q);
+}
+
+/** zip_code bigint helper */
+function normalizeZipToBigint(raw: string): number | null {
+  const digits = (raw || "").trim().replace(/\D/g, "");
+  if (!digits) return null;
+  // zip_code is bigint → store numeric
+  const n = Number(digits);
+  if (!Number.isFinite(n)) return null;
+  return n;
 }
 
 export default function NewJobClient() {
@@ -279,81 +280,66 @@ function NewJobInner() {
     return s;
   }
 
-function zipToBigIntOrNull(raw: string | null | undefined): number | null {
-  const s = String(raw ?? "").trim();
-  if (!s) return null;
-  const digits = s.replace(/\D/g, "");
-  if (!digits) return null;
-
-  // Keep 5 or 9 digits if someone types ZIP+4
-  const normalized = digits.length > 9 ? digits.slice(0, 9) : digits;
-
-  const asNum = Number(normalized);
-  if (!Number.isFinite(asNum)) return null;
-  return asNum;
-}
-
-  // ✅ FIXED: no ON CONFLICT requirement; update-or-insert by vin
+  /** ✅ FIXED legacy writer: no ON CONFLICT + zip_code bigint */
   async function upsertLegacyByVin(params: {
-  vin: string;
-  customerName: string;
-  customerPhone: string;
-  customerAddress?: string;
-  customerZip?: string;
-  vehicle: Vehicle | null;
-  notes?: string;
-  status?: string;
-  serviceHistoryLink?: string;
-}) {
-  const v = normalizeVin(params.vin);
+    vin: string;
+    customerName: string;
+    customerPhone: string;
+    customerAddress?: string;
+    customerZip?: string;
+    vehicle: Vehicle | null;
+    notes?: string;
+    status?: string;
+    serviceHistoryLink?: string;
+  }) {
+    const v = normalizeVin(params.vin);
 
-  // hard stop for invalid VINs
-  if (!isValidVin(v)) {
-    console.warn("Skipping legacy write for invalid VIN:", v);
-    return;
+    if (!isValidVin(v)) {
+      console.warn("Skipping legacy write for invalid VIN:", v);
+      return;
+    }
+
+    const customer_id = phoneToLegacyCustomerId(params.customerPhone);
+
+    const address = (params.customerAddress || "").trim() || null;
+    const zip_code = normalizeZipToBigint(params.customerZip || "");
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload: any = {
+      vin: v,
+      customer_id,
+      customer_name: (params.customerName || "").trim() || null,
+      phone_number: (params.customerPhone || "").trim() || null,
+      address,
+      zip_code,
+      status: params.status ?? "active",
+      notes: (params.notes || "").trim() || null,
+      make: params.vehicle?.make ?? null,
+      model: params.vehicle?.model ?? null,
+      year: params.vehicle?.year ?? null,
+    };
+
+    const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
+    if (link) payload.service_history_link = link;
+
+    // manual update-or-insert by VIN
+    const { data: existing, error: findErr } = await supabase
+      .from("customer_data_legacy")
+      .select("id")
+      .eq("vin", v)
+      .limit(1)
+      .maybeSingle();
+
+    if (findErr) throw findErr;
+
+    if (existing?.id) {
+      const { error: updErr } = await supabase.from("customer_data_legacy").update(payload).eq("id", existing.id);
+      if (updErr) throw updErr;
+    } else {
+      const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
+      if (insErr) throw insErr;
+    }
   }
-
-  const customer_id = phoneToLegacyCustomerId(params.customerPhone);
-
-  const address = (params.customerAddress ?? "").trim() || null;
-  const zip_code = zipToBigIntOrNull(params.customerZip);
-
-  const link = normalizeDriveFolderLink(params.serviceHistoryLink || "") || null;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const payload: any = {
-    vin: v,
-    customer_id,
-    customer_name: (params.customerName || "").trim() || null,
-    phone_number: (params.customerPhone || "").trim() || null,
-    address,
-    zip_code,
-    status: params.status ?? "active",
-    notes: (params.notes || "").trim() || null,
-    make: params.vehicle?.make ?? null,
-    model: params.vehicle?.model ?? null,
-    year: params.vehicle?.year ?? null,
-    service_history_link: link,
-  };
-
-  // Manual upsert (no unique constraint needed)
-  const { data: existing, error: findErr } = await supabase
-    .from("customer_data_legacy")
-    .select("id")
-    .eq("vin", v)
-    .limit(1)
-    .maybeSingle();
-
-  if (findErr) throw findErr;
-
-  if (existing?.id) {
-    const { error: updErr } = await supabase.from("customer_data_legacy").update(payload).eq("id", existing.id);
-    if (updErr) throw updErr;
-  } else {
-    const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
-    if (insErr) throw insErr;
-  }
-}
 
   async function autofillLegacyLinkForVin(vin17: string) {
     const v = normalizeVin(vin17);
@@ -382,13 +368,12 @@ function zipToBigIntOrNull(raw: string | null | undefined): number | null {
 
     if (error) return;
 
-    const cust = (data as any)?.customers as Customer | undefined;
+    const cust = (data as any)?.customers as any;
     if (!cust) return;
 
     if (!customerName.trim()) setCustomerName(cust.full_name ?? "");
     if (!customerPhone.trim() && cust.phone) setCustomerPhone(cust.phone);
 
-    // only autofill if empty so you can override onsite
     if (!customerAddress.trim() && cust.address) setCustomerAddress(String(cust.address));
     if (!customerZip.trim() && cust.zip_code) setCustomerZip(String(cust.zip_code));
   };
@@ -554,7 +539,6 @@ function zipToBigIntOrNull(raw: string | null | undefined): number | null {
 
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
-
     if (!isValidVin(v)) throw new Error("Invalid VIN (must be 17 chars, no I/O/Q).");
 
     let vehicleId: string;
@@ -622,7 +606,6 @@ function zipToBigIntOrNull(raw: string | null | undefined): number | null {
     const phoneNorm = normalizePhone(payload.customer_phone);
     let customerId: string;
 
-    // Normalized, clean values
     const typedName = payload.customer_name.trim();
     const typedPhone = payload.customer_phone.trim();
     const typedAddress = payload.customer_address.trim() || null;
@@ -644,8 +627,8 @@ function zipToBigIntOrNull(raw: string | null | undefined): number | null {
         const shouldUpdate =
           (typedName && typedName !== (existingCust.data.full_name ?? "")) ||
           (typedPhone && typedPhone !== (existingCust.data.phone ?? "")) ||
-          (typedAddress && typedAddress !== ((existingCust.data as any).address ?? null)) ||
-          (typedZip && typedZip !== ((existingCust.data as any).zip_code ?? null));
+          (typedAddress && typedAddress !== (existingCust.data.address ?? null)) ||
+          (typedZip && typedZip !== (existingCust.data.zip_code ?? null));
 
         if (shouldUpdate) {
           await supabase
@@ -721,24 +704,23 @@ function zipToBigIntOrNull(raw: string | null | undefined): number | null {
     const jsRes = await supabase.from("job_services").insert(serviceRows);
     if (jsRes.error) throw jsRes.error;
 
-    // ✅ legacy write includes address + zip
-    // ✅ non-blocking so UI always confirms + resets even if legacy has issues
+    /** ✅ CRITICAL: legacy write cannot block save */
     try {
-  await upsertLegacyByVin({
-    vin: v,
-    customerName: payload.customer_name,
-    customerPhone: payload.customer_phone,
-    customerAddress: payload.customer_address,
-    customerZip: payload.customer_zip,
-    vehicle: vehicleForDecode,
-    notes: payload.notes,
-    status: "active",
-    serviceHistoryLink: link,
-  });
-} catch (e) {
-  console.error("Legacy sync failed (job still saved):", e);
-  // Do not throw.
-}
+      await upsertLegacyByVin({
+        vin: v,
+        customerName: payload.customer_name,
+        customerPhone: payload.customer_phone,
+        customerAddress: payload.customer_address,
+        customerZip: payload.customer_zip,
+        vehicle: vehicleForDecode,
+        notes: payload.notes,
+        status: "active",
+        serviceHistoryLink: link,
+      });
+    } catch (e) {
+      console.error("Legacy sync failed (job still saved):", e);
+      // do not throw
+    }
 
     return jobRes.data.id as string;
   };
