@@ -281,61 +281,77 @@ function NewJobInner() {
 
   // ✅ FIXED: no ON CONFLICT requirement; update-or-insert by vin
   async function upsertLegacyByVin(params: {
-    vin: string;
-    customerName: string;
-    customerPhone: string;
-    customerAddress?: string;
-    customerZip?: string;
-    vehicle: Vehicle | null;
-    notes?: string;
-    status?: string;
-    serviceHistoryLink?: string;
-  }) {
-    const v = normalizeVin(params.vin);
+  vin: string;
+  customerName: string;
+  customerPhone: string;
+  customerAddress?: string;
+  customerZip?: string;
+  vehicle: Vehicle | null;
+  notes?: string;
+  status?: string;
+  serviceHistoryLink?: string;
+}) {
+  const v = normalizeVin(params.vin);
 
-    // hard stop for invalid VINs (prevents garbage in legacy)
-    if (!isValidVin(v)) {
-      console.warn("Skipping legacy write for invalid VIN:", v);
-      return;
-    }
-
-    const customer_id = phoneToLegacyCustomerId(params.customerPhone);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const payload: any = {
-      vin: v,
-      customer_id,
-      customer_name: (params.customerName || "").trim() || null,
-      phone_number: (params.customerPhone || "").trim() || null,
-      address: (params.customerAddress || "").trim() || null,
-      zip_code: (params.customerZip || "").trim() || null,
-      status: params.status ?? "active",
-      notes: (params.notes || "").trim() || null,
-      make: params.vehicle?.make ?? null,
-      model: params.vehicle?.model ?? null,
-      year: params.vehicle?.year ?? null,
-    };
-
-    const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
-    if (link) payload.service_history_link = link;
-
-    const { data: existing, error: findErr } = await supabase
-      .from("customer_data_legacy")
-      .select("id, vin")
-      .eq("vin", v)
-      .limit(1)
-      .maybeSingle();
-
-    if (findErr) throw findErr;
-
-    if (existing?.id) {
-      const { error: updErr } = await supabase.from("customer_data_legacy").update(payload).eq("id", existing.id);
-      if (updErr) throw updErr;
-    } else {
-      const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
-      if (insErr) throw insErr;
-    }
+  if (!isValidVin(v)) {
+    console.warn("Skipping legacy write for invalid VIN:", v);
+    return;
   }
+
+  const customer_id = phoneToLegacyCustomerId(params.customerPhone);
+
+  const typedAddress = (params.customerAddress || "").trim() || null;
+  const typedZip = (params.customerZip || "").trim() || null;
+
+  // Write to multiple possible legacy column names so Secure always finds it
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const payload: any = {
+    vin: v,
+    customer_id,
+    status: params.status ?? "active",
+    notes: (params.notes || "").trim() || null,
+
+    // common names
+    customer_name: (params.customerName || "").trim() || null,
+    phone_number: (params.customerPhone || "").trim() || null,
+    address: typedAddress,
+    zip_code: typedZip,
+
+    // alternate names (in case Secure uses these)
+    customer_phone: (params.customerPhone || "").trim() || null,
+    customer_address: typedAddress,
+    customer_zip: typedZip,
+    zip: typedZip,
+    postal_code: typedZip,
+
+    make: params.vehicle?.make ?? null,
+    model: params.vehicle?.model ?? null,
+    year: params.vehicle?.year ?? null,
+  };
+
+  const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
+  if (link) {
+    payload.service_history_link = link;
+  }
+
+  // Update-or-insert by VIN (no unique constraint required)
+  const { data: existing, error: findErr } = await supabase
+    .from("customer_data_legacy")
+    .select("id, vin")
+    .eq("vin", v)
+    .limit(1)
+    .maybeSingle();
+
+  if (findErr) throw findErr;
+
+  if (existing?.id) {
+    const { error: updErr } = await supabase.from("customer_data_legacy").update(payload).eq("id", existing.id);
+    if (updErr) throw updErr;
+  } else {
+    const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
+    if (insErr) throw insErr;
+  }
+}
 
   async function autofillLegacyLinkForVin(vin17: string) {
     const v = normalizeVin(vin17);
