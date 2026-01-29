@@ -279,6 +279,20 @@ function NewJobInner() {
     return s;
   }
 
+function zipToBigIntOrNull(raw: string | null | undefined): number | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const digits = s.replace(/\D/g, "");
+  if (!digits) return null;
+
+  // Keep 5 or 9 digits if someone types ZIP+4
+  const normalized = digits.length > 9 ? digits.slice(0, 9) : digits;
+
+  const asNum = Number(normalized);
+  if (!Number.isFinite(asNum)) return null;
+  return asNum;
+}
+
   // ✅ FIXED: no ON CONFLICT requirement; update-or-insert by vin
   async function upsertLegacyByVin(params: {
   vin: string;
@@ -293,6 +307,7 @@ function NewJobInner() {
 }) {
   const v = normalizeVin(params.vin);
 
+  // hard stop for invalid VINs
   if (!isValidVin(v)) {
     console.warn("Skipping legacy write for invalid VIN:", v);
     return;
@@ -300,44 +315,31 @@ function NewJobInner() {
 
   const customer_id = phoneToLegacyCustomerId(params.customerPhone);
 
-  const typedAddress = (params.customerAddress || "").trim() || null;
-  const typedZip = (params.customerZip || "").trim() || null;
+  const address = (params.customerAddress ?? "").trim() || null;
+  const zip_code = zipToBigIntOrNull(params.customerZip);
 
-  // Write to multiple possible legacy column names so Secure always finds it
+  const link = normalizeDriveFolderLink(params.serviceHistoryLink || "") || null;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const payload: any = {
     vin: v,
     customer_id,
-    status: params.status ?? "active",
-    notes: (params.notes || "").trim() || null,
-
-    // common names
     customer_name: (params.customerName || "").trim() || null,
     phone_number: (params.customerPhone || "").trim() || null,
-    address: typedAddress,
-    zip_code: typedZip,
-
-    // alternate names (in case Secure uses these)
-    customer_phone: (params.customerPhone || "").trim() || null,
-    customer_address: typedAddress,
-    customer_zip: typedZip,
-    zip: typedZip,
-    postal_code: typedZip,
-
+    address,
+    zip_code,
+    status: params.status ?? "active",
+    notes: (params.notes || "").trim() || null,
     make: params.vehicle?.make ?? null,
     model: params.vehicle?.model ?? null,
     year: params.vehicle?.year ?? null,
+    service_history_link: link,
   };
 
-  const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
-  if (link) {
-    payload.service_history_link = link;
-  }
-
-  // Update-or-insert by VIN (no unique constraint required)
+  // Manual upsert (no unique constraint needed)
   const { data: existing, error: findErr } = await supabase
     .from("customer_data_legacy")
-    .select("id, vin")
+    .select("id")
     .eq("vin", v)
     .limit(1)
     .maybeSingle();
@@ -722,20 +724,21 @@ function NewJobInner() {
     // ✅ legacy write includes address + zip
     // ✅ non-blocking so UI always confirms + resets even if legacy has issues
     try {
-      await upsertLegacyByVin({
-        vin: v,
-        customerName: payload.customer_name,
-        customerPhone: payload.customer_phone,
-        customerAddress: payload.customer_address,
-        customerZip: payload.customer_zip,
-        vehicle: vehicleForDecode,
-        notes: payload.notes,
-        status: "active",
-        serviceHistoryLink: link,
-      });
-    } catch (e) {
-      console.error("Legacy write failed (non-blocking):", e);
-    }
+  await upsertLegacyByVin({
+    vin: v,
+    customerName: payload.customer_name,
+    customerPhone: payload.customer_phone,
+    customerAddress: payload.customer_address,
+    customerZip: payload.customer_zip,
+    vehicle: vehicleForDecode,
+    notes: payload.notes,
+    status: "active",
+    serviceHistoryLink: link,
+  });
+} catch (e) {
+  console.error("Legacy sync failed (job still saved):", e);
+  // Do not throw.
+}
 
     return jobRes.data.id as string;
   };
