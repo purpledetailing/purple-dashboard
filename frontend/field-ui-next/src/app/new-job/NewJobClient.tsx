@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Protected } from "@/components/Protected";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabaseClient";
@@ -47,6 +47,12 @@ type PendingJob = {
   total_charged: string;
   notes: string;
   performed_at: string;
+};
+
+type ZipRow = {
+  zip: string;
+  city: string;
+  state: string;
 };
 
 const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
@@ -150,14 +156,40 @@ function bumpAttempt(id: string) {
   setQueue(q);
 }
 
-/** zip_code bigint helper */
+/** zip_code bigint helper (legacy table uses bigint) */
 function normalizeZipToBigint(raw: string): number | null {
   const digits = (raw || "").trim().replace(/\D/g, "");
   if (!digits) return null;
-  // zip_code is bigint → store numeric
   const n = Number(digits);
   if (!Number.isFinite(n)) return null;
   return n;
+}
+
+/** customers.zip_code in your app is stored as text in this flow — keep it clean */
+function normalizeZipString(raw: string): string {
+  const digits = (raw || "").replace(/\D/g, "");
+  return digits.slice(0, 10); // allows ZIP+4 if you ever want, still fine
+}
+
+/** Extract city/state from a loose address string:
+ * "123 Main St, Wake Forest, NC 27587" -> { city:"Wake Forest", state:"NC" }
+ */
+function extractCityState(address: string): { city: string | null; state: string | null } {
+  const a = (address || "").trim();
+  if (!a) return { city: null, state: null };
+
+  const parts = a.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return { city: null, state: null };
+
+  // last part usually "NC 27587" or "NC"
+  const last = parts[parts.length - 1];
+  const stateMatch = last.match(/\b([A-Z]{2})\b/);
+  const state = stateMatch?.[1] ?? null;
+
+  // city usually the part before last
+  const city = parts[parts.length - 2] ?? null;
+
+  return { city: city || null, state };
 }
 
 export default function NewJobClient() {
@@ -193,6 +225,9 @@ function NewJobInner() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerZip, setCustomerZip] = useState("");
+  const [zipSuggestions, setZipSuggestions] = useState<string[]>([]);
+  const zipLookupTimer = useRef<number | null>(null);
+
   const [serviceHistoryLink, setServiceHistoryLink] = useState("");
 
   const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">("full");
@@ -279,6 +314,57 @@ function NewJobInner() {
     if (!/^https?:\/\//i.test(s)) return s;
     return s;
   }
+
+  /** ZIP lookup from your table (NO Google) */
+  async function lookupZipSuggestionsFromAddress(addr: string) {
+    if (!isOnline()) return;
+
+    const { city, state } = extractCityState(addr);
+    if (!city || !state) return;
+
+    // Only do NC to keep it simple (your market)
+    if (state.toUpperCase() !== "NC") return;
+
+    const { data, error } = await supabase
+      .from("zip_codes")
+      .select("zip")
+      .eq("state", "NC")
+      .ilike("city", city) // case-insensitive match
+      .order("zip", { ascending: true })
+      .limit(10);
+
+    if (error) return;
+
+    const zips = (data ?? []).map((r: any) => String(r.zip)).filter(Boolean);
+    setZipSuggestions(zips);
+
+    // If customerZip is empty and we only have 1 match, auto-fill it
+    const currentZipClean = normalizeZipString(customerZip);
+    if (!currentZipClean && zips.length === 1) {
+      setCustomerZip(zips[0]);
+    }
+  }
+
+  /** Debounced address -> zip suggestions */
+  useEffect(() => {
+    if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
+
+    // If no address, clear suggestions
+    if (!customerAddress.trim()) {
+      setZipSuggestions([]);
+      return;
+    }
+
+    // Debounce 450ms
+    zipLookupTimer.current = window.setTimeout(() => {
+      lookupZipSuggestionsFromAddress(customerAddress);
+    }, 450);
+
+    return () => {
+      if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerAddress]);
 
   /** ✅ FIXED legacy writer: no ON CONFLICT + zip_code bigint */
   async function upsertLegacyByVin(params: {
@@ -520,6 +606,7 @@ function NewJobInner() {
     setCustomerPhone("");
     setCustomerAddress("");
     setCustomerZip("");
+    setZipSuggestions([]);
     setServiceHistoryLink("");
 
     setServiceType("full");
@@ -608,8 +695,9 @@ function NewJobInner() {
 
     const typedName = payload.customer_name.trim();
     const typedPhone = payload.customer_phone.trim();
+
     const typedAddress = payload.customer_address.trim() || null;
-    const typedZip = payload.customer_zip.trim() || null;
+    const typedZip = normalizeZipString(payload.customer_zip.trim()) || null;
 
     if (phoneNorm) {
       const existingCust = await supabase
@@ -801,7 +889,7 @@ function NewJobInner() {
       customer_name: customerName,
       customer_phone: customerPhone,
       customer_address: customerAddress,
-      customer_zip: customerZip,
+      customer_zip: normalizeZipString(customerZip),
       service_history_link: serviceHistoryLink,
       service_type: serviceType,
       selected_package_id: selectedPackageId,
@@ -1056,19 +1144,40 @@ function NewJobInner() {
                   <SchemaInput
                     value={customerAddress}
                     onChange={(e) => setCustomerAddress(e.target.value)}
-                    placeholder="123 Main St, Raleigh, NC"
+                    placeholder="123 Main St, Wake Forest, NC"
                     inputMode="text"
                   />
+                  <div className="mt-2 text-[11px] text-slate-300/70">
+                    Tip: include “City, NC” at the end to trigger ZIP suggestions.
+                  </div>
                 </div>
 
                 <div className="mt-4">
                   <SchemaLabel>ZIP (optional)</SchemaLabel>
                   <SchemaInput
                     value={customerZip}
-                    onChange={(e) => setCustomerZip(e.target.value)}
-                    placeholder="27604"
+                    onChange={(e) => setCustomerZip(normalizeZipString(e.target.value))}
+                    placeholder="27587"
                     inputMode="numeric"
                   />
+
+                  {zipSuggestions.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {zipSuggestions.slice(0, 8).map((z) => (
+                        <button
+                          key={z}
+                          type="button"
+                          onClick={() => {
+                            setCustomerZip(z);
+                            setZipSuggestions([]);
+                          }}
+                          className="rounded-full px-3 py-1.5 text-[11px] font-semibold bg-white/5 ring-1 ring-white/10 hover:ring-white/20 transition touch-manipulation"
+                        >
+                          {z}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4">
