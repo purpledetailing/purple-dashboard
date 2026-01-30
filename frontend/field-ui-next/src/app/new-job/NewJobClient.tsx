@@ -1160,7 +1160,7 @@ function NewJobInner() {
                 <div className="flex gap-2">
                   <SchemaInput
                     value={vin}
-                    onChange={(e) => setVin(e.target.value)}
+                    onChange={(e) => setVin(toCaps(e.target.value))}
                     placeholder="17-character VIN"
                     inputMode="text"
                     autoCapitalize="characters"
@@ -1188,10 +1188,10 @@ function NewJobInner() {
                         placeholder="Year"
                         inputMode="numeric"
                       />
-                      <SchemaInput value={manualMake} onChange={(e) => setManualMake(e.target.value)} placeholder="Make" />
+                      <SchemaInput value={manualMake} onChange={(e) => setManualMake(capsClean(e.target.value))} placeholder="Make" />
                       <SchemaInput
                         value={manualModel}
-                        onChange={(e) => setManualModel(e.target.value)}
+                        onChange={(e) => setManualModel(capsClean(e.target.value))}
                         placeholder="Model"
                       />
                       <div className="col-span-3">
