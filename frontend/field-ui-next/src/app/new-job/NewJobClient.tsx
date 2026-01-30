@@ -222,6 +222,11 @@ function NewJobInner() {
   const [vinStatus, setVinStatus] = useState<string>("");
   const [vinBusy, setVinBusy] = useState(false);
 
+  // ✅ Manual fallback for Year/Make/Model (only shown when needed)
+  const [manualYear, setManualYear] = useState("");
+  const [manualMake, setManualMake] = useState("");
+  const [manualModel, setManualModel] = useState("");
+
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
@@ -301,6 +306,9 @@ function NewJobInner() {
     if (!veh) return true;
     return !veh.year || !veh.make || !veh.model;
   };
+
+  // ✅ Gate: year/make/model must exist (online)
+  const hasYMM = (veh: Vehicle | null) => !!(veh?.year && veh?.make && veh?.model);
 
   function phoneToLegacyCustomerId(rawPhone: string) {
     const d = normalizePhone(rawPhone || "");
@@ -511,7 +519,7 @@ function NewJobInner() {
         .from("vehicles")
         .update(patch)
         .eq("id", vehicleId)
-        .select("id,vin,year,make,model,trim")
+        .select("id,vin,year,make,model,trim,service_history_link")
         .single();
 
       if (error) {
@@ -520,9 +528,53 @@ function NewJobInner() {
       }
 
       setVehicle(data as Vehicle);
-      setVinStatus("Vehicle identified ✅");
+
+      // ✅ Gate enforcement: if still missing YMM, require manual entry
+      if (!hasYMM(data as Vehicle)) {
+        setVinStatus("Identification incomplete — enter Year/Make/Model below.");
+      } else {
+        setVinStatus("Vehicle identified ✅");
+      }
     } catch {
       setVinStatus("Identify error.");
+    } finally {
+      setVinBusy(false);
+    }
+  };
+
+  // ✅ Manual save (when decode fails)
+  const saveManualYMM = async () => {
+    if (!vehicle?.id) return;
+
+    const y = Number((manualYear || "").replace(/\D/g, ""));
+    const mk = (manualMake || "").trim();
+    const md = (manualModel || "").trim();
+
+    if (!y || y < 1900 || y > new Date().getFullYear() + 1) {
+      setVinStatus("Enter a valid year (e.g. 2019).");
+      return;
+    }
+    if (!mk || !md) {
+      setVinStatus("Enter Make and Model.");
+      return;
+    }
+
+    setVinBusy(true);
+    try {
+      const { data, error } = await supabase
+        .from("vehicles")
+        .update({ year: y, make: mk, model: md })
+        .eq("id", vehicle.id)
+        .select("id,vin,year,make,model,trim,service_history_link")
+        .single();
+
+      if (error) {
+        setVinStatus(error.message);
+        return;
+      }
+
+      setVehicle(data as Vehicle);
+      setVinStatus("Vehicle details saved ✅");
     } finally {
       setVinBusy(false);
     }
@@ -534,6 +586,11 @@ function NewJobInner() {
     setMsg(null);
     setVinStatus("");
     setVehicle(null);
+
+    // reset manual fields each lookup
+    setManualYear("");
+    setManualMake("");
+    setManualModel("");
 
     const v = normalizeVin(vin);
 
@@ -557,63 +614,59 @@ function NewJobInner() {
 
     setVinBusy(true);
     try {
-      const { data, error } = await supabase
+      // 1) ensure we have a vehicles row
+      const found = await supabase
         .from("vehicles")
         .select("id,vin,year,make,model,trim,service_history_link")
         .eq("vin", v)
         .limit(1)
         .maybeSingle();
 
-      if (error) {
-        setMsg(error.message);
-        // fallback to legacy even if vehicles query fails
+      if (found.error) {
+        setMsg(found.error.message);
         await autofillCustomerFromLegacy(v);
         return;
       }
 
-      let veh: Vehicle | null = (data as Vehicle) ?? null;
+      let veh: Vehicle | null = (found.data as Vehicle) ?? null;
 
       if (!veh) {
-        // IMPORTANT: do not block the flow if vehicles insert fails
-        setVinStatus("Vehicle not found in vehicles table. Continuing with legacy…");
-        await autofillCustomerFromLegacy(v);
-        await autofillLegacyLinkForVin(v);
+        setVinStatus("Creating vehicle record…");
+        const created = await supabase
+          .from("vehicles")
+          .insert({ vin: v })
+          .select("id,vin,year,make,model,trim,service_history_link")
+          .single();
 
-        setStep(2);
-        setTimeout(() => {
-          const el = document.querySelector<HTMLInputElement>('input[name="customerName"]');
-          el?.focus();
-        }, 50);
-        return;
+        if (created.error) {
+          setVinStatus("Could not create vehicle record. Try again.");
+          return;
+        }
+
+        veh = created.data as Vehicle;
       }
 
       setVehicle(veh);
-      setVinStatus("VIN linked ✅");
 
-      // Fill from recent job if available
+      // 2) always try customer autofill in parallel (doesn't affect gating)
       try {
         await autofillCustomerFromVehicle(veh.id);
       } catch {
         // ignore
       }
-
-      // Always also try legacy fallback (covers your recurring issue)
       await autofillCustomerFromLegacy(v);
       await autofillLegacyLinkForVin(v);
 
+      // 3) REQUIRED: make sure Y/M/M exists (online) before allowing step 2
       if (needsDecode(veh)) {
-        try {
-          await decodeVinAndUpdateVehicle(veh.id, v);
-        } catch {
-          // ignore
-        }
+        await decodeVinAndUpdateVehicle(veh.id, v);
+        // decodeVinAndUpdateVehicle updates vehicle state; fall through
+      } else {
+        setVinStatus("VIN linked ✅");
       }
 
-      setStep(2);
-      setTimeout(() => {
-        const el = document.querySelector<HTMLInputElement>('input[name="customerName"]');
-        el?.focus();
-      }, 50);
+      // NOTE: we do NOT auto-advance anymore unless YMM is present
+      // User can press Continue once YMM exists
     } finally {
       setVinBusy(false);
     }
@@ -624,6 +677,10 @@ function NewJobInner() {
     setVin("");
     setVehicle(null);
     setVinStatus("");
+
+    setManualYear("");
+    setManualMake("");
+    setManualModel("");
 
     setCustomerName("");
     setCustomerPhone("");
@@ -643,7 +700,13 @@ function NewJobInner() {
     if (packages[0]?.id) setSelectedPackageId(packages[0].id);
   };
 
-  const canGoStep2 = () => isValidVin(normalizeVin(vin));
+  // ✅ Step gating
+  const canGoStep2 = () => {
+    const v = normalizeVin(vin);
+    if (!isValidVin(v)) return false;
+    if (!online) return true; // offline allowed
+    return hasYMM(vehicle);
+  };
   const canGoStep3 = () => customerName.trim().length > 0;
   const canGoStep4 = () => !!selectedPackageId;
 
@@ -654,22 +717,15 @@ function NewJobInner() {
 
     const link = normalizeDriveFolderLink(payload.service_history_link || "");
 
-    // 1) REQUIRED: write to legacy FIRST (this is the fix)
+    // 1) REQUIRED: write to legacy FIRST
     await upsertLegacyByVin({
       vin: v,
       customerName: payload.customer_name,
       customerPhone: payload.customer_phone,
       customerAddress: payload.customer_address,
       customerZip: payload.customer_zip,
-      vehicle: {
-        id: "legacy",
-        vin: v,
-        year: null,
-        make: null,
-        model: null,
-        trim: null,
-        service_history_link: link || null,
-      },
+      // ✅ include best known vehicle details if present in state (else nulls)
+      vehicle: vehicle?.vin === v ? vehicle : null,
       notes: payload.notes,
       status: "active",
       serviceHistoryLink: link,
@@ -819,7 +875,6 @@ function NewJobInner() {
       console.error("Normalized mirror failed (legacy saved):", e);
     }
 
-    // Return stable id (VIN) since jobs may not exist
     return v;
   };
 
@@ -889,6 +944,10 @@ function NewJobInner() {
 
     const v = normalizeVin(vin);
     if (!isValidVin(v)) return setMsg("VIN must be 17 characters (no I, O, Q).");
+
+    // ✅ extra safety: enforce YMM online before saving too
+    if (online && !hasYMM(vehicle)) return setMsg("Vehicle Year/Make/Model is required before saving.");
+
     if (!customerName.trim()) return setMsg("Customer name is required.");
     if (!selectedPackageId) return setMsg("Select a package.");
     const totalCents = dollarsToCents(totalCharged);
@@ -1102,6 +1161,34 @@ function NewJobInner() {
                   {vinStatus ? vinStatus : "Tip: Lookup links VIN and identifies vehicle (online)."}
                 </div>
 
+                {/* ✅ Manual Y/M/M fallback if online + vehicle exists but still missing */}
+                {online && vehicle && !hasYMM(vehicle) && (
+                  <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-3">
+                    <div className="text-[11px] font-semibold text-slate-200/90 mb-2">
+                      Year/Make/Model required (manual fallback)
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <SchemaInput
+                        value={manualYear}
+                        onChange={(e) => setManualYear(e.target.value)}
+                        placeholder="Year"
+                        inputMode="numeric"
+                      />
+                      <SchemaInput value={manualMake} onChange={(e) => setManualMake(e.target.value)} placeholder="Make" />
+                      <SchemaInput
+                        value={manualModel}
+                        onChange={(e) => setManualModel(e.target.value)}
+                        placeholder="Model"
+                      />
+                      <div className="col-span-3">
+                        <SchemaButton onClick={saveManualYMM} disabled={vinBusy} variant="primary">
+                          {vinBusy ? "Saving…" : "Save vehicle details"}
+                        </SchemaButton>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-3 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-white/90 truncate">
@@ -1110,6 +1197,11 @@ function NewJobInner() {
                     <div className="text-xs text-slate-300/70">
                       {vehicle ? maskVin(vehicle.vin) : normalizeVin(vin).length ? maskVin(vin) : "Enter VIN to begin"}
                     </div>
+                    {online && isValidVin(normalizeVin(vin)) && !hasYMM(vehicle) && (
+                      <div className="mt-1 text-[11px] text-amber-200/80">
+                        You must capture Year/Make/Model before continuing.
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -1121,7 +1213,7 @@ function NewJobInner() {
                       canGoStep2() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
                     ].join(" ")}
                   >
-                    Continue →
+                    {online && !hasYMM(vehicle) ? "Identify required" : "Continue →"}
                   </button>
                 </div>
               </SchemaCard>
