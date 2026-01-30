@@ -39,6 +39,7 @@ if not PUBLIC_BASE_URL:
 USE_SUPABASE = os.environ.get("USE_SUPABASE", "1").strip() == "1"
 SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
+LEGACY_TABLE = os.environ.get("LEGACY_TABLE", "customer_legacy_data").strip()
 
 def supabase_headers():
     return {
@@ -182,17 +183,14 @@ def sb_vehicle_by_vin(vin: str):
     return rows[0] if rows else None
 
 def sb_legacy_by_vin(vin: str):
-    """
-    public.customer_data_legacy has column: vin (text)
-    Use eq (exact match).
-    """
     vin = normalize_vin(vin)
-    rows = sb_get("customer_data_legacy", {
-        "select": "id,customer_id,customer_name,status,phone_number,email,address,zip_code,vehicle_nickname,vin,make,model,year,license_plate_optional,odometer_at_last_service,lease_or_owned,primary_use,notes,service_history_link",
+    rows = sb_get(LEGACY_TABLE, {
+        "select": "*",
         "vin": f"eq.{vin}",
         "limit": "1",
     })
     return rows[0] if rows else None
+
 
 def sb_latest_job_for_vehicle(vehicle_id: str):
     """
