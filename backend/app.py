@@ -39,7 +39,7 @@ if not PUBLIC_BASE_URL:
 USE_SUPABASE = os.environ.get("USE_SUPABASE", "1").strip() == "1"
 SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
-LEGACY_TABLE = os.environ.get("LEGACY_TABLE", "customer_legacy_data").strip()
+LEGACY_TABLE = os.environ.get("LEGACY_TABLE", "customer_data_legacy").strip()
 
 def supabase_headers():
     return {
