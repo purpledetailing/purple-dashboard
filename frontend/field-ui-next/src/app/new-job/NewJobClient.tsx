@@ -244,6 +244,7 @@ function NewJobInner() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [customerZip, setCustomerZip] = useState("");
   const [zipSuggestions, setZipSuggestions] = useState<string[]>([]);
   const zipLookupTimer = useRef<number | null>(null);
@@ -387,16 +388,18 @@ function NewJobInner() {
 
   /** Legacy writer (reliable) */
   async function upsertLegacyByVin(params: {
-    vin: string;
-    customerName: string;
-    customerPhone: string;
-    customerAddress?: string;
-    customerZip?: string;
-    vehicle: Vehicle | null;
-    notes?: string;
-    status?: string;
-    serviceHistoryLink?: string;
-  }) {
+  vin: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string; // ✅ NEW
+  customerAddress?: string;
+  customerZip?: string;
+  vehicle: Vehicle | null;
+  notes?: string;
+  status?: string;
+  serviceHistoryLink?: string;
+}) {
+
     const v = normalizeVin(params.vin);
 
     if (!isValidVin(v)) {
@@ -411,18 +414,20 @@ function NewJobInner() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
-      vin: v,
-      customer_id,
-      customer_name: (params.customerName || "").trim() || null,
-      phone_number: (params.customerPhone || "").trim() || null,
-      address,
-      zip_code,
-      status: params.status ?? "active",
-      notes: (params.notes || "").trim() || null,
-      make: params.vehicle?.make ?? null,
-      model: params.vehicle?.model ?? null,
-      year: params.vehicle?.year ?? null,
-    };
+  vin: v,
+  customer_id,
+  customer_name: normalizeUpper(params.customerName) || null,
+  phone_number: (params.customerPhone || "").trim() || null,
+  email: normalizeEmail(params.customerEmail || "") || null, // ✅ NEW
+  address: normalizeUpper(params.customerAddress || "") || null,
+  zip_code,
+  status: params.status ?? "active",
+  notes: normalizeUpper(params.notes || "") || null,
+  make: params.vehicle?.make ?? null,
+  model: params.vehicle?.model ?? null,
+  year: params.vehicle?.year ?? null,
+};
+
 
     const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
     if (link) payload.service_history_link = link;
@@ -469,7 +474,7 @@ function NewJobInner() {
 
     const { data, error } = await supabase
       .from("customer_data_legacy")
-      .select("customer_name, phone_number, address, zip_code, service_history_link")
+      .select("customer_name, phone_number, email, address, zip_code, service_history_link")
       .eq("vin", v)
       .limit(1)
       .maybeSingle();
@@ -478,6 +483,7 @@ function NewJobInner() {
 
     if (!customerName.trim() && (data as any).customer_name) setCustomerName((data as any).customer_name);
     if (!customerPhone.trim() && (data as any).phone_number) setCustomerPhone((data as any).phone_number);
+    if (!customerEmail.trim() && (data as any).email) setCustomerEmail(String((data as any).email));
     if (!customerAddress.trim() && (data as any).address) setCustomerAddress(String((data as any).address));
     if (!customerZip.trim() && (data as any).zip_code != null) setCustomerZip(String((data as any).zip_code));
     if (!serviceHistoryLink.trim() && (data as any).service_history_link) setServiceHistoryLink((data as any).service_history_link);
@@ -967,22 +973,24 @@ function NewJobInner() {
     const totalCents = dollarsToCents(totalCharged);
     if (totalCents <= 0) return setMsg("Total charged must be > $0.");
 
-    const payloadBase = {
+    cconst payloadBase = {
       vin: v,
-      customer_name: customerName,
-      customer_phone: customerPhone,
-      customer_address: customerAddress,
-      customer_zip: normalizeZipString(customerZip),
-      service_history_link: serviceHistoryLink,
-      service_type: serviceType,
-      selected_package_id: selectedPackageId,
-      addon_ids: Object.entries(selectedAddonIds)
-        .filter(([, on]) => on)
-        .map(([id]) => id),
-      total_charged: totalCharged,
-      notes,
-      performed_at: new Date().toISOString(),
-    };
+      customer_name: normalizeUpper(customerName),
+      customer_phone: (customerPhone || "").trim(),
+      customer_email: normalizeEmail(customerEmail), // ✅ NEW
+customer_address: normalizeUpper(customerAddress),
+  customer_zip: normalizeZipString(customerZip),
+  service_history_link: serviceHistoryLink,
+  service_type: serviceType,
+  selected_package_id: selectedPackageId,
+  addon_ids: Object.entries(selectedAddonIds)
+    .filter(([, on]) => on)
+    .map(([id]) => id),
+  total_charged: totalCharged,
+  notes: normalizeUpper(notes),
+  performed_at: new Date().toISOString(),
+};
+
 
     if (!isOnline()) {
       enqueueJob(payloadBase);
@@ -1265,6 +1273,18 @@ function NewJobInner() {
                   />
                   <div className="mt-2 text-[11px] text-slate-300/70">Tip: include “City, NC” at the end to trigger ZIP suggestions.</div>
                 </div>
+                
+                <div className="mt-4">
+                  <SchemaLabel>Email (optional)</SchemaLabel>
+                  <SchemaInput
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(normalizeEmail(e.target.value))}
+                  placeholder="name@email.com"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  />
+                  </div>
 
                 <div className="mt-4">
                   <SchemaLabel>ZIP (optional)</SchemaLabel>
