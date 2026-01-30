@@ -178,15 +178,16 @@ function extractCityState(address: string): { city: string | null; state: string
   const a = (address || "").trim();
   if (!a) return { city: null, state: null };
 
-  const parts = a.split(",").map((p) => p.trim()).filter(Boolean);
+  const parts = a
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
   if (parts.length < 2) return { city: null, state: null };
 
-  // last part usually "NC 27587" or "NC"
   const last = parts[parts.length - 1];
   const stateMatch = last.match(/\b([A-Z]{2})\b/);
   const state = stateMatch?.[1] ?? null;
 
-  // city usually the part before last
   const city = parts[parts.length - 2] ?? null;
 
   return { city: city || null, state };
@@ -322,14 +323,13 @@ function NewJobInner() {
     const { city, state } = extractCityState(addr);
     if (!city || !state) return;
 
-    // Only do NC to keep it simple (your market)
     if (state.toUpperCase() !== "NC") return;
 
     const { data, error } = await supabase
       .from("zip_codes")
       .select("zip")
       .eq("state", "NC")
-      .ilike("city", city) // case-insensitive match
+      .ilike("city", city)
       .order("zip", { ascending: true })
       .limit(10);
 
@@ -338,7 +338,6 @@ function NewJobInner() {
     const zips = (data ?? []).map((r: any) => String(r.zip)).filter(Boolean);
     setZipSuggestions(zips);
 
-    // If customerZip is empty and we only have 1 match, auto-fill it
     const currentZipClean = normalizeZipString(customerZip);
     if (!currentZipClean && zips.length === 1) {
       setCustomerZip(zips[0]);
@@ -349,13 +348,11 @@ function NewJobInner() {
   useEffect(() => {
     if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
 
-    // If no address, clear suggestions
     if (!customerAddress.trim()) {
       setZipSuggestions([]);
       return;
     }
 
-    // Debounce 450ms
     zipLookupTimer.current = window.setTimeout(() => {
       lookupZipSuggestionsFromAddress(customerAddress);
     }, 450);
@@ -366,7 +363,7 @@ function NewJobInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerAddress]);
 
-  /** ✅ FIXED legacy writer: no ON CONFLICT + zip_code bigint */
+  /** Legacy writer (reliable) */
   async function upsertLegacyByVin(params: {
     vin: string;
     customerName: string;
@@ -408,7 +405,7 @@ function NewJobInner() {
     const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
     if (link) payload.service_history_link = link;
 
-    // manual update-or-insert by VIN
+    // update-or-insert by VIN
     const { data: existing, error: findErr } = await supabase
       .from("customer_data_legacy")
       .select("id")
@@ -441,6 +438,27 @@ function NewJobInner() {
     if (error) return;
     const link = (data as any)?.service_history_link as string | undefined;
     if (link && !serviceHistoryLink.trim()) setServiceHistoryLink(link);
+  }
+
+  // NEW: fallback autofill from legacy if jobs/customers didn't save
+  async function autofillCustomerFromLegacy(vin17: string) {
+    const v = normalizeVin(vin17);
+    if (!isValidVin(v)) return;
+
+    const { data, error } = await supabase
+      .from("customer_data_legacy")
+      .select("customer_name, phone_number, address, zip_code, service_history_link")
+      .eq("vin", v)
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return;
+
+    if (!customerName.trim() && (data as any).customer_name) setCustomerName((data as any).customer_name);
+    if (!customerPhone.trim() && (data as any).phone_number) setCustomerPhone((data as any).phone_number);
+    if (!customerAddress.trim() && (data as any).address) setCustomerAddress(String((data as any).address));
+    if (!customerZip.trim() && (data as any).zip_code != null) setCustomerZip(String((data as any).zip_code));
+    if (!serviceHistoryLink.trim() && (data as any).service_history_link) setServiceHistoryLink((data as any).service_history_link);
   }
 
   const autofillCustomerFromVehicle = async (vehicleId: string) => {
@@ -531,6 +549,9 @@ function NewJobInner() {
         const el = document.querySelector<HTMLInputElement>('input[name="customerName"]');
         el?.focus();
       }, 50);
+
+      // even offline, try to show legacy data already saved
+      await autofillCustomerFromLegacy(v);
       return;
     }
 
@@ -545,45 +566,47 @@ function NewJobInner() {
 
       if (error) {
         setMsg(error.message);
+        // fallback to legacy even if vehicles query fails
+        await autofillCustomerFromLegacy(v);
         return;
       }
 
       let veh: Vehicle | null = (data as Vehicle) ?? null;
 
       if (!veh) {
-        setVinStatus("Adding vehicle…");
-        const createdVeh = await supabase
-          .from("vehicles")
-          .insert({ vin: v })
-          .select("id,vin,year,make,model,trim,service_history_link")
-          .single();
+        // IMPORTANT: do not block the flow if vehicles insert fails
+        setVinStatus("Vehicle not found in vehicles table. Continuing with legacy…");
+        await autofillCustomerFromLegacy(v);
+        await autofillLegacyLinkForVin(v);
 
-        if (createdVeh.error) {
-          const retry = await supabase
-            .from("vehicles")
-            .select("id,vin,year,make,model,trim,service_history_link")
-            .eq("vin", v)
-            .limit(1)
-            .single();
-
-          if (retry.error) {
-            setMsg(createdVeh.error.message);
-            return;
-          }
-          veh = retry.data as Vehicle;
-        } else {
-          veh = createdVeh.data as Vehicle;
-        }
+        setStep(2);
+        setTimeout(() => {
+          const el = document.querySelector<HTMLInputElement>('input[name="customerName"]');
+          el?.focus();
+        }, 50);
+        return;
       }
 
       setVehicle(veh);
       setVinStatus("VIN linked ✅");
 
-      await autofillCustomerFromVehicle(veh.id);
+      // Fill from recent job if available
+      try {
+        await autofillCustomerFromVehicle(veh.id);
+      } catch {
+        // ignore
+      }
+
+      // Always also try legacy fallback (covers your recurring issue)
+      await autofillCustomerFromLegacy(v);
       await autofillLegacyLinkForVin(v);
 
       if (needsDecode(veh)) {
-        await decodeVinAndUpdateVehicle(veh.id, v);
+        try {
+          await decodeVinAndUpdateVehicle(veh.id, v);
+        } catch {
+          // ignore
+        }
       }
 
       setStep(2);
@@ -624,101 +647,98 @@ function NewJobInner() {
   const canGoStep3 = () => customerName.trim().length > 0;
   const canGoStep4 = () => !!selectedPackageId;
 
+  // ✅ LEGACY-FIRST SAVE (required), normalized tables are best-effort mirror
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
     if (!isValidVin(v)) throw new Error("Invalid VIN (must be 17 chars, no I/O/Q).");
 
-    let vehicleId: string;
-    let vehicleForDecode: Vehicle | null = null;
-
-    const foundVeh = await supabase
-      .from("vehicles")
-      .select("id,vin,year,make,model,trim,service_history_link")
-      .eq("vin", v)
-      .limit(1)
-      .maybeSingle();
-
-    if (foundVeh.error) throw foundVeh.error;
-
-    if (foundVeh.data?.id) {
-      vehicleId = foundVeh.data.id;
-      vehicleForDecode = foundVeh.data as Vehicle;
-    } else {
-      const createdVeh = await supabase
-        .from("vehicles")
-        .insert({ vin: v })
-        .select("id,vin,year,make,model,trim,service_history_link")
-        .single();
-
-      if (createdVeh.error) {
-        const retry = await supabase
-          .from("vehicles")
-          .select("id,vin,year,make,model,trim,service_history_link")
-          .eq("vin", v)
-          .limit(1)
-          .single();
-
-        if (retry.error) throw createdVeh.error;
-        vehicleId = retry.data.id;
-        vehicleForDecode = retry.data as Vehicle;
-      } else {
-        vehicleId = createdVeh.data.id;
-        vehicleForDecode = createdVeh.data as Vehicle;
-      }
-    }
-
-    if (isOnline() && needsDecode(vehicleForDecode)) {
-      await decodeVinAndUpdateVehicle(vehicleId, v);
-
-      const refreshed = await supabase
-        .from("vehicles")
-        .select("id,vin,year,make,model,trim,service_history_link")
-        .eq("id", vehicleId)
-        .single();
-
-      if (!refreshed.error) {
-        vehicleForDecode = refreshed.data as Vehicle;
-      }
-    }
-
     const link = normalizeDriveFolderLink(payload.service_history_link || "");
-    if (link) {
-      try {
-        await supabase.from("vehicles").update({ service_history_link: link }).eq("id", vehicleId);
-      } catch {
-        // ignore
-      }
-    }
 
-    const phoneNorm = normalizePhone(payload.customer_phone);
-    let customerId: string;
+    // 1) REQUIRED: write to legacy FIRST (this is the fix)
+    await upsertLegacyByVin({
+      vin: v,
+      customerName: payload.customer_name,
+      customerPhone: payload.customer_phone,
+      customerAddress: payload.customer_address,
+      customerZip: payload.customer_zip,
+      vehicle: {
+        id: "legacy",
+        vin: v,
+        year: null,
+        make: null,
+        model: null,
+        trim: null,
+        service_history_link: link || null,
+      },
+      notes: payload.notes,
+      status: "active",
+      serviceHistoryLink: link,
+    });
 
-    const typedName = payload.customer_name.trim();
-    const typedPhone = payload.customer_phone.trim();
+    // 2) OPTIONAL: mirror into normalized tables so other screens still work
+    try {
+      // vehicle best-effort
+      let vehicleId: string | null = null;
+      let vehicleForDecode: Vehicle | null = null;
 
-    const typedAddress = payload.customer_address.trim() || null;
-    const typedZip = normalizeZipString(payload.customer_zip.trim()) || null;
-
-    if (phoneNorm) {
-      const existingCust = await supabase
-        .from("customers")
-        .select("id, full_name, phone, phone_norm, address, zip_code")
-        .eq("phone_norm", phoneNorm)
+      const foundVeh = await supabase
+        .from("vehicles")
+        .select("id,vin,year,make,model,trim,service_history_link")
+        .eq("vin", v)
         .limit(1)
         .maybeSingle();
 
-      if (existingCust.error) throw existingCust.error;
+      if (!foundVeh.error && foundVeh.data?.id) {
+        vehicleId = foundVeh.data.id;
+        vehicleForDecode = foundVeh.data as Vehicle;
+      } else {
+        const createdVeh = await supabase
+          .from("vehicles")
+          .insert({ vin: v })
+          .select("id,vin,year,make,model,trim,service_history_link")
+          .single();
 
-      if (existingCust.data?.id) {
-        customerId = existingCust.data.id;
+        if (!createdVeh.error && createdVeh.data?.id) {
+          vehicleId = createdVeh.data.id;
+          vehicleForDecode = createdVeh.data as Vehicle;
+        }
+      }
 
-        const shouldUpdate =
-          (typedName && typedName !== (existingCust.data.full_name ?? "")) ||
-          (typedPhone && typedPhone !== (existingCust.data.phone ?? "")) ||
-          (typedAddress && typedAddress !== (existingCust.data.address ?? null)) ||
-          (typedZip && typedZip !== (existingCust.data.zip_code ?? null));
+      if (vehicleId && isOnline() && needsDecode(vehicleForDecode)) {
+        try {
+          await decodeVinAndUpdateVehicle(vehicleId, v);
+        } catch {
+          // ignore
+        }
+      }
 
-        if (shouldUpdate) {
+      if (vehicleId && link) {
+        try {
+          await supabase.from("vehicles").update({ service_history_link: link }).eq("id", vehicleId);
+        } catch {
+          // ignore
+        }
+      }
+
+      // customer best-effort
+      const phoneNorm = normalizePhone(payload.customer_phone);
+      const typedName = payload.customer_name.trim();
+      const typedPhone = payload.customer_phone.trim();
+      const typedAddress = payload.customer_address.trim() || null;
+      const typedZip = normalizeZipString(payload.customer_zip.trim()) || null;
+
+      let customerId: string | null = null;
+
+      if (phoneNorm) {
+        const existingCust = await supabase
+          .from("customers")
+          .select("id, full_name, phone, phone_norm, address, zip_code")
+          .eq("phone_norm", phoneNorm)
+          .limit(1)
+          .maybeSingle();
+
+        if (!existingCust.error && existingCust.data?.id) {
+          customerId = existingCust.data.id;
           await supabase
             .from("customers")
             .update({
@@ -729,6 +749,22 @@ function NewJobInner() {
               zip_code: typedZip,
             })
             .eq("id", customerId);
+        } else {
+          const createdCust = await supabase
+            .from("customers")
+            .insert({
+              full_name: typedName,
+              phone: typedPhone || null,
+              phone_norm: phoneNorm,
+              address: typedAddress,
+              zip_code: typedZip,
+            })
+            .select("id")
+            .single();
+
+          if (!createdCust.error && createdCust.data?.id) {
+            customerId = createdCust.data.id;
+          }
         }
       } else {
         const createdCust = await supabase
@@ -736,81 +772,55 @@ function NewJobInner() {
           .insert({
             full_name: typedName,
             phone: typedPhone || null,
-            phone_norm: phoneNorm,
+            phone_norm: null,
             address: typedAddress,
             zip_code: typedZip,
           })
           .select("id")
           .single();
 
-        if (createdCust.error) throw createdCust.error;
-        customerId = createdCust.data.id;
+        if (!createdCust.error && createdCust.data?.id) {
+          customerId = createdCust.data.id;
+        }
       }
-    } else {
-      const createdCust = await supabase
-        .from("customers")
-        .insert({
-          full_name: typedName,
-          phone: typedPhone || null,
-          phone_norm: null,
-          address: typedAddress,
-          zip_code: typedZip,
-        })
-        .select("id")
-        .single();
 
-      if (createdCust.error) throw createdCust.error;
-      customerId = createdCust.data.id;
-    }
+      // job best-effort
+      if (customerId && vehicleId) {
+        const totalCents = dollarsToCents(payload.total_charged);
 
-    const totalCents = dollarsToCents(payload.total_charged);
+        const jobRes = await supabase
+          .from("jobs")
+          .insert({
+            customer_id: customerId,
+            vehicle_id: vehicleId,
+            status: "completed",
+            performed_at: payload.performed_at,
+            notes: payload.notes.trim() || null,
+            total_price_cents: totalCents,
+            currency: "USD",
+          })
+          .select("id")
+          .single();
 
-    const jobRes = await supabase
-      .from("jobs")
-      .insert({
-        customer_id: customerId,
-        vehicle_id: vehicleId,
-        status: "completed",
-        performed_at: payload.performed_at,
-        notes: payload.notes.trim() || null,
-        total_price_cents: totalCents,
-        currency: "USD",
-      })
-      .select("id")
-      .single();
+        if (!jobRes.error && jobRes.data?.id) {
+          const serviceRows = [payload.selected_package_id, ...payload.addon_ids].map((sid) => ({
+            job_id: jobRes.data.id,
+            service_id: sid,
+            quantity: 1,
+            final_price_cents: null,
+            price_note: null,
+          }));
 
-    if (jobRes.error) throw jobRes.error;
-
-    const serviceRows = [payload.selected_package_id, ...payload.addon_ids].map((sid) => ({
-      job_id: jobRes.data.id,
-      service_id: sid,
-      quantity: 1,
-      final_price_cents: null,
-      price_note: null,
-    }));
-
-    const jsRes = await supabase.from("job_services").insert(serviceRows);
-    if (jsRes.error) throw jsRes.error;
-
-    /** ✅ CRITICAL: legacy write cannot block save */
-    try {
-      await upsertLegacyByVin({
-        vin: v,
-        customerName: payload.customer_name,
-        customerPhone: payload.customer_phone,
-        customerAddress: payload.customer_address,
-        customerZip: payload.customer_zip,
-        vehicle: vehicleForDecode,
-        notes: payload.notes,
-        status: "active",
-        serviceHistoryLink: link,
-      });
+          await supabase.from("job_services").insert(serviceRows);
+        }
+      }
     } catch (e) {
-      console.error("Legacy sync failed (job still saved):", e);
-      // do not throw
+      // IMPORTANT: do not block save now
+      console.error("Normalized mirror failed (legacy saved):", e);
     }
 
-    return jobRes.data.id as string;
+    // Return stable id (VIN) since jobs may not exist
+    return v;
   };
 
   const flushQueue = async () => {
@@ -919,7 +929,7 @@ function NewJobInner() {
       };
 
       await saveJobToSupabase(tempPending);
-      setMsg("Saved ✅");
+      setMsg("Saved ✅ (Legacy is source of truth)");
       resetForm();
       flushQueue();
     } catch (e: any) {
@@ -1147,9 +1157,7 @@ function NewJobInner() {
                     placeholder="123 Main St, Wake Forest, NC"
                     inputMode="text"
                   />
-                  <div className="mt-2 text-[11px] text-slate-300/70">
-                    Tip: include “City, NC” at the end to trigger ZIP suggestions.
-                  </div>
+                  <div className="mt-2 text-[11px] text-slate-300/70">Tip: include “City, NC” at the end to trigger ZIP suggestions.</div>
                 </div>
 
                 <div className="mt-4">
@@ -1284,9 +1292,7 @@ function NewJobInner() {
                               onClick={() => toggleAddon(a.id)}
                               className={[
                                 "text-left rounded-2xl px-3 py-2 ring-1 transition touch-manipulation",
-                                on
-                                  ? "bg-purple-500/15 ring-purple-400/25 text-purple-100"
-                                  : "bg-white/5 ring-white/10 text-white/90 hover:ring-white/20",
+                                on ? "bg-purple-500/15 ring-purple-400/25 text-purple-100" : "bg-white/5 ring-white/10 text-white/90 hover:ring-white/20",
                               ].join(" ")}
                             >
                               <div className="text-sm font-semibold">{a.name}</div>
