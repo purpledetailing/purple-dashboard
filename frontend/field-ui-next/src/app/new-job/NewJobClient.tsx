@@ -78,6 +78,20 @@ function dollarsToCents(input: string): number {
 }
 
 /** VIN utils */
+function toCaps(raw: string) {
+  return (raw || "").toUpperCase();
+}
+
+// Keep address readable? If you truly want EVERYTHING caps, use this on address too.
+function capsAndTrim(raw: string) {
+  return toCaps((raw || "").trim());
+}
+
+// For make/model/customer name: remove double spaces + caps
+function capsClean(raw: string) {
+  return capsAndTrim(raw).replace(/\s+/g, " ");
+}
+
 function normalizeVin(raw: string) {
   return (raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -1226,7 +1240,7 @@ function NewJobInner() {
                 <SchemaInput
                   name="customerName"
                   value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
+                  onChange={(e) => setCustomerName(capsClean(e.target.value))}
                   placeholder="Customer name"
                 />
 
@@ -1234,7 +1248,7 @@ function NewJobInner() {
                   <SchemaLabel>Phone (dedupe)</SchemaLabel>
                   <SchemaInput
                     value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    onChange={(e) => setCustomerPhone(capsAndTrim(e.target.value))} // phone digits normalize happens elsewhere
                     placeholder="(919) 555-1234"
                     inputMode="tel"
                   />
@@ -1245,7 +1259,7 @@ function NewJobInner() {
                   <SchemaLabel>Address (optional)</SchemaLabel>
                   <SchemaInput
                     value={customerAddress}
-                    onChange={(e) => setCustomerAddress(e.target.value)}
+                    onChange={(e) => setCustomerAddress(capsClean(e.target.value))}
                     placeholder="123 Main St, Wake Forest, NC"
                     inputMode="text"
                   />
