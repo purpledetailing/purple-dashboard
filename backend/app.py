@@ -471,26 +471,24 @@ def public_report(value):
             m = data["merged"]
 
             # PUBLIC MUST HIDE phone/address/zip always
-            vehicle_for_template = {
-                "vin_number": vin,
-                "make": m.get("make") or "",
-                "model": m.get("model") or "",
-                "year": m.get("year") or "",
+            legacy = data.get("legacy") or {}
 
-                # NEW: Use EMAIL where the UI previously showed VEHICLE nickname
-                "email": (m.get("email") or ""),
+vehicle_for_template = {
+    "vin_number": vin,
+    "make": m.get("make") or "",
+    "model": m.get("model") or "",
+    "year": m.get("year") or "",
+    "email": (legacy.get("email") or "").strip(),
 
-                # keep this for backwards-compat if template still references it somewhere
-                "vehicle_nickname": m.get("vehicle_nickname") or "",
+    "customer_name": "",  # hide
+    "phone_number": "",   # hide
+    "address": "",        # hide
+    "zip_code": "",       # hide
+    "status": "",         # optional hide
+    "notes": m.get("notes") or "",
+    "service_history_link": m.get("service_history_link") or "",
+}
 
-                "customer_name": "",  # hide
-                "phone_number": "",   # hide
-                "address": "",        # hide
-                "zip_code": "",       # hide
-                "status": "",         # optional hide
-                "notes": m.get("notes") or "",
-                "service_history_link": m.get("service_history_link") or "",
-            }
 
             embed_url = drive_embed_from_folder(m.get("service_history_link") or "")
 
