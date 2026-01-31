@@ -34,8 +34,16 @@ type PendingJob = {
   attempt_count: number;
 
   vin: string;
+
+  // REQUIRED vehicle identity (must be captured after VIN)
+  vehicle_year: number | null;
+  vehicle_make: string;
+  vehicle_model: string;
+  vehicle_trim: string;
+
   customer_name: string;
   customer_phone: string;
+  customer_email: string;
 
   customer_address: string;
   customer_zip: string;
@@ -47,12 +55,6 @@ type PendingJob = {
   total_charged: string;
   notes: string;
   performed_at: string;
-};
-
-type ZipRow = {
-  zip: string;
-  city: string;
-  state: string;
 };
 
 const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
@@ -77,21 +79,29 @@ function dollarsToCents(input: string): number {
   return Math.round(num * 100);
 }
 
-/** VIN utils */
+/** CAPS helpers (tool should capture in ALL CAPS) */
 function toCaps(raw: string) {
   return (raw || "").toUpperCase();
 }
-
-// Keep address readable? If you truly want EVERYTHING caps, use this on address too.
-function capsAndTrim(raw: string) {
-  return toCaps((raw || "").trim());
+function capsTrim(raw: string) {
+  return toCaps(raw).trim();
+}
+function normalizeEmailForDb(raw: string) {
+  // email is case-insensitive; we display CAPS in UI, but store lower for safety
+  return (raw || "").trim().toLowerCase();
+}
+function normalizeYearInput(raw: string) {
+  const digits = (raw || "").replace(/\D/g, "").slice(0, 4);
+  return digits;
+}
+function yearToNumberOrNull(y: string) {
+  const n = Number((y || "").trim());
+  if (!Number.isFinite(n)) return null;
+  if (n < 1900 || n > 2100) return null;
+  return n;
 }
 
-// For make/model/customer name: remove double spaces + caps
-function capsClean(raw: string) {
-  return capsAndTrim(raw).replace(/\s+/g, " ");
-}
-
+/** VIN utils */
 function normalizeVin(raw: string) {
   return (raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -110,6 +120,11 @@ function maskVin(vin17: string) {
   const v = normalizeVin(vin17);
   if (v.length !== 17) return vin17;
   return `•••• ${v.slice(-6)}`;
+}
+
+function vehicleLabelParts(year: number | null, make: string, model: string, trim: string) {
+  const parts = [year || "", make, model, trim].map((x) => String(x || "").trim()).filter(Boolean);
+  return parts.join(" ") || "Vehicle";
 }
 
 function vehicleLabel(v: Vehicle) {
@@ -166,7 +181,7 @@ function removeFromQueue(id: string) {
 }
 
 function bumpAttempt(id: string) {
-  const q = getQueue().map((x) => (x.id === id ? { ...x, attempt_count: x.attempt_count + 1 } : x));
+  const q = getQueue().map((x) => x.id === id ? { ...x, attempt_count: x.attempt_count + 1 } : x);
   setQueue(q);
 }
 
@@ -179,10 +194,10 @@ function normalizeZipToBigint(raw: string): number | null {
   return n;
 }
 
-/** customers.zip_code in your app is stored as text in this flow — keep it clean */
+/** customers.zip_code stored as text in this flow — keep it clean */
 function normalizeZipString(raw: string): string {
   const digits = (raw || "").replace(/\D/g, "");
-  return digits.slice(0, 10); // allows ZIP+4 if you ever want, still fine
+  return digits.slice(0, 10);
 }
 
 /** Extract city/state from a loose address string:
@@ -199,8 +214,8 @@ function extractCityState(address: string): { city: string | null; state: string
   if (parts.length < 2) return { city: null, state: null };
 
   const last = parts[parts.length - 1];
-  const stateMatch = last.match(/\b([A-Z]{2})\b/);
-  const state = stateMatch?.[1] ?? null;
+  const stateMatch = last.match(/\b([A-Z]{2})\b/i);
+  const state = stateMatch?.[1]?.toUpperCase() ?? null;
 
   const city = parts[parts.length - 2] ?? null;
 
@@ -236,15 +251,17 @@ function NewJobInner() {
   const [vinStatus, setVinStatus] = useState<string>("");
   const [vinBusy, setVinBusy] = useState(false);
 
-  // ✅ Manual fallback for Year/Make/Model (only shown when needed)
-  const [manualYear, setManualYear] = useState("");
-  const [manualMake, setManualMake] = useState("");
-  const [manualModel, setManualModel] = useState("");
+  // REQUIRED: year/make/model must exist before moving past VIN
+  const [vehYearText, setVehYearText] = useState("");
+  const [vehMake, setVehMake] = useState("");
+  const [vehModel, setVehModel] = useState("");
+  const [vehTrim, setVehTrim] = useState("");
 
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [customerAddress, setCustomerAddress] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+
+  const [customerAddress, setCustomerAddress] = useState("");
   const [customerZip, setCustomerZip] = useState("");
   const [zipSuggestions, setZipSuggestions] = useState<string[]>([]);
   const zipLookupTimer = useRef<number | null>(null);
@@ -322,9 +339,6 @@ function NewJobInner() {
     return !veh.year || !veh.make || !veh.model;
   };
 
-  // ✅ Gate: year/make/model must exist (online)
-  const hasYMM = (veh: Vehicle | null) => !!(veh?.year && veh?.make && veh?.model);
-
   function phoneToLegacyCustomerId(rawPhone: string) {
     const d = normalizePhone(rawPhone || "");
     if (!d) return null;
@@ -345,7 +359,6 @@ function NewJobInner() {
 
     const { city, state } = extractCityState(addr);
     if (!city || !state) return;
-
     if (state.toUpperCase() !== "NC") return;
 
     const { data, error } = await supabase
@@ -388,18 +401,17 @@ function NewJobInner() {
 
   /** Legacy writer (reliable) */
   async function upsertLegacyByVin(params: {
-  vin: string;
-  customerName: string;
-  customerPhone: string;
-  customerEmail?: string; // ✅ NEW
-  customerAddress?: string;
-  customerZip?: string;
-  vehicle: Vehicle | null;
-  notes?: string;
-  status?: string;
-  serviceHistoryLink?: string;
-}) {
-
+    vin: string;
+    customerName: string;
+    customerPhone: string;
+    customerEmail?: string;
+    customerAddress?: string;
+    customerZip?: string;
+    vehicle: { year: number | null; make: string; model: string; trim?: string };
+    notes?: string;
+    status?: string;
+    serviceHistoryLink?: string;
+  }) {
     const v = normalizeVin(params.vin);
 
     if (!isValidVin(v)) {
@@ -414,20 +426,23 @@ function NewJobInner() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
-  vin: v,
-  customer_id,
-  customer_name: normalizeUpper(params.customerName) || null,
-  phone_number: (params.customerPhone || "").trim() || null,
-  email: normalizeEmail(params.customerEmail || "") || null, // ✅ NEW
-  address: normalizeUpper(params.customerAddress || "") || null,
-  zip_code,
-  status: params.status ?? "active",
-  notes: normalizeUpper(params.notes || "") || null,
-  make: params.vehicle?.make ?? null,
-  model: params.vehicle?.model ?? null,
-  year: params.vehicle?.year ?? null,
-};
+      vin: v,
+      customer_id,
+      customer_name: capsTrim(params.customerName) || null,
+      phone_number: (params.customerPhone || "").trim() || null,
 
+      // NEW: email (stored lower for safety)
+      email: params.customerEmail ? normalizeEmailForDb(params.customerEmail) : null,
+
+      address: address ? capsTrim(address) : null,
+      zip_code,
+      status: params.status ?? "active",
+      notes: capsTrim(params.notes || "") || null,
+
+      make: capsTrim(params.vehicle?.make || "") || null,
+      model: capsTrim(params.vehicle?.model || "") || null,
+      year: params.vehicle?.year ?? null,
+    };
 
     const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
     if (link) payload.service_history_link = link;
@@ -467,26 +482,32 @@ function NewJobInner() {
     if (link && !serviceHistoryLink.trim()) setServiceHistoryLink(link);
   }
 
-  // NEW: fallback autofill from legacy if jobs/customers didn't save
+  // fallback autofill from legacy
   async function autofillCustomerFromLegacy(vin17: string) {
     const v = normalizeVin(vin17);
     if (!isValidVin(v)) return;
 
     const { data, error } = await supabase
       .from("customer_data_legacy")
-      .select("customer_name, phone_number, email, address, zip_code, service_history_link")
+      .select("customer_name, phone_number, email, address, zip_code, service_history_link, make, model, year")
       .eq("vin", v)
       .limit(1)
       .maybeSingle();
 
     if (error || !data) return;
 
-    if (!customerName.trim() && (data as any).customer_name) setCustomerName((data as any).customer_name);
-    if (!customerPhone.trim() && (data as any).phone_number) setCustomerPhone((data as any).phone_number);
-    if (!customerEmail.trim() && (data as any).email) setCustomerEmail(String((data as any).email));
-    if (!customerAddress.trim() && (data as any).address) setCustomerAddress(String((data as any).address));
+    if (!customerName.trim() && (data as any).customer_name) setCustomerName(capsTrim((data as any).customer_name));
+    if (!customerPhone.trim() && (data as any).phone_number) setCustomerPhone(String((data as any).phone_number));
+    if (!customerEmail.trim() && (data as any).email) setCustomerEmail(toCaps(String((data as any).email)));
+
+    if (!customerAddress.trim() && (data as any).address) setCustomerAddress(capsTrim(String((data as any).address)));
     if (!customerZip.trim() && (data as any).zip_code != null) setCustomerZip(String((data as any).zip_code));
     if (!serviceHistoryLink.trim() && (data as any).service_history_link) setServiceHistoryLink((data as any).service_history_link);
+
+    // help recover vehicle identity if it exists in legacy (still require it)
+    if (!vehMake.trim() && (data as any).make) setVehMake(capsTrim(String((data as any).make)));
+    if (!vehModel.trim() && (data as any).model) setVehModel(capsTrim(String((data as any).model)));
+    if (!vehYearText.trim() && (data as any).year != null) setVehYearText(String((data as any).year));
   }
 
   const autofillCustomerFromVehicle = async (vehicleId: string) => {
@@ -503,28 +524,28 @@ function NewJobInner() {
     const cust = (data as any)?.customers as any;
     if (!cust) return;
 
-    if (!customerName.trim()) setCustomerName(cust.full_name ?? "");
-    if (!customerPhone.trim() && cust.phone) setCustomerPhone(cust.phone);
+    if (!customerName.trim()) setCustomerName(capsTrim(cust.full_name ?? ""));
+    if (!customerPhone.trim() && cust.phone) setCustomerPhone(String(cust.phone));
 
-    if (!customerAddress.trim() && cust.address) setCustomerAddress(String(cust.address));
+    if (!customerAddress.trim() && cust.address) setCustomerAddress(capsTrim(String(cust.address)));
     if (!customerZip.trim() && cust.zip_code) setCustomerZip(String(cust.zip_code));
   };
 
   const decodeVinAndUpdateVehicle = async (vehicleId: string, vin17: string) => {
     if (!isOnline()) {
-      setVinStatus("Offline — will identify vehicle when back online.");
+      setVinStatus("OFFLINE — ENTER YEAR/MAKE/MODEL MANUALLY TO CONTINUE.");
       return;
     }
 
     try {
       setVinBusy(true);
-      setVinStatus("Identifying vehicle…");
+      setVinStatus("IDENTIFYING VEHICLE…");
 
       const res = await fetch(`/api/vin-decode?vin=${encodeURIComponent(vin17)}`);
       const decoded = await res.json();
 
       if (!res.ok) {
-        setVinStatus(decoded?.error ? `Identify failed: ${decoded.error}` : "Identify failed.");
+        setVinStatus(decoded?.error ? `IDENTIFY FAILED: ${decoded.error}` : "IDENTIFY FAILED.");
         return;
       }
 
@@ -539,62 +560,26 @@ function NewJobInner() {
         .from("vehicles")
         .update(patch)
         .eq("id", vehicleId)
-        .select("id,vin,year,make,model,trim,service_history_link")
+        .select("id,vin,year,make,model,trim")
         .single();
 
       if (error) {
-        setVinStatus("Vehicle identified, but failed to save details.");
+        setVinStatus("VEHICLE IDENTIFIED, BUT FAILED TO SAVE DETAILS.");
         return;
       }
 
-      setVehicle(data as Vehicle);
+      const v = data as Vehicle;
+      setVehicle(v);
 
-      // ✅ Gate enforcement: if still missing YMM, require manual entry
-      if (!hasYMM(data as Vehicle)) {
-        setVinStatus("Identification incomplete — enter Year/Make/Model below.");
-      } else {
-        setVinStatus("Vehicle identified ✅");
-      }
+      // also load into required fields (so Continue can unlock)
+      setVehYearText(v.year ? String(v.year) : "");
+      setVehMake(v.make ? capsTrim(v.make) : "");
+      setVehModel(v.model ? capsTrim(v.model) : "");
+      setVehTrim(v.trim ? capsTrim(v.trim) : "");
+
+      setVinStatus("VEHICLE IDENTIFIED ✅");
     } catch {
-      setVinStatus("Identify error.");
-    } finally {
-      setVinBusy(false);
-    }
-  };
-
-  // ✅ Manual save (when decode fails)
-  const saveManualYMM = async () => {
-    if (!vehicle?.id) return;
-
-    const y = Number((manualYear || "").replace(/\D/g, ""));
-    const mk = (manualMake || "").trim();
-    const md = (manualModel || "").trim();
-
-    if (!y || y < 1900 || y > new Date().getFullYear() + 1) {
-      setVinStatus("Enter a valid year (e.g. 2019).");
-      return;
-    }
-    if (!mk || !md) {
-      setVinStatus("Enter Make and Model.");
-      return;
-    }
-
-    setVinBusy(true);
-    try {
-      const { data, error } = await supabase
-        .from("vehicles")
-        .update({ year: y, make: mk, model: md })
-        .eq("id", vehicle.id)
-        .select("id,vin,year,make,model,trim,service_history_link")
-        .single();
-
-      if (error) {
-        setVinStatus(error.message);
-        return;
-      }
-
-      setVehicle(data as Vehicle);
-      setVinStatus("Vehicle details saved ✅");
+      setVinStatus("IDENTIFY ERROR. ENTER YEAR/MAKE/MODEL MANUALLY.");
     } finally {
       setVinBusy(false);
     }
@@ -607,86 +592,91 @@ function NewJobInner() {
     setVinStatus("");
     setVehicle(null);
 
-    // reset manual fields each lookup
-    setManualYear("");
-    setManualMake("");
-    setManualModel("");
+    // reset required fields each lookup attempt
+    setVehYearText("");
+    setVehMake("");
+    setVehModel("");
+    setVehTrim("");
 
     const v = normalizeVin(vin);
 
     if (!isValidVin(v)) {
-      setVinStatus("VIN must be 17 characters (no I, O, Q).");
+      setVinStatus("VIN MUST BE 17 CHARACTERS (NO I, O, Q).");
       return;
     }
 
-    if (!isOnline()) {
-      setVinStatus("Offline — continue. VIN will link when job syncs.");
-      setStep(2);
-      setTimeout(() => {
-        const el = document.querySelector<HTMLInputElement>('input[name="customerName"]');
-        el?.focus();
-      }, 50);
-
-      // even offline, try to show legacy data already saved
+    // Always try legacy to prefill email/customer and possibly vehicle identity
+    try {
       await autofillCustomerFromLegacy(v);
+      await autofillLegacyLinkForVin(v);
+    } catch {
+      // ignore
+    }
+
+    if (!isOnline()) {
+      setVinStatus("OFFLINE — ENTER YEAR/MAKE/MODEL MANUALLY TO CONTINUE.");
+      // stay on step 1 until required fields are filled
       return;
     }
 
     setVinBusy(true);
     try {
-      // 1) ensure we have a vehicles row
-      const found = await supabase
+      const { data, error } = await supabase
         .from("vehicles")
         .select("id,vin,year,make,model,trim,service_history_link")
         .eq("vin", v)
         .limit(1)
         .maybeSingle();
 
-      if (found.error) {
-        setMsg(found.error.message);
-        await autofillCustomerFromLegacy(v);
+      if (error) {
+        setMsg(error.message);
+        setVinStatus("VIN LOOKUP FAILED — ENTER YEAR/MAKE/MODEL MANUALLY.");
         return;
       }
 
-      let veh: Vehicle | null = (found.data as Vehicle) ?? null;
+      let veh: Vehicle | null = (data as Vehicle) ?? null;
 
       if (!veh) {
-        setVinStatus("Creating vehicle record…");
-        const created = await supabase
+        // Create vehicle row (best-effort) so decode can update it
+        const createdVeh = await supabase
           .from("vehicles")
           .insert({ vin: v })
           .select("id,vin,year,make,model,trim,service_history_link")
           .single();
 
-        if (created.error) {
-          setVinStatus("Could not create vehicle record. Try again.");
-          return;
+        if (!createdVeh.error && createdVeh.data?.id) {
+          veh = createdVeh.data as Vehicle;
+        }
+      }
+
+      if (veh) {
+        setVehicle(veh);
+        // preload required fields if present
+        setVehYearText(veh.year ? String(veh.year) : "");
+        setVehMake(veh.make ? capsTrim(veh.make) : "");
+        setVehModel(veh.model ? capsTrim(veh.model) : "");
+        setVehTrim(veh.trim ? capsTrim(veh.trim) : "");
+
+        setVinStatus("VIN LINKED ✅");
+
+        // Fill from recent job if available
+        try {
+          await autofillCustomerFromVehicle(veh.id);
+        } catch {
+          // ignore
         }
 
-        veh = created.data as Vehicle;
-      }
-
-      setVehicle(veh);
-
-      // 2) always try customer autofill in parallel (doesn't affect gating)
-      try {
-        await autofillCustomerFromVehicle(veh.id);
-      } catch {
-        // ignore
-      }
-      await autofillCustomerFromLegacy(v);
-      await autofillLegacyLinkForVin(v);
-
-      // 3) REQUIRED: make sure Y/M/M exists (online) before allowing step 2
-      if (needsDecode(veh)) {
-        await decodeVinAndUpdateVehicle(veh.id, v);
-        // decodeVinAndUpdateVehicle updates vehicle state; fall through
+        // If missing identity, decode
+        if (needsDecode(veh)) {
+          try {
+            await decodeVinAndUpdateVehicle(veh.id, v);
+          } catch {
+            setVinStatus("IDENTIFY FAILED — ENTER YEAR/MAKE/MODEL MANUALLY.");
+          }
+        }
       } else {
-        setVinStatus("VIN linked ✅");
+        setVinStatus("VIN NOT FOUND — ENTER YEAR/MAKE/MODEL MANUALLY.");
       }
-
-      // NOTE: we do NOT auto-advance anymore unless YMM is present
-      // User can press Continue once YMM exists
     } finally {
       setVinBusy(false);
     }
@@ -698,12 +688,14 @@ function NewJobInner() {
     setVehicle(null);
     setVinStatus("");
 
-    setManualYear("");
-    setManualMake("");
-    setManualModel("");
+    setVehYearText("");
+    setVehMake("");
+    setVehModel("");
+    setVehTrim("");
 
     setCustomerName("");
     setCustomerPhone("");
+    setCustomerEmail("");
     setCustomerAddress("");
     setCustomerZip("");
     setZipSuggestions([]);
@@ -720,42 +712,61 @@ function NewJobInner() {
     if (packages[0]?.id) setSelectedPackageId(packages[0].id);
   };
 
-  // ✅ Step gating
   const canGoStep2 = () => {
     const v = normalizeVin(vin);
     if (!isValidVin(v)) return false;
-    if (!online) return true; // offline allowed
-    return hasYMM(vehicle);
+
+    const yearNum = yearToNumberOrNull(vehYearText);
+    if (!yearNum) return false;
+    if (!vehMake.trim()) return false;
+    if (!vehModel.trim()) return false;
+
+    return true;
   };
+
   const canGoStep3 = () => customerName.trim().length > 0;
   const canGoStep4 = () => !!selectedPackageId;
 
-  // ✅ LEGACY-FIRST SAVE (required), normalized tables are best-effort mirror
+  // LEGACY-FIRST SAVE (required), normalized tables are best-effort mirror
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
-    if (!isValidVin(v)) throw new Error("Invalid VIN (must be 17 chars, no I/O/Q).");
+    if (!isValidVin(v)) throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
 
     const link = normalizeDriveFolderLink(payload.service_history_link || "");
+
+    // REQUIRED: vehicle identity must exist here
+    const yearNum = payload.vehicle_year;
+    const makeCaps = capsTrim(payload.vehicle_make || "");
+    const modelCaps = capsTrim(payload.vehicle_model || "");
+    const trimCaps = capsTrim(payload.vehicle_trim || "");
+
+    if (!yearNum || !makeCaps || !modelCaps) {
+      throw new Error("YEAR/MAKE/MODEL REQUIRED (AFTER VIN).");
+    }
 
     // 1) REQUIRED: write to legacy FIRST
     await upsertLegacyByVin({
       vin: v,
       customerName: payload.customer_name,
       customerPhone: payload.customer_phone,
+      customerEmail: payload.customer_email,
       customerAddress: payload.customer_address,
       customerZip: payload.customer_zip,
-      // ✅ include best known vehicle details if present in state (else nulls)
-      vehicle: vehicle?.vin === v ? vehicle : null,
+      vehicle: {
+        year: yearNum,
+        make: makeCaps,
+        model: modelCaps,
+        trim: trimCaps,
+      },
       notes: payload.notes,
       status: "active",
       serviceHistoryLink: link,
     });
 
-    // 2) OPTIONAL: mirror into normalized tables so other screens still work
+    // 2) OPTIONAL: mirror into normalized tables (best-effort)
     try {
       // vehicle best-effort
       let vehicleId: string | null = null;
-      let vehicleForDecode: Vehicle | null = null;
 
       const foundVeh = await supabase
         .from("vehicles")
@@ -766,41 +777,46 @@ function NewJobInner() {
 
       if (!foundVeh.error && foundVeh.data?.id) {
         vehicleId = foundVeh.data.id;
-        vehicleForDecode = foundVeh.data as Vehicle;
       } else {
         const createdVeh = await supabase
           .from("vehicles")
           .insert({ vin: v })
-          .select("id,vin,year,make,model,trim,service_history_link")
+          .select("id")
           .single();
 
         if (!createdVeh.error && createdVeh.data?.id) {
           vehicleId = createdVeh.data.id;
-          vehicleForDecode = createdVeh.data as Vehicle;
         }
       }
 
-      if (vehicleId && isOnline() && needsDecode(vehicleForDecode)) {
-        try {
-          await decodeVinAndUpdateVehicle(vehicleId, v);
-        } catch {
-          // ignore
+      if (vehicleId) {
+        // Always write the required identity fields (manual or decoded)
+        await supabase
+          .from("vehicles")
+          .update({
+            year: yearNum,
+            make: makeCaps,
+            model: modelCaps,
+            trim: trimCaps || null,
+            service_history_link: link || null,
+          })
+          .eq("id", vehicleId);
+
+        // If online and still missing somehow, attempt decode (non-blocking)
+        if (isOnline()) {
+          try {
+            await decodeVinAndUpdateVehicle(vehicleId, v);
+          } catch {
+            // ignore
+          }
         }
       }
 
-      if (vehicleId && link) {
-        try {
-          await supabase.from("vehicles").update({ service_history_link: link }).eq("id", vehicleId);
-        } catch {
-          // ignore
-        }
-      }
-
-      // customer best-effort
+      // customer best-effort (no schema assumptions about email column here)
       const phoneNorm = normalizePhone(payload.customer_phone);
-      const typedName = payload.customer_name.trim();
+      const typedName = capsTrim(payload.customer_name);
       const typedPhone = payload.customer_phone.trim();
-      const typedAddress = payload.customer_address.trim() || null;
+      const typedAddress = capsTrim(payload.customer_address || "") || null;
       const typedZip = normalizeZipString(payload.customer_zip.trim()) || null;
 
       let customerId: string | null = null;
@@ -871,7 +887,7 @@ function NewJobInner() {
             vehicle_id: vehicleId,
             status: "completed",
             performed_at: payload.performed_at,
-            notes: payload.notes.trim() || null,
+            notes: capsTrim(payload.notes) || null,
             total_price_cents: totalCents,
             currency: "USD",
           })
@@ -891,7 +907,6 @@ function NewJobInner() {
         }
       }
     } catch (e) {
-      // IMPORTANT: do not block save now
       console.error("Normalized mirror failed (legacy saved):", e);
     }
 
@@ -963,39 +978,49 @@ function NewJobInner() {
     setMsg(null);
 
     const v = normalizeVin(vin);
-    if (!isValidVin(v)) return setMsg("VIN must be 17 characters (no I, O, Q).");
+    if (!isValidVin(v)) return setMsg("VIN MUST BE 17 CHARACTERS (NO I, O, Q).");
 
-    // ✅ extra safety: enforce YMM online before saving too
-    if (online && !hasYMM(vehicle)) return setMsg("Vehicle Year/Make/Model is required before saving.");
+    // enforce required vehicle identity
+    const yearNum = yearToNumberOrNull(vehYearText);
+    if (!yearNum || !vehMake.trim() || !vehModel.trim()) {
+      return setMsg("YEAR / MAKE / MODEL REQUIRED (AFTER VIN).");
+    }
 
-    if (!customerName.trim()) return setMsg("Customer name is required.");
-    if (!selectedPackageId) return setMsg("Select a package.");
+    if (!customerName.trim()) return setMsg("CUSTOMER NAME IS REQUIRED.");
+    if (!selectedPackageId) return setMsg("SELECT A PACKAGE.");
     const totalCents = dollarsToCents(totalCharged);
-    if (totalCents <= 0) return setMsg("Total charged must be > $0.");
+    if (totalCents <= 0) return setMsg("TOTAL CHARGED MUST BE > $0.");
 
-    cconst payloadBase = {
+    const payloadBase = {
       vin: v,
-      customer_name: normalizeUpper(customerName),
-      customer_phone: (customerPhone || "").trim(),
-      customer_email: normalizeEmail(customerEmail), // ✅ NEW
-customer_address: normalizeUpper(customerAddress),
-  customer_zip: normalizeZipString(customerZip),
-  service_history_link: serviceHistoryLink,
-  service_type: serviceType,
-  selected_package_id: selectedPackageId,
-  addon_ids: Object.entries(selectedAddonIds)
-    .filter(([, on]) => on)
-    .map(([id]) => id),
-  total_charged: totalCharged,
-  notes: normalizeUpper(notes),
-  performed_at: new Date().toISOString(),
-};
 
+      vehicle_year: yearNum,
+      vehicle_make: capsTrim(vehMake),
+      vehicle_model: capsTrim(vehModel),
+      vehicle_trim: capsTrim(vehTrim),
+
+      customer_name: capsTrim(customerName),
+      customer_phone: customerPhone,
+      customer_email: normalizeEmailForDb(customerEmail),
+
+      customer_address: capsTrim(customerAddress),
+      customer_zip: normalizeZipString(customerZip),
+
+      service_history_link: serviceHistoryLink,
+      service_type: serviceType,
+      selected_package_id: selectedPackageId,
+      addon_ids: Object.entries(selectedAddonIds)
+        .filter(([, on]) => on)
+        .map(([id]) => id),
+      total_charged: totalCharged,
+      notes: capsTrim(notes),
+      performed_at: new Date().toISOString(),
+    };
 
     if (!isOnline()) {
-      enqueueJob(payloadBase);
+      enqueueJob(payloadBase as any);
       setQueuedCount(getQueue().length);
-      setMsg("Offline ✅ Saved to queue. It will sync automatically when you’re back online.");
+      setMsg("OFFLINE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY WHEN YOU’RE BACK ONLINE.");
       resetForm();
       return;
     }
@@ -1006,11 +1031,11 @@ customer_address: normalizeUpper(customerAddress),
         id: "live",
         created_at: new Date().toISOString(),
         attempt_count: 0,
-        ...payloadBase,
+        ...(payloadBase as any),
       };
 
       await saveJobToSupabase(tempPending);
-      setMsg("Saved ✅ (Legacy is source of truth)");
+      setMsg("SAVED ✅ (LEGACY IS SOURCE OF TRUTH)");
       resetForm();
       flushQueue();
     } catch (e: any) {
@@ -1025,12 +1050,12 @@ customer_address: normalizeUpper(customerAddress),
         message.includes("timeout");
 
       if (likelyNetwork) {
-        enqueueJob(payloadBase);
+        enqueueJob(payloadBase as any);
         setQueuedCount(getQueue().length);
-        setMsg("Connection issue ✅ Saved to queue. It will sync automatically.");
+        setMsg("CONNECTION ISSUE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY.");
         resetForm();
       } else {
-        setMsg(e?.message ?? "Error saving job.");
+        setMsg((e?.message ?? "ERROR SAVING JOB.").toUpperCase());
       }
     } finally {
       setBusy(false);
@@ -1038,9 +1063,12 @@ customer_address: normalizeUpper(customerAddress),
   };
 
   const headerSubtitle = useMemo(() => {
-    if (!vehicle) return "Fast capture while you’re onsite.";
-    return `${vehicleLabel(vehicle)} • ${maskVin(vehicle.vin)}`;
-  }, [vehicle]);
+    const yearNum = yearToNumberOrNull(vehYearText);
+    const label = vehicle ? vehicleLabel(vehicle) : vehicleLabelParts(yearNum, vehMake, vehModel, vehTrim);
+    const v = normalizeVin(vin);
+    if (!v) return "FAST CAPTURE WHILE YOU’RE ONSITE.";
+    return `${label} • ${maskVin(v)}`;
+  }, [vehicle, vin, vehYearText, vehMake, vehModel, vehTrim]);
 
   const StepPill = ({ n, label }: { n: Step; label: string }) => {
     const active = step === n;
@@ -1081,7 +1109,7 @@ customer_address: normalizeUpper(customerAddress),
   const topStatus =
     !online ? (
       <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/20 px-3 py-1 text-[11px] font-semibold">
-        OFFLINE • Queue {queuedCount}
+        OFFLINE • QUEUE {queuedCount}
       </div>
     ) : queuedCount > 0 ? (
       <button
@@ -1089,7 +1117,7 @@ customer_address: normalizeUpper(customerAddress),
         onClick={flushQueue}
         className="inline-flex items-center gap-2 rounded-full bg-purple-500/10 text-purple-200 ring-1 ring-purple-400/20 px-3 py-1 text-[11px] font-semibold hover:bg-purple-500/15 transition touch-manipulation"
       >
-        QUEUED {queuedCount} {syncingQueue ? "• Syncing…" : "• Tap to sync"}
+        QUEUED {queuedCount} {syncingQueue ? "• SYNCING…" : "• TAP TO SYNC"}
       </button>
     ) : (
       <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 px-3 py-1 text-[11px] font-semibold">
@@ -1141,7 +1169,7 @@ customer_address: normalizeUpper(customerAddress),
               }}
               className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-white/10 text-slate-200 hover:ring-white/20 hover:text-white transition touch-manipulation"
             >
-              Sign out
+              SIGN OUT
             </button>
           </div>
 
@@ -1156,74 +1184,90 @@ customer_address: normalizeUpper(customerAddress),
       {/* mobile-safe bottom padding */}
       <div className="mx-auto max-w-md px-4 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
         {loadingServices ? (
-          <SchemaCard title="Loading">
-            <div className="text-sm text-slate-300">Loading services…</div>
+          <SchemaCard title="LOADING">
+            <div className="text-sm text-slate-300">LOADING SERVICES…</div>
           </SchemaCard>
         ) : (
           <div className="space-y-6">
             {/* STEP 1 */}
             {step === 1 && (
-              <SchemaCard title="Vehicle VIN">
+              <SchemaCard title="VEHICLE VIN">
                 <SchemaLabel>VIN</SchemaLabel>
                 <div className="flex gap-2">
                   <SchemaInput
                     value={vin}
                     onChange={(e) => setVin(toCaps(e.target.value))}
-                    placeholder="17-character VIN"
+                    placeholder="17-CHARACTER VIN"
                     inputMode="text"
                     autoCapitalize="characters"
                     autoCorrect="off"
                   />
                   <SchemaButton onClick={lookupVin} disabled={vinBusy || !normalizeVin(vin).length} variant="primary">
-                    {vinBusy ? "…" : "Lookup"}
+                    {vinBusy ? "…" : "LOOKUP"}
                   </SchemaButton>
                 </div>
 
                 <div className="mt-2 min-h-[18px] text-[11px] text-slate-300/80">
-                  {vinStatus ? vinStatus : "Tip: Lookup links VIN and identifies vehicle (online)."}
+                  {vinStatus ? vinStatus : "TIP: LOOKUP LINKS VIN AND IDENTIFIES VEHICLE (ONLINE)."}
                 </div>
 
-                {/* ✅ Manual Y/M/M fallback if online + vehicle exists but still missing */}
-                {online && vehicle && !hasYMM(vehicle) && (
-                  <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-3">
-                    <div className="text-[11px] font-semibold text-slate-200/90 mb-2">
-                      Year/Make/Model required (manual fallback)
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
+                {/* REQUIRED fields after VIN */}
+                <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
+                  <div className="text-xs font-extrabold text-white/90">YEAR / MAKE / MODEL (REQUIRED)</div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="col-span-1">
+                      <SchemaLabel>YEAR</SchemaLabel>
                       <SchemaInput
-                        value={manualYear}
-                        onChange={(e) => setManualYear(e.target.value)}
-                        placeholder="Year"
+                        value={vehYearText}
+                        onChange={(e) => setVehYearText(normalizeYearInput(e.target.value))}
+                        placeholder="2019"
                         inputMode="numeric"
                       />
-                      <SchemaInput value={manualMake} onChange={(e) => setManualMake(capsClean(e.target.value))} placeholder="Make" />
+                    </div>
+                    <div className="col-span-2">
+                      <SchemaLabel>MAKE</SchemaLabel>
                       <SchemaInput
-                        value={manualModel}
-                        onChange={(e) => setManualModel(capsClean(e.target.value))}
-                        placeholder="Model"
+                        value={vehMake}
+                        onChange={(e) => setVehMake(toCaps(e.target.value))}
+                        placeholder="NISSAN"
+                        inputMode="text"
                       />
-                      <div className="col-span-3">
-                        <SchemaButton onClick={saveManualYMM} disabled={vinBusy} variant="primary">
-                          {vinBusy ? "Saving…" : "Save vehicle details"}
-                        </SchemaButton>
-                      </div>
+                    </div>
+                    <div className="col-span-3">
+                      <SchemaLabel>MODEL</SchemaLabel>
+                      <SchemaInput
+                        value={vehModel}
+                        onChange={(e) => setVehModel(toCaps(e.target.value))}
+                        placeholder="KICK"
+                        inputMode="text"
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <SchemaLabel>TRIM (OPTIONAL)</SchemaLabel>
+                      <SchemaInput
+                        value={vehTrim}
+                        onChange={(e) => setVehTrim(toCaps(e.target.value))}
+                        placeholder="SV / LIMITED / ETC"
+                        inputMode="text"
+                      />
                     </div>
                   </div>
-                )}
+
+                  {!online && (
+                    <div className="mt-3 text-[11px] text-amber-200/90">
+                      OFFLINE NOTE: ENTER YEAR/MAKE/MODEL MANUALLY — VIN DECODE WILL RESUME WHEN BACK ONLINE.
+                    </div>
+                  )}
+                </div>
 
                 <div className="mt-3 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-white/90 truncate">
-                      {vehicle ? vehicleLabel(vehicle) : normalizeVin(vin).length ? "VIN entered" : "No vehicle yet"}
+                      {vehicleLabelParts(yearToNumberOrNull(vehYearText), vehMake, vehModel, vehTrim)}
                     </div>
                     <div className="text-xs text-slate-300/70">
-                      {vehicle ? maskVin(vehicle.vin) : normalizeVin(vin).length ? maskVin(vin) : "Enter VIN to begin"}
+                      {normalizeVin(vin).length ? maskVin(vin) : "ENTER VIN TO BEGIN"}
                     </div>
-                    {online && isValidVin(normalizeVin(vin)) && !hasYMM(vehicle) && (
-                      <div className="mt-1 text-[11px] text-amber-200/80">
-                        You must capture Year/Make/Model before continuing.
-                      </div>
-                    )}
                   </div>
 
                   <button
@@ -1235,7 +1279,7 @@ customer_address: normalizeUpper(customerAddress),
                       canGoStep2() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
                     ].join(" ")}
                   >
-                    {online && !hasYMM(vehicle) ? "Identify required" : "Continue →"}
+                    CONTINUE →
                   </button>
                 </div>
               </SchemaCard>
@@ -1243,51 +1287,54 @@ customer_address: normalizeUpper(customerAddress),
 
             {/* STEP 2 */}
             {step === 2 && (
-              <SchemaCard title="Customer">
-                <SchemaLabel>Full name</SchemaLabel>
+              <SchemaCard title="CUSTOMER">
+                <SchemaLabel>FULL NAME</SchemaLabel>
                 <SchemaInput
                   name="customerName"
                   value={customerName}
-                  onChange={(e) => setCustomerName(capsClean(e.target.value))}
-                  placeholder="Customer name"
+                  onChange={(e) => setCustomerName(toCaps(e.target.value))}
+                  placeholder="CUSTOMER NAME"
                 />
 
                 <div className="mt-4">
-                  <SchemaLabel>Phone (dedupe)</SchemaLabel>
+                  <SchemaLabel>PHONE (DEDUPE)</SchemaLabel>
                   <SchemaInput
                     value={customerPhone}
-                    onChange={(e) => setCustomerPhone(capsAndTrim(e.target.value))} // phone digits normalize happens elsewhere
+                    onChange={(e) => setCustomerPhone(e.target.value)}
                     placeholder="(919) 555-1234"
                     inputMode="tel"
                   />
-                  <div className="mt-2 text-[11px] text-slate-300/70">Any format is fine — we normalize digits.</div>
+                  <div className="mt-2 text-[11px] text-slate-300/70">ANY FORMAT IS FINE — WE NORMALIZE DIGITS.</div>
                 </div>
 
                 <div className="mt-4">
-                  <SchemaLabel>Address (optional)</SchemaLabel>
+                  <SchemaLabel>EMAIL (OPTIONAL)</SchemaLabel>
+                  <SchemaInput
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(toCaps(e.target.value))}
+                    placeholder="NAME@EMAIL.COM"
+                    inputMode="email"
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                  />
+                  <div className="mt-2 text-[11px] text-slate-300/70">
+                    THIS WILL DISPLAY ON SECURE PORTAL (REPLACES “VEHICLE” FIELD).
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <SchemaLabel>ADDRESS (OPTIONAL)</SchemaLabel>
                   <SchemaInput
                     value={customerAddress}
-                    onChange={(e) => setCustomerAddress(capsClean(e.target.value))}
-                    placeholder="123 Main St, Wake Forest, NC"
+                    onChange={(e) => setCustomerAddress(toCaps(e.target.value))}
+                    placeholder="123 MAIN ST, WAKE FOREST, NC"
                     inputMode="text"
                   />
-                  <div className="mt-2 text-[11px] text-slate-300/70">Tip: include “City, NC” at the end to trigger ZIP suggestions.</div>
+                  <div className="mt-2 text-[11px] text-slate-300/70">TIP: INCLUDE “CITY, NC” AT THE END TO TRIGGER ZIP SUGGESTIONS.</div>
                 </div>
-                
-                <div className="mt-4">
-                  <SchemaLabel>Email (optional)</SchemaLabel>
-                  <SchemaInput
-                  value={customerEmail}
-                  onChange={(e) => setCustomerEmail(normalizeEmail(e.target.value))}
-                  placeholder="name@email.com"
-                  inputMode="email"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  />
-                  </div>
 
                 <div className="mt-4">
-                  <SchemaLabel>ZIP (optional)</SchemaLabel>
+                  <SchemaLabel>ZIP (OPTIONAL)</SchemaLabel>
                   <SchemaInput
                     value={customerZip}
                     onChange={(e) => setCustomerZip(normalizeZipString(e.target.value))}
@@ -1315,7 +1362,7 @@ customer_address: normalizeUpper(customerAddress),
                 </div>
 
                 <div className="mt-4">
-                  <SchemaLabel>Google Drive folder link (optional)</SchemaLabel>
+                  <SchemaLabel>GOOGLE DRIVE FOLDER LINK (OPTIONAL)</SchemaLabel>
                   <SchemaInput
                     value={serviceHistoryLink}
                     onChange={(e) => setServiceHistoryLink(e.target.value)}
@@ -1323,16 +1370,16 @@ customer_address: normalizeUpper(customerAddress),
                     inputMode="url"
                   />
                   <div className="mt-2 text-[11px] text-slate-300/70">
-                    Paste the Drive <b>folder</b> link where photos live.
+                    PASTE THE DRIVE <b>FOLDER</b> LINK WHERE PHOTOS LIVE.
                   </div>
                 </div>
 
                 <div className="mt-5 flex gap-2">
                   <SchemaButton onClick={() => setStep(1)} variant="ghost">
-                    ← Back
+                    ← BACK
                   </SchemaButton>
                   <SchemaButton onClick={() => setStep(3)} disabled={!canGoStep3()} variant="primary">
-                    Next
+                    NEXT
                   </SchemaButton>
                 </div>
               </SchemaCard>
@@ -1340,26 +1387,26 @@ customer_address: normalizeUpper(customerAddress),
 
             {/* STEP 3 */}
             {step === 3 && (
-              <SchemaCard title="Services">
-                <SchemaLabel>Service type</SchemaLabel>
+              <SchemaCard title="SERVICES">
+                <SchemaLabel>SERVICE TYPE</SchemaLabel>
                 <SchemaSelect value={serviceType} onChange={(e) => setServiceType(e.target.value as any)}>
-                  <option value="full">Full Service</option>
-                  <option value="interior">Interior</option>
-                  <option value="exterior">Exterior</option>
-                  <option value="ceramic">Ceramic</option>
+                  <option value="full">FULL SERVICE</option>
+                  <option value="interior">INTERIOR</option>
+                  <option value="exterior">EXTERIOR</option>
+                  <option value="ceramic">CERAMIC</option>
                 </SchemaSelect>
 
                 <div className="mt-4">
-                  <SchemaLabel>Package</SchemaLabel>
+                  <SchemaLabel>PACKAGE</SchemaLabel>
                   {packages.length === 0 ? (
                     <div className="h-12 flex items-center rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 text-sm text-slate-300/70">
-                      No packages found.
+                      NO PACKAGES FOUND.
                     </div>
                   ) : (
                     <SchemaSelect value={selectedPackageId} onChange={(e) => setSelectedPackageId(e.target.value)}>
                       {packages.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name}
+                          {toCaps(p.name)}
                         </option>
                       ))}
                     </SchemaSelect>
@@ -1374,8 +1421,8 @@ customer_address: normalizeUpper(customerAddress),
                     className="w-full flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3 hover:ring-white/20 transition touch-manipulation"
                   >
                     <div className="text-left">
-                      <div className="text-sm font-extrabold text-white/90">Add-ons</div>
-                      <div className="text-[11px] text-slate-300/70">{selectedAddons.length} selected</div>
+                      <div className="text-sm font-extrabold text-white/90">ADD-ONS</div>
+                      <div className="text-[11px] text-slate-300/70">{selectedAddons.length} SELECTED</div>
                     </div>
                     <div className="text-slate-200 font-extrabold">{addonsOpen ? "−" : "+"}</div>
                   </button>
@@ -1389,7 +1436,7 @@ customer_address: normalizeUpper(customerAddress),
                           className="rounded-full px-3 py-1.5 text-[11px] font-semibold bg-purple-500/10 text-purple-200 ring-1 ring-purple-400/20 hover:bg-purple-500/15 transition touch-manipulation"
                           type="button"
                         >
-                          {a.name} ✕
+                          {toCaps(a.name)} ✕
                         </button>
                       ))}
                     </div>
@@ -1401,7 +1448,7 @@ customer_address: normalizeUpper(customerAddress),
                         className="mt-1"
                         value={addonQuery}
                         onChange={(e) => setAddonQuery(e.target.value)}
-                        placeholder="Search add-ons…"
+                        placeholder="SEARCH ADD-ONS…"
                       />
 
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -1421,10 +1468,10 @@ customer_address: normalizeUpper(customerAddress),
                                 on ? "bg-purple-500/15 ring-purple-400/25 text-purple-100" : "bg-white/5 ring-white/10 text-white/90 hover:ring-white/20",
                               ].join(" ")}
                             >
-                              <div className="text-sm font-semibold">{a.name}</div>
+                              <div className="text-sm font-semibold">{toCaps(a.name)}</div>
                               {sub ? (
                                 <div className={["text-[11px] mt-0.5", on ? "text-purple-100/70" : "text-slate-300/70"].join(" ")}>
-                                  {sub}
+                                  {toCaps(sub)}
                                 </div>
                               ) : null}
                             </button>
@@ -1437,10 +1484,10 @@ customer_address: normalizeUpper(customerAddress),
 
                 <div className="mt-5 flex gap-2">
                   <SchemaButton onClick={() => setStep(2)} variant="ghost">
-                    ← Back
+                    ← BACK
                   </SchemaButton>
                   <SchemaButton onClick={() => setStep(4)} disabled={!canGoStep4()} variant="primary">
-                    Next
+                    NEXT
                   </SchemaButton>
                 </div>
               </SchemaCard>
@@ -1448,8 +1495,8 @@ customer_address: normalizeUpper(customerAddress),
 
             {/* STEP 4 */}
             {step === 4 && (
-              <SchemaCard title="Total & Notes">
-                <SchemaLabel>Total charged</SchemaLabel>
+              <SchemaCard title="TOTAL & NOTES">
+                <SchemaLabel>TOTAL CHARGED</SchemaLabel>
                 <div className="flex items-center gap-2">
                   <div className="h-12 w-10 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-slate-300/80 font-semibold">
                     $
@@ -1471,21 +1518,21 @@ customer_address: normalizeUpper(customerAddress),
                 </div>
 
                 <div className="mt-4">
-                  <SchemaLabel>Notes (optional)</SchemaLabel>
+                  <SchemaLabel>NOTES (OPTIONAL)</SchemaLabel>
                   <textarea
                     className="w-full min-h-[120px] rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3 text-base text-white/90 placeholder:text-slate-400/70 focus:outline-none focus:ring-2 focus:ring-purple-400/30"
                     value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Anything important…"
+                    onChange={(e) => setNotes(toCaps(e.target.value))}
+                    placeholder="ANYTHING IMPORTANT…"
                   />
                 </div>
 
                 <div className="mt-5 flex gap-2">
                   <SchemaButton onClick={() => setStep(3)} variant="ghost">
-                    ← Back
+                    ← BACK
                   </SchemaButton>
                   <SchemaButton onClick={onSave} disabled={busy} variant="primary">
-                    {busy ? "Saving…" : "Save"}
+                    {busy ? "SAVING…" : "SAVE"}
                   </SchemaButton>
                 </div>
               </SchemaCard>
