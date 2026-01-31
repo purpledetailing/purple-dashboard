@@ -468,27 +468,27 @@ def public_report(value):
             if not data:
                 return render_template("public_report.html", not_found=True, vin=vin), 404
 
-            m = data["merged"]
-
-            # PUBLIC MUST HIDE phone/address/zip always
+            m = data.get("merged") or {}
             legacy = data.get("legacy") or {}
 
-vehicle_for_template = {
-    "vin_number": vin,
-    "make": m.get("make") or "",
-    "model": m.get("model") or "",
-    "year": m.get("year") or "",
-    "email": (legacy.get("email") or "").strip(),
+            # PUBLIC MUST HIDE phone/address/zip always
+            vehicle_for_template = {
+                "vin_number": vin,
+                "make": m.get("make") or "",
+                "model": m.get("model") or "",
+                "year": m.get("year") or "",
 
-    "customer_name": "",  # hide
-    "phone_number": "",   # hide
-    "address": "",        # hide
-    "zip_code": "",       # hide
-    "status": "",         # optional hide
-    "notes": m.get("notes") or "",
-    "service_history_link": m.get("service_history_link") or "",
-}
+                # ✅ SHOW EMAIL (replaces "vehicle nickname" conceptually)
+                "email": (legacy.get("email") or "").strip(),
 
+                "customer_name": "",  # hide
+                "phone_number": "",   # hide
+                "address": "",        # hide
+                "zip_code": "",       # hide
+                "status": "",         # optional hide
+                "notes": m.get("notes") or "",
+                "service_history_link": m.get("service_history_link") or "",
+            }
 
             embed_url = drive_embed_from_folder(m.get("service_history_link") or "")
 
@@ -500,7 +500,7 @@ vehicle_for_template = {
                 service_history=m.get("service_history") or [],
                 embed_url=embed_url
             )
-        except Exception as e:
+        except Exception:
             return render_template("public_report.html", not_found=True, vin=vin), 500
 
     # TOKEN route (legacy)
