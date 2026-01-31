@@ -1238,15 +1238,6 @@ function NewJobInner() {
                         inputMode="text"
                       />
                     </div>
-                    <div className="col-span-3">
-                      <SchemaLabel>TRIM (OPTIONAL)</SchemaLabel>
-                      <SchemaInput
-                        value={vehTrim}
-                        onChange={(e) => setVehTrim(toCaps(e.target.value))}
-                        placeholder="SV / LIMITED / ETC"
-                        inputMode="text"
-                      />
-                    </div>
                   </div>
 
                   {!online && (
