@@ -166,6 +166,7 @@
     .info-value {
       font-size: 0.95rem;
       font-weight: 500;
+      word-break: break-word;
     }
 
     .service-item {
@@ -288,6 +289,14 @@
                 {{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}
               </div>
             </div>
+
+            <!-- ✅ NEW: Email (shows only if passed in from app.py) -->
+            {% if vehicle.email %}
+              <div class="info-item">
+                <div class="info-label">Email</div>
+                <div class="info-value">{{ vehicle.email }}</div>
+              </div>
+            {% endif %}
 
             <div class="panel-title" style="margin-top:14px;">Service History</div>
 
