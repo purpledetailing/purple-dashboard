@@ -314,9 +314,11 @@ def merged_profile_by_vin(vin: str):
     status = first_truthy((legacy or {}).get("status"), (veh or {}).get("status"), "")
     notes = first_truthy((legacy or {}).get("notes"), (veh or {}).get("notes"), "")
 
-    # --- NEW: Pull customer from latest job if legacy is missing ---
+        # --- NEW: Pull customer fields (legacy primary) ---
     customer_name = first_truthy((legacy or {}).get("customer_name"), "")
     phone_number = first_truthy((legacy or {}).get("phone_number"), "")
+    email = first_truthy((legacy or {}).get("email"), "")
+
 
     latest_customer = None
     if veh and veh.get("id"):
@@ -352,6 +354,7 @@ def merged_profile_by_vin(vin: str):
             "vehicle_nickname": vehicle_nickname,
             "customer_name": customer_name or "—",
             "phone_number": phone_number or "",
+            "email": email or "",
             "service_history_link": service_history_link,
             "service_history": service_history,
         }
@@ -473,7 +476,13 @@ def public_report(value):
                 "make": m.get("make") or "",
                 "model": m.get("model") or "",
                 "year": m.get("year") or "",
+
+                # NEW: Use EMAIL where the UI previously showed VEHICLE nickname
+                "email": (m.get("email") or ""),
+
+                # keep this for backwards-compat if template still references it somewhere
                 "vehicle_nickname": m.get("vehicle_nickname") or "",
+
                 "customer_name": "",  # hide
                 "phone_number": "",   # hide
                 "address": "",        # hide
