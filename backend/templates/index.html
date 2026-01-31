@@ -287,6 +287,7 @@
     .info-value {
       color: var(--text-main);
       font-weight: 500;
+      word-break: break-word;
     }
 
     .badge {
@@ -481,7 +482,6 @@
       font-size: 0.75rem;
       color: var(--text-muted);
     }
-
   </style>
 </head>
 <body>
@@ -556,10 +556,12 @@
                 <div class="info-value" id="zipCode"></div>
               </div>
 
+              <!-- ✅ CHANGED: Vehicle -> Email -->
               <div class="info-item">
-                <div class="info-label">Vehicle</div>
-                <div class="info-value" id="vehicleNickname"></div>
+                <div class="info-label">Email</div>
+                <div class="info-value" id="emailAddress"></div>
               </div>
+
               <div class="info-item">
                 <div class="info-label">Make / Model / Year</div>
                 <div class="info-value" id="mmYear"></div>
@@ -666,7 +668,10 @@
     const phoneNumberEl = document.getElementById("phoneNumber");
     const addressEl = document.getElementById("address");
     const zipCodeEl = document.getElementById("zipCode");
-    const vehicleNicknameEl = document.getElementById("vehicleNickname");
+
+    // ✅ CHANGED: new email element (replaces vehicleNickname)
+    const emailAddressEl = document.getElementById("emailAddress");
+
     const mmYearEl = document.getElementById("mmYear");
     const vinNumberEl = document.getElementById("vinNumber");
     const statusBadgeEl = document.getElementById("statusBadge");
@@ -719,7 +724,6 @@
     }
 
     function getPublicBaseUrl() {
-      // If you set PUBLIC_BASE_URL, use it. Otherwise use current origin.
       return (PUBLIC_BASE_URL || window.location.origin).replace(/\/$/, "");
     }
 
@@ -729,10 +733,7 @@
           await navigator.clipboard.writeText(text);
           return true;
         }
-      } catch (e) {
-        // fall back below
-      }
-      // Fallback for older browsers
+      } catch (e) {}
       const temp = document.createElement("textarea");
       temp.value = text;
       temp.style.position = "fixed";
@@ -780,7 +781,13 @@
         phoneNumberEl.textContent = data.phone_number || "—";
         addressEl.textContent = data.address || "—";
         zipCodeEl.textContent = data.zip_code || "—";
-        vehicleNicknameEl.textContent = data.vehicle_nickname || "—";
+
+        // ✅ NEW: Email (fallback to vehicle_nickname so older rows still show something)
+        // If you prefer strict email only, remove the fallback.
+        const email = (data.email || "").trim();
+        const fallbackOldVehicle = (data.vehicle_nickname || "").trim();
+        emailAddressEl.textContent = email || fallbackOldVehicle || "—";
+
         mmYearEl.textContent = `${data.make || "—"} · ${data.model || "—"} · ${data.year || "—"}`;
         vinNumberEl.textContent = data.vin_number || vin;
 
@@ -855,9 +862,8 @@
           noGalleryMsg.style.display = "block";
         }
 
-        // ✅ Customer portal link (THIS IS THE FIX)
-        // Public customer view is /vin/<VIN> based on your Flask route.
-        const publicUrl = `${window.location.origin}/vin/${vin}`;
+        // ✅ Customer portal link
+        const publicUrl = `${getPublicBaseUrl()}/vin/${vin}`;
         shareLinkEl.value = publicUrl;
         shareHintEl.textContent = "Copy this link to share a read-only vehicle page with your customer.";
 
