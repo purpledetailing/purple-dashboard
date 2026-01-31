@@ -1070,42 +1070,38 @@ function NewJobInner() {
     return `${label} • ${maskVin(v)}`;
   }, [vehicle, vin, vehYearText, vehMake, vehModel, vehTrim]);
 
-  const StepPill = ({ n, label }: { n: Step; label: string }) => {
-    const active = step === n;
-    const done = step > n;
-
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          if (n <= step) setStep(n);
-        }}
-        className={[
-          "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold transition touch-manipulation",
+  function StepPill({
+  n,
+  label,
+  active = false,
+}: {
+  n: number
+  label: string
+  active?: boolean
+}) {
+  return (
+    <div
+      className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition
+        ${
           active
-            ? "bg-purple-600/15 text-purple-200 ring-1 ring-purple-500/30"
-            : done
-              ? "bg-white/5 text-slate-200 ring-1 ring-white/10 hover:ring-white/20"
-              : "bg-white/3 text-slate-400 ring-1 ring-white/10",
-        ].join(" ")}
-      >
-        <span
-          className={[
-            "inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px]",
+            ? "bg-purple-600 text-white shadow"
+            : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"
+        }`}
+    >
+      <span
+        className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold
+          ${
             active
-              ? "bg-purple-500/20 text-purple-200 ring-1 ring-purple-400/30"
-              : done
-                ? "bg-white/10 text-slate-200 ring-1 ring-white/15"
-                : "bg-white/5 text-slate-400 ring-1 ring-white/10",
-          ].join(" ")}
-        >
-          {done ? "✓" : n}
-        </span>
-        {label}
-      </button>
-    );
-  };
-
+              ? "bg-white text-purple-600"
+              : "bg-zinc-700 text-zinc-200"
+          }`}
+      >
+        {n}
+      </span>
+      <span className="tracking-wide">{label}</span>
+    </div>
+  )
+}
   const topStatus =
     !online ? (
       <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/20 px-3 py-1 text-[11px] font-semibold">
@@ -1154,12 +1150,12 @@ function NewJobInner() {
 
               <div className="mt-1 text-xs text-slate-300/80 truncate">{headerSubtitle}</div>
 
-              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              <div className="mt-3 grid grid-cols-4 gap-2">
                 <StepPill n={1} label="VIN" />
                 <StepPill n={2} label="Customer" />
                 <StepPill n={3} label="Services" />
                 <StepPill n={4} label="Total" />
-              </div>
+                </div>
             </div>
 
             <button
