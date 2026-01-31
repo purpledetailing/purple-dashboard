@@ -1191,12 +1191,16 @@ function NewJobInner() {
                 <SchemaLabel>VIN</SchemaLabel>
                 <div className="flex gap-2">
                   <SchemaInput
-                    value={vin}
-                    onChange={(e) => setVin(toCaps(e.target.value))}
-                    placeholder="17-CHARACTER VIN"
-                    inputMode="text"
-                    autoCapitalize="characters"
-                    autoCorrect="off"
+                  value={vin}
+                  onChange={(e) => {
+                    const cleaned = normalizeVin(e.target.value).slice(0, 17);
+                    setVin(cleaned);
+                  }}
+                  placeholder="17-character VIN"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  maxLength={17}
                   />
                   <SchemaButton onClick={lookupVin} disabled={vinBusy || !normalizeVin(vin).length} variant="primary">
                     {vinBusy ? "…" : "LOOKUP"}
