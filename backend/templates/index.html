@@ -700,7 +700,7 @@
     const photoGrid = document.getElementById("photoGrid");
 const noPhotosMsg = document.getElementById("noPhotosMsg");
 
-const photos = Array.isArray(data.photo_urls) ? data.photo_urls : [];
+const photos = Array.isArray(data?.photo_urls) ? data.photo_urls : [];
 if (photos.length > 0) {
   photoGrid.style.display = "grid";
   photoGrid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
