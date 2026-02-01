@@ -621,6 +621,11 @@
               <span class="small-tag">Photo Grid</span>
             </div>
 
+            <div id="photoGrid" style="display:none;"></div>
+            <div id="noPhotosMsg" class="muted" style="display:none;">
+              No photos uploaded yet for this VIN.
+            </div>
+
             <div id="noGalleryMsg" class="muted" style="display:none;">
               No service history media linked yet for this vehicle.
             </div>
@@ -691,6 +696,30 @@
     const shareLinkEl = document.getElementById("shareLink");
     const copyShareBtn = document.getElementById("copyShareBtn");
     const shareHintEl = document.getElementById("shareHint");
+
+    const photoGrid = document.getElementById("photoGrid");
+const noPhotosMsg = document.getElementById("noPhotosMsg");
+
+const photos = Array.isArray(data.photo_urls) ? data.photo_urls : [];
+if (photos.length > 0) {
+  photoGrid.style.display = "grid";
+  photoGrid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+  photoGrid.style.gap = "10px";
+  photoGrid.innerHTML = photos.map((u) => `
+    <a href="${u}" target="_blank" rel="noopener noreferrer" style="
+      display:block;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;
+      background:#0f172a;
+    ">
+      <img src="${u}" style="width:100%;height:180px;object-fit:cover;display:block;" loading="lazy" />
+    </a>
+  `).join("");
+  noPhotosMsg.style.display = "none";
+} else {
+  photoGrid.style.display = "none";
+  photoGrid.innerHTML = "";
+  noPhotosMsg.style.display = "block";
+}
+
 
     function setStatus(message, type = "") {
       statusMessage.textContent = message || "";
