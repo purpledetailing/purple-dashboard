@@ -802,6 +802,13 @@ function renderPhotos(data) {
         const resp = await fetch(`/search?vin=${encodeURIComponent(vin)}`);
         const data = await resp.json();
 
+        let data = null;
+        try {
+          data = await resp.json();
+        } catch {
+          data = null;
+        }
+
         if (!resp.ok) {
           const msg = (data && data.error) || "Something went wrong while searching.";
           setStatus(msg, "error");
@@ -809,6 +816,8 @@ function renderPhotos(data) {
           shareLinkEl.value = "";
           return;
         }
+        
+        renderPhotos(data); // ✅ add this here
 
         // Populate main info
         customerNameEl.textContent = data.customer_name || "—";
