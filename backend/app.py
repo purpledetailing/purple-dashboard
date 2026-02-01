@@ -39,6 +39,7 @@ if not PUBLIC_BASE_URL:
 USE_SUPABASE = os.environ.get("USE_SUPABASE", "1").strip() == "1"
 SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
+LEGACY_TABLE = os.environ.get("LEGACY_TABLE", "customer_data_legacy").strip()
 
 def supabase_headers():
     return {
@@ -103,6 +104,62 @@ def sb_get(path: str, params: dict, timeout: int = 20):
     if r.status_code != 200:
         raise RuntimeError(f"Supabase GET {path} failed: {r.status_code} {r.text}")
     return r.json() or []
+
+    def sb_post(path: str, json_body: dict, timeout: int = 20):
+    url = f"{SUPABASE_URL}/rest/v1/{path.lstrip('/')}"
+    r = requests.post(url, headers=supabase_headers(), json=json_body, timeout=timeout)
+    if r.status_code not in (200, 201, 204):
+        raise RuntimeError(f"Supabase POST {path} failed: {r.status_code} {r.text}")
+    try:
+        return r.json()
+    except Exception:
+        return None
+
+def sb_latest_batch_id_for_vin(vin: str):
+    vin = normalize_vin(vin)
+    rows = sb_get("vehicle_photos", {
+        "select": "batch_id,created_at",
+        "vin": f"eq.{vin}",
+        "order": "created_at.desc",
+        "limit": "1",
+    })
+    return rows[0]["batch_id"] if rows else None
+
+def sb_photos_for_vin_batch(vin: str, batch_id: str, limit: int = 8):
+    vin = normalize_vin(vin)
+    rows = sb_get("vehicle_photos", {
+        "select": "storage_path,sort_order,created_at",
+        "vin": f"eq.{vin}",
+        "batch_id": f"eq.{batch_id}",
+        "order": "sort_order.asc,created_at.asc",
+        "limit": str(limit),
+    })
+    return rows or []
+
+def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
+    # 12 hours default (43200 seconds)
+    url = f"{SUPABASE_URL}/storage/v1/object/sign/vehicle-photos/{storage_path}"
+    r = requests.post(
+        url,
+        headers={
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={"expiresIn": expires_in},
+        timeout=20
+    )
+    if r.status_code != 200:
+        return None
+    data = r.json() or {}
+    signed_path = data.get("signedURL") or data.get("signedUrl") or ""
+    if not signed_path:
+        return None
+    # signedURL is usually a path beginning with /storage/v1/...
+    if signed_path.startswith("http"):
+        return signed_path
+    return f"{SUPABASE_URL}{signed_path}"
+
 
 # ============================================================
 # SQLITE (legacy token route fallback)
@@ -182,17 +239,14 @@ def sb_vehicle_by_vin(vin: str):
     return rows[0] if rows else None
 
 def sb_legacy_by_vin(vin: str):
-    """
-    public.customer_data_legacy has column: vin (text)
-    Use eq (exact match).
-    """
     vin = normalize_vin(vin)
-    rows = sb_get("customer_data_legacy", {
-        "select": "id,customer_id,customer_name,status,phone_number,email,address,zip_code,vehicle_nickname,vin,make,model,year,license_plate_optional,odometer_at_last_service,lease_or_owned,primary_use,notes,service_history_link",
+    rows = sb_get(LEGACY_TABLE, {
+        "select": "*",
         "vin": f"eq.{vin}",
         "limit": "1",
     })
     return rows[0] if rows else None
+
 
 def sb_latest_job_for_vehicle(vehicle_id: str):
     """
@@ -316,9 +370,11 @@ def merged_profile_by_vin(vin: str):
     status = first_truthy((legacy or {}).get("status"), (veh or {}).get("status"), "")
     notes = first_truthy((legacy or {}).get("notes"), (veh or {}).get("notes"), "")
 
-    # --- NEW: Pull customer from latest job if legacy is missing ---
+        # --- NEW: Pull customer fields (legacy primary) ---
     customer_name = first_truthy((legacy or {}).get("customer_name"), "")
     phone_number = first_truthy((legacy or {}).get("phone_number"), "")
+    email = first_truthy((legacy or {}).get("email"), "")
+
 
     latest_customer = None
     if veh and veh.get("id"):
@@ -340,6 +396,27 @@ def merged_profile_by_vin(vin: str):
     if veh and veh.get("id"):
         service_history = build_history_from_jobs(veh["id"])
 
+        # --- Photos (latest batch only, max 8) ---
+    photo_urls = []
+    photo_count = 0
+    latest_batch_id = None
+
+    try:
+        latest_batch_id = sb_latest_batch_id_for_vin(vin)
+        if latest_batch_id:
+            rows = sb_photos_for_vin_batch(vin, latest_batch_id, limit=8)
+            photo_count = len(rows)
+            for r in rows:
+                sp = (r.get("storage_path") or "").strip()
+                if sp:
+                    u = sb_sign_storage_url(sp, expires_in=43200)
+                    if u:
+                        photo_urls.append(u)
+    except Exception:
+        photo_urls = []
+        photo_count = 0
+        latest_batch_id = None
+
     return {
         "veh": veh or {},
         "legacy": legacy or {},
@@ -354,6 +431,7 @@ def merged_profile_by_vin(vin: str):
             "vehicle_nickname": vehicle_nickname,
             "customer_name": customer_name or "—",
             "phone_number": phone_number or "",
+            "email": email or "",
             "service_history_link": service_history_link,
             "service_history": service_history,
         }
@@ -436,6 +514,8 @@ def search():
             "year": m.get("year") or "",
             "status": m.get("status") or "",
             "notes": m.get("notes") or "",
+            "photo_urls": m.get("photo_urls") or [],
+            "photo_count": m.get("photo_count") or 0,
             "service_history_link": m.get("service_history_link") or "",
             "service_history": m.get("service_history") or [],
             "access_token": (data["veh"] or {}).get("access_token"),
@@ -467,7 +547,8 @@ def public_report(value):
             if not data:
                 return render_template("public_report.html", not_found=True, vin=vin), 404
 
-            m = data["merged"]
+            m = data.get("merged") or {}
+            legacy = data.get("legacy") or {}
 
             # PUBLIC MUST HIDE phone/address/zip always
             vehicle_for_template = {
@@ -475,7 +556,10 @@ def public_report(value):
                 "make": m.get("make") or "",
                 "model": m.get("model") or "",
                 "year": m.get("year") or "",
-                "vehicle_nickname": m.get("vehicle_nickname") or "",
+
+                # ✅ SHOW EMAIL (replaces "vehicle nickname" conceptually)
+                "email": (legacy.get("email") or "").strip(),
+
                 "customer_name": "",  # hide
                 "phone_number": "",   # hide
                 "address": "",        # hide
@@ -492,10 +576,12 @@ def public_report(value):
                 not_found=False,
                 vin=vin,
                 vehicle=vehicle_for_template,
+                photo_urls = m.get("photo_urls") or []
+                photo_urls=photo_urls,
                 service_history=m.get("service_history") or [],
                 embed_url=embed_url
             )
-        except Exception as e:
+        except Exception:
             return render_template("public_report.html", not_found=True, vin=vin), 500
 
     # TOKEN route (legacy)
