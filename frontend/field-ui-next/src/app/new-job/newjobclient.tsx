@@ -47,8 +47,8 @@ type PendingJob = {
   customer_address: string;
   customer_zip: string;
 
-  // Drive is deprecated; keep field for backward compat but always ""
-  service_history_link: string;
+  // ✅ REMOVED: service_history_link (NO GOOGLE DRIVE)
+  // service_history_link: string;
 
   service_type: "full" | "interior" | "exterior" | "ceramic";
   selected_package_id: string;
@@ -66,17 +66,6 @@ const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
 };
 
 const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
-
-// ======================================================
-// Drive is deprecated — we use Supabase Storage photos now
-// ======================================================
-const DRIVE_DEPRECATED = true;
-
-// Safe stub so older references never break builds.
-// Always returns "" so Drive links never save.
-function normalizeDriveFolderLink(_raw: string) {
-  return "";
-}
 
 function centsToDollars(cents: number | null) {
   if (cents === null || cents === undefined) return "";
@@ -135,9 +124,7 @@ function maskVin(vin17: string) {
 }
 
 function vehicleLabelParts(year: number | null, make: string, model: string, trim: string) {
-  const parts = [year || "", make, model, trim]
-    .map((x) => String(x || "").trim())
-    .filter(Boolean);
+  const parts = [year || "", make, model, trim].map((x) => String(x || "").trim()).filter(Boolean);
   return parts.join(" ") || "Vehicle";
 }
 
@@ -293,9 +280,6 @@ function NewJobInner() {
 
   const [totalCharged, setTotalCharged] = useState("");
   const [notes, setNotes] = useState("");
-
-  // Drive deprecated: keep field in memory for compatibility, always empty
-  const [serviceHistoryLink, setServiceHistoryLink] = useState("");
 
   const quickTotals = useMemo(() => ["200", "250", "300", "350", "400"], []);
 
@@ -462,7 +446,6 @@ function NewJobInner() {
     vehicle: { year: number | null; make: string; model: string; trim?: string };
     notes?: string;
     status?: string;
-    serviceHistoryLink?: string; // deprecated
   }) {
     const v = normalizeVin(params.vin);
 
@@ -483,7 +466,7 @@ function NewJobInner() {
       customer_name: capsTrim(params.customerName) || null,
       phone_number: (params.customerPhone || "").trim() || null,
 
-      // email (stored lower for safety)
+      // NEW: email (stored lower for safety)
       email: params.customerEmail ? normalizeEmailForDb(params.customerEmail) : null,
 
       address: address ? capsTrim(address) : null,
@@ -496,7 +479,7 @@ function NewJobInner() {
       year: params.vehicle?.year ?? null,
     };
 
-    // Drive deprecated — do NOT store service_history_link anymore
+    // ✅ REMOVED: service_history_link legacy write (NO GOOGLE DRIVE)
 
     // update-or-insert by VIN
     const { data: existing, error: findErr } = await supabase
@@ -515,11 +498,6 @@ function NewJobInner() {
       const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
       if (insErr) throw insErr;
     }
-  }
-
-  async function autofillLegacyLinkForVin(_vin17: string) {
-    // Drive deprecated — no-op
-    return;
   }
 
   // fallback autofill from legacy
@@ -647,13 +625,13 @@ function NewJobInner() {
     // Always try legacy to prefill email/customer and possibly vehicle identity
     try {
       await autofillCustomerFromLegacy(v);
-      // Drive deprecated: no autofillLegacyLinkForVin
     } catch {
       // ignore
     }
 
     if (!isOnline()) {
       setVinStatus("OFFLINE — ENTER YEAR/MAKE/MODEL MANUALLY TO CONTINUE.");
+      // stay on step 1 until required fields are filled
       return;
     }
 
@@ -676,7 +654,11 @@ function NewJobInner() {
 
       if (!veh) {
         // Create vehicle row (best-effort) so decode can update it
-        const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id,vin,year,make,model,trim").single();
+        const createdVeh = await supabase
+          .from("vehicles")
+          .insert({ vin: v })
+          .select("id,vin,year,make,model,trim")
+          .single();
 
         if (!createdVeh.error && createdVeh.data?.id) {
           veh = createdVeh.data as Vehicle;
@@ -734,9 +716,6 @@ function NewJobInner() {
     setCustomerZip("");
     setZipSuggestions([]);
 
-    // Drive deprecated: always clear it
-    setServiceHistoryLink("");
-
     setServiceType("full");
     setSelectedAddonIds({});
     setAddonQuery("");
@@ -768,8 +747,7 @@ function NewJobInner() {
     const v = normalizeVin(payload.vin);
     if (!isValidVin(v)) throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
 
-    // Drive deprecated: always empty
-    const link = "";
+    // ✅ REMOVED: link normalization (NO GOOGLE DRIVE)
 
     // REQUIRED: vehicle identity must exist here
     const yearNum = payload.vehicle_year;
@@ -797,7 +775,6 @@ function NewJobInner() {
       },
       notes: payload.notes,
       status: "active",
-      serviceHistoryLink: link, // deprecated; ignored
     });
 
     // 2) OPTIONAL: mirror into normalized tables (best-effort)
@@ -831,7 +808,6 @@ function NewJobInner() {
             make: makeCaps,
             model: modelCaps,
             trim: trimCaps || null,
-            // Drive deprecated: do not update service_history_link
           })
           .eq("id", vehicleId);
 
@@ -845,7 +821,7 @@ function NewJobInner() {
         }
       }
 
-      // customer best-effort
+      // customer best-effort (no schema assumptions about email column here)
       const phoneNorm = normalizePhone(payload.customer_phone);
       const typedName = capsTrim(payload.customer_name);
       const typedPhone = payload.customer_phone.trim();
@@ -1039,8 +1015,7 @@ function NewJobInner() {
       customer_address: capsTrim(customerAddress),
       customer_zip: normalizeZipString(customerZip),
 
-      // Drive deprecated: force empty always
-      service_history_link: "",
+      // ✅ REMOVED: service_history_link
 
       service_type: serviceType,
       selected_package_id: selectedPackageId,
@@ -1117,7 +1092,11 @@ function NewJobInner() {
     return (
       <div
         className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition
-        ${active ? "bg-purple-600 text-white shadow" : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"}`}
+        ${
+          active
+            ? "bg-purple-600 text-white shadow"
+            : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"
+        }`}
       >
         <span
           className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold
@@ -1147,8 +1126,6 @@ function NewJobInner() {
       ONLINE
     </div>
   );
-
-  const canUploadPhotosNow = isValidVin(normalizeVin(vin));
 
   return (
     <div className="min-h-[100dvh] text-slate-100 overscroll-contain">
@@ -1240,7 +1217,7 @@ function NewJobInner() {
                   {vinStatus ? vinStatus : "TIP: LOOKUP LINKS VIN AND IDENTIFIES VEHICLE (ONLINE)."}
                 </div>
 
-                {/* PHOTOS (SUPABASE BUCKET) */}
+                {/* ✅ PHOTO UPLOAD (SUPABASE BUCKET) */}
                 <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
                   <div className="text-[11px] font-semibold text-slate-300/80 mb-2">Photos (max 8)</div>
 
@@ -1256,7 +1233,7 @@ function NewJobInner() {
 
                   <SchemaButton
                     variant="primary"
-                    disabled={photoBusy || !canUploadPhotosNow}
+                    disabled={photoBusy || !canGoStep2()}
                     onClick={() => photoInputRef.current?.click()}
                     className="w-full"
                   >
@@ -1326,7 +1303,9 @@ function NewJobInner() {
                     disabled={!canGoStep2()}
                     className={[
                       "text-sm font-semibold transition touch-manipulation",
-                      canGoStep2() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                      canGoStep2()
+                        ? "text-purple-200 hover:text-purple-100"
+                        : "text-slate-500 cursor-not-allowed",
                     ].join(" ")}
                   >
                     CONTINUE →
@@ -1413,14 +1392,7 @@ function NewJobInner() {
                   )}
                 </div>
 
-                {/* Drive deprecated notice */}
-                {DRIVE_DEPRECATED && (
-                  <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-3">
-                    <div className="text-[11px] text-slate-300/80">
-                      DRIVE LINKS REMOVED — PHOTOS ARE UPLOADED TO SUPABASE STORAGE.
-                    </div>
-                  </div>
-                )}
+                {/* ✅ REMOVED: GOOGLE DRIVE FOLDER LINK UI */}
 
                 <div className="mt-5 flex gap-2">
                   <SchemaButton onClick={() => setStep(1)} variant="ghost">
