@@ -105,6 +105,62 @@ def sb_get(path: str, params: dict, timeout: int = 20):
         raise RuntimeError(f"Supabase GET {path} failed: {r.status_code} {r.text}")
     return r.json() or []
 
+    def sb_post(path: str, json_body: dict, timeout: int = 20):
+    url = f"{SUPABASE_URL}/rest/v1/{path.lstrip('/')}"
+    r = requests.post(url, headers=supabase_headers(), json=json_body, timeout=timeout)
+    if r.status_code not in (200, 201, 204):
+        raise RuntimeError(f"Supabase POST {path} failed: {r.status_code} {r.text}")
+    try:
+        return r.json()
+    except Exception:
+        return None
+
+def sb_latest_batch_id_for_vin(vin: str):
+    vin = normalize_vin(vin)
+    rows = sb_get("vehicle_photos", {
+        "select": "batch_id,created_at",
+        "vin": f"eq.{vin}",
+        "order": "created_at.desc",
+        "limit": "1",
+    })
+    return rows[0]["batch_id"] if rows else None
+
+def sb_photos_for_vin_batch(vin: str, batch_id: str, limit: int = 8):
+    vin = normalize_vin(vin)
+    rows = sb_get("vehicle_photos", {
+        "select": "storage_path,sort_order,created_at",
+        "vin": f"eq.{vin}",
+        "batch_id": f"eq.{batch_id}",
+        "order": "sort_order.asc,created_at.asc",
+        "limit": str(limit),
+    })
+    return rows or []
+
+def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
+    # 12 hours default (43200 seconds)
+    url = f"{SUPABASE_URL}/storage/v1/object/sign/vehicle-photos/{storage_path}"
+    r = requests.post(
+        url,
+        headers={
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={"expiresIn": expires_in},
+        timeout=20
+    )
+    if r.status_code != 200:
+        return None
+    data = r.json() or {}
+    signed_path = data.get("signedURL") or data.get("signedUrl") or ""
+    if not signed_path:
+        return None
+    # signedURL is usually a path beginning with /storage/v1/...
+    if signed_path.startswith("http"):
+        return signed_path
+    return f"{SUPABASE_URL}{signed_path}"
+
+
 # ============================================================
 # SQLITE (legacy token route fallback)
 # ============================================================
@@ -340,6 +396,27 @@ def merged_profile_by_vin(vin: str):
     if veh and veh.get("id"):
         service_history = build_history_from_jobs(veh["id"])
 
+        # --- Photos (latest batch only, max 8) ---
+    photo_urls = []
+    photo_count = 0
+    latest_batch_id = None
+
+    try:
+        latest_batch_id = sb_latest_batch_id_for_vin(vin)
+        if latest_batch_id:
+            rows = sb_photos_for_vin_batch(vin, latest_batch_id, limit=8)
+            photo_count = len(rows)
+            for r in rows:
+                sp = (r.get("storage_path") or "").strip()
+                if sp:
+                    u = sb_sign_storage_url(sp, expires_in=43200)
+                    if u:
+                        photo_urls.append(u)
+    except Exception:
+        photo_urls = []
+        photo_count = 0
+        latest_batch_id = None
+
     return {
         "veh": veh or {},
         "legacy": legacy or {},
@@ -437,6 +514,8 @@ def search():
             "year": m.get("year") or "",
             "status": m.get("status") or "",
             "notes": m.get("notes") or "",
+            "photo_urls": m.get("photo_urls") or [],
+            "photo_count": m.get("photo_count") or 0,
             "service_history_link": m.get("service_history_link") or "",
             "service_history": m.get("service_history") or [],
             "access_token": (data["veh"] or {}).get("access_token"),
@@ -497,6 +576,8 @@ def public_report(value):
                 not_found=False,
                 vin=vin,
                 vehicle=vehicle_for_template,
+                photo_urls = m.get("photo_urls") or []
+                photo_urls=photo_urls,
                 service_history=m.get("service_history") or [],
                 embed_url=embed_url
             )
