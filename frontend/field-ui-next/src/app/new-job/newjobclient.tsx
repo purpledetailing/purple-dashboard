@@ -23,7 +23,6 @@ type Vehicle = {
   make: string | null;
   model: string | null;
   trim: string | null;
-  service_history_link?: string | null;
 };
 
 type Step = 1 | 2 | 3 | 4;
@@ -48,7 +47,7 @@ type PendingJob = {
   customer_address: string;
   customer_zip: string;
 
-  // legacy only (hidden in UI now)
+  // Drive is deprecated; keep field for backward compat but always ""
   service_history_link: string;
 
   service_type: "full" | "interior" | "exterior" | "ceramic";
@@ -68,6 +67,17 @@ const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
 
 const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
 
+// ======================================================
+// Drive is deprecated — we use Supabase Storage photos now
+// ======================================================
+const DRIVE_DEPRECATED = true;
+
+// Safe stub so older references never break builds.
+// Always returns "" so Drive links never save.
+function normalizeDriveFolderLink(_raw: string) {
+  return "";
+}
+
 function centsToDollars(cents: number | null) {
   if (cents === null || cents === undefined) return "";
   return (cents / 100).toFixed(2);
@@ -81,7 +91,7 @@ function dollarsToCents(input: string): number {
   return Math.round(num * 100);
 }
 
-/** CAPS helpers */
+/** CAPS helpers (tool should capture in ALL CAPS) */
 function toCaps(raw: string) {
   return (raw || "").toUpperCase();
 }
@@ -89,6 +99,7 @@ function capsTrim(raw: string) {
   return toCaps(raw).trim();
 }
 function normalizeEmailForDb(raw: string) {
+  // email is case-insensitive; we display CAPS in UI, but store lower for safety
   return (raw || "").trim().toLowerCase();
 }
 function normalizeYearInput(raw: string) {
@@ -124,7 +135,9 @@ function maskVin(vin17: string) {
 }
 
 function vehicleLabelParts(year: number | null, make: string, model: string, trim: string) {
-  const parts = [year || "", make, model, trim].map((x) => String(x || "").trim()).filter(Boolean);
+  const parts = [year || "", make, model, trim]
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
   return parts.join(" ") || "Vehicle";
 }
 
@@ -201,7 +214,9 @@ function normalizeZipString(raw: string): string {
   return digits.slice(0, 10);
 }
 
-/** Extract city/state from a loose address string */
+/** Extract city/state from a loose address string:
+ * "123 Main St, Wake Forest, NC 27587" -> { city:"Wake Forest", state:"NC" }
+ */
 function extractCityState(address: string): { city: string | null; state: string | null } {
   const a = (address || "").trim();
   if (!a) return { city: null, state: null };
@@ -219,14 +234,6 @@ function extractCityState(address: string): { city: string | null; state: string
   const city = parts[parts.length - 2] ?? null;
 
   return { city: city || null, state };
-}
-
-/** Legacy-only normalizer (kept for compatibility) */
-function normalizeDriveFolderLink(raw: string) {
-  const s = (raw || "").trim();
-  if (!s) return "";
-  const ok = /^https?:\/\/(drive|docs)\.google\.com\/drive\/folders\/[a-zA-Z0-9_-]+/.test(s);
-  return ok ? s : "";
 }
 
 export default function NewJobClient() {
@@ -273,13 +280,9 @@ function NewJobInner() {
   const [zipSuggestions, setZipSuggestions] = useState<string[]>([]);
   const zipLookupTimer = useRef<number | null>(null);
 
-  // ✅ photo upload
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoMsg, setPhotoMsg] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
-
-  // ✅ keep legacy link in state (hidden UI now)
-  const [serviceHistoryLink, setServiceHistoryLink] = useState("");
 
   const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">("full");
   const [selectedPackageId, setSelectedPackageId] = useState<string>("");
@@ -290,6 +293,9 @@ function NewJobInner() {
 
   const [totalCharged, setTotalCharged] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Drive deprecated: keep field in memory for compatibility, always empty
+  const [serviceHistoryLink, setServiceHistoryLink] = useState("");
 
   const quickTotals = useMemo(() => ["200", "250", "300", "350", "400"], []);
 
@@ -359,7 +365,6 @@ function NewJobInner() {
     return Number.isFinite(asNum) ? asNum : null;
   }
 
-  // ✅ Upload Photos (VIN only required — no longer blocked by year/make/model)
   async function uploadPhotosForVin(vin17: string, files: FileList | null) {
     const v = normalizeVin(vin17);
     if (!isValidVin(v)) {
@@ -379,23 +384,19 @@ function NewJobInner() {
     try {
       const fd = new FormData();
       fd.append("vin", v);
-
       Array.from(files)
         .slice(0, 8)
-        .forEach((f) => {
-          fd.append("photos", f); // primary
-          fd.append("files", f); // fallback key (prevents server mismatch)
-        });
+        .forEach((f) => fd.append("photos", f));
 
       const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
 
       if (!res.ok) {
-        setPhotoMsg((data as any)?.error || "Upload failed.");
+        setPhotoMsg(data?.error || "Upload failed.");
         return;
       }
 
-      setPhotoMsg(`Uploaded ${(data as any)?.count ?? files.length} photo(s) ✅`);
+      setPhotoMsg(`Uploaded ${data.count} photo(s) ✅`);
     } catch (e: any) {
       setPhotoMsg(e?.message || "Upload failed.");
     } finally {
@@ -461,7 +462,7 @@ function NewJobInner() {
     vehicle: { year: number | null; make: string; model: string; trim?: string };
     notes?: string;
     status?: string;
-    serviceHistoryLink?: string;
+    serviceHistoryLink?: string; // deprecated
   }) {
     const v = normalizeVin(params.vin);
 
@@ -482,7 +483,7 @@ function NewJobInner() {
       customer_name: capsTrim(params.customerName) || null,
       phone_number: (params.customerPhone || "").trim() || null,
 
-      // NEW: email (stored lower for safety)
+      // email (stored lower for safety)
       email: params.customerEmail ? normalizeEmailForDb(params.customerEmail) : null,
 
       address: address ? capsTrim(address) : null,
@@ -495,8 +496,7 @@ function NewJobInner() {
       year: params.vehicle?.year ?? null,
     };
 
-    const link = normalizeDriveFolderLink(params.serviceHistoryLink || "");
-    if (link) payload.service_history_link = link;
+    // Drive deprecated — do NOT store service_history_link anymore
 
     // update-or-insert by VIN
     const { data: existing, error: findErr } = await supabase
@@ -517,20 +517,9 @@ function NewJobInner() {
     }
   }
 
-  async function autofillLegacyLinkForVin(vin17: string) {
-    const v = normalizeVin(vin17);
-    if (!isValidVin(v)) return;
-
-    const { data, error } = await supabase
-      .from("customer_data_legacy")
-      .select("service_history_link")
-      .eq("vin", v)
-      .limit(1)
-      .maybeSingle();
-
-    if (error) return;
-    const link = (data as any)?.service_history_link as string | undefined;
-    if (link && !serviceHistoryLink.trim()) setServiceHistoryLink(link);
+  async function autofillLegacyLinkForVin(_vin17: string) {
+    // Drive deprecated — no-op
+    return;
   }
 
   // fallback autofill from legacy
@@ -540,7 +529,7 @@ function NewJobInner() {
 
     const { data, error } = await supabase
       .from("customer_data_legacy")
-      .select("customer_name, phone_number, email, address, zip_code, service_history_link, make, model, year")
+      .select("customer_name, phone_number, email, address, zip_code, make, model, year")
       .eq("vin", v)
       .limit(1)
       .maybeSingle();
@@ -553,7 +542,6 @@ function NewJobInner() {
 
     if (!customerAddress.trim() && (data as any).address) setCustomerAddress(capsTrim(String((data as any).address)));
     if (!customerZip.trim() && (data as any).zip_code != null) setCustomerZip(String((data as any).zip_code));
-    if (!serviceHistoryLink.trim() && (data as any).service_history_link) setServiceHistoryLink((data as any).service_history_link);
 
     // help recover vehicle identity if it exists in legacy (still require it)
     if (!vehMake.trim() && (data as any).make) setVehMake(capsTrim(String((data as any).make)));
@@ -659,7 +647,7 @@ function NewJobInner() {
     // Always try legacy to prefill email/customer and possibly vehicle identity
     try {
       await autofillCustomerFromLegacy(v);
-      await autofillLegacyLinkForVin(v);
+      // Drive deprecated: no autofillLegacyLinkForVin
     } catch {
       // ignore
     }
@@ -673,7 +661,7 @@ function NewJobInner() {
     try {
       const { data, error } = await supabase
         .from("vehicles")
-        .select("id,vin,year,make,model,trim,service_history_link")
+        .select("id,vin,year,make,model,trim")
         .eq("vin", v)
         .limit(1)
         .maybeSingle();
@@ -687,11 +675,8 @@ function NewJobInner() {
       let veh: Vehicle | null = (data as Vehicle) ?? null;
 
       if (!veh) {
-        const createdVeh = await supabase
-          .from("vehicles")
-          .insert({ vin: v })
-          .select("id,vin,year,make,model,trim,service_history_link")
-          .single();
+        // Create vehicle row (best-effort) so decode can update it
+        const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id,vin,year,make,model,trim").single();
 
         if (!createdVeh.error && createdVeh.data?.id) {
           veh = createdVeh.data as Vehicle;
@@ -700,6 +685,7 @@ function NewJobInner() {
 
       if (veh) {
         setVehicle(veh);
+        // preload required fields if present
         setVehYearText(veh.year ? String(veh.year) : "");
         setVehMake(veh.make ? capsTrim(veh.make) : "");
         setVehModel(veh.model ? capsTrim(veh.model) : "");
@@ -707,12 +693,14 @@ function NewJobInner() {
 
         setVinStatus("VIN LINKED ✅");
 
+        // Fill from recent job if available
         try {
           await autofillCustomerFromVehicle(veh.id);
         } catch {
           // ignore
         }
 
+        // If missing identity, decode
         if (needsDecode(veh)) {
           try {
             await decodeVinAndUpdateVehicle(veh.id, v);
@@ -745,6 +733,8 @@ function NewJobInner() {
     setCustomerAddress("");
     setCustomerZip("");
     setZipSuggestions([]);
+
+    // Drive deprecated: always clear it
     setServiceHistoryLink("");
 
     setServiceType("full");
@@ -778,8 +768,10 @@ function NewJobInner() {
     const v = normalizeVin(payload.vin);
     if (!isValidVin(v)) throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
 
-    const link = normalizeDriveFolderLink(payload.service_history_link || "");
+    // Drive deprecated: always empty
+    const link = "";
 
+    // REQUIRED: vehicle identity must exist here
     const yearNum = payload.vehicle_year;
     const makeCaps = capsTrim(payload.vehicle_make || "");
     const modelCaps = capsTrim(payload.vehicle_model || "");
@@ -805,16 +797,17 @@ function NewJobInner() {
       },
       notes: payload.notes,
       status: "active",
-      serviceHistoryLink: link,
+      serviceHistoryLink: link, // deprecated; ignored
     });
 
     // 2) OPTIONAL: mirror into normalized tables (best-effort)
     try {
+      // vehicle best-effort
       let vehicleId: string | null = null;
 
       const foundVeh = await supabase
         .from("vehicles")
-        .select("id,vin,year,make,model,trim,service_history_link")
+        .select("id,vin,year,make,model,trim")
         .eq("vin", v)
         .limit(1)
         .maybeSingle();
@@ -823,12 +816,14 @@ function NewJobInner() {
         vehicleId = foundVeh.data.id;
       } else {
         const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id").single();
+
         if (!createdVeh.error && createdVeh.data?.id) {
           vehicleId = createdVeh.data.id;
         }
       }
 
       if (vehicleId) {
+        // Always write the required identity fields (manual or decoded)
         await supabase
           .from("vehicles")
           .update({
@@ -836,10 +831,11 @@ function NewJobInner() {
             make: makeCaps,
             model: modelCaps,
             trim: trimCaps || null,
-            service_history_link: link || null,
+            // Drive deprecated: do not update service_history_link
           })
           .eq("id", vehicleId);
 
+        // If online and still missing somehow, attempt decode (non-blocking)
         if (isOnline()) {
           try {
             await decodeVinAndUpdateVehicle(vehicleId, v);
@@ -849,6 +845,7 @@ function NewJobInner() {
         }
       }
 
+      // customer best-effort
       const phoneNorm = normalizePhone(payload.customer_phone);
       const typedName = capsTrim(payload.customer_name);
       const typedPhone = payload.customer_phone.trim();
@@ -912,6 +909,7 @@ function NewJobInner() {
         }
       }
 
+      // job best-effort
       if (customerId && vehicleId) {
         const totalCents = dollarsToCents(payload.total_charged);
 
@@ -1015,6 +1013,7 @@ function NewJobInner() {
     const v = normalizeVin(vin);
     if (!isValidVin(v)) return setMsg("VIN MUST BE 17 CHARACTERS (NO I, O, Q).");
 
+    // enforce required vehicle identity
     const yearNum = yearToNumberOrNull(vehYearText);
     if (!yearNum || !vehMake.trim() || !vehModel.trim()) {
       return setMsg("YEAR / MAKE / MODEL REQUIRED (AFTER VIN).");
@@ -1040,8 +1039,8 @@ function NewJobInner() {
       customer_address: capsTrim(customerAddress),
       customer_zip: normalizeZipString(customerZip),
 
-      // legacy only (hidden UI now)
-      service_history_link: serviceHistoryLink,
+      // Drive deprecated: force empty always
+      service_history_link: "",
 
       service_type: serviceType,
       selected_package_id: selectedPackageId,
@@ -1131,24 +1130,25 @@ function NewJobInner() {
     );
   }
 
-  const topStatus =
-    !online ? (
-      <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/20 px-3 py-1 text-[11px] font-semibold">
-        OFFLINE • QUEUE {queuedCount}
-      </div>
-    ) : queuedCount > 0 ? (
-      <button
-        type="button"
-        onClick={flushQueue}
-        className="inline-flex items-center gap-2 rounded-full bg-purple-500/10 text-purple-200 ring-1 ring-purple-400/20 px-3 py-1 text-[11px] font-semibold hover:bg-purple-500/15 transition touch-manipulation"
-      >
-        QUEUED {queuedCount} {syncingQueue ? "• SYNCING…" : "• TAP TO SYNC"}
-      </button>
-    ) : (
-      <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 px-3 py-1 text-[11px] font-semibold">
-        ONLINE
-      </div>
-    );
+  const topStatus = !online ? (
+    <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/20 px-3 py-1 text-[11px] font-semibold">
+      OFFLINE • QUEUE {queuedCount}
+    </div>
+  ) : queuedCount > 0 ? (
+    <button
+      type="button"
+      onClick={flushQueue}
+      className="inline-flex items-center gap-2 rounded-full bg-purple-500/10 text-purple-200 ring-1 ring-purple-400/20 px-3 py-1 text-[11px] font-semibold hover:bg-purple-500/15 transition touch-manipulation"
+    >
+      QUEUED {queuedCount} {syncingQueue ? "• SYNCING…" : "• TAP TO SYNC"}
+    </button>
+  ) : (
+    <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 px-3 py-1 text-[11px] font-semibold">
+      ONLINE
+    </div>
+  );
+
+  const canUploadPhotosNow = isValidVin(normalizeVin(vin));
 
   return (
     <div className="min-h-[100dvh] text-slate-100 overscroll-contain">
@@ -1240,7 +1240,7 @@ function NewJobInner() {
                   {vinStatus ? vinStatus : "TIP: LOOKUP LINKS VIN AND IDENTIFIES VEHICLE (ONLINE)."}
                 </div>
 
-                {/* ✅ Upload Photos (VIN valid only) */}
+                {/* PHOTOS (SUPABASE BUCKET) */}
                 <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
                   <div className="text-[11px] font-semibold text-slate-300/80 mb-2">Photos (max 8)</div>
 
@@ -1256,7 +1256,7 @@ function NewJobInner() {
 
                   <SchemaButton
                     variant="primary"
-                    disabled={photoBusy || !isValidVin(normalizeVin(vin))}
+                    disabled={photoBusy || !canUploadPhotosNow}
                     onClick={() => photoInputRef.current?.click()}
                     className="w-full"
                   >
@@ -1413,9 +1413,14 @@ function NewJobInner() {
                   )}
                 </div>
 
-                {/* ✅ Google Drive field removed from UI.
-                    Keeping serviceHistoryLink hidden for legacy compatibility */}
-                <input type="hidden" value={serviceHistoryLink} readOnly />
+                {/* Drive deprecated notice */}
+                {DRIVE_DEPRECATED && (
+                  <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-3">
+                    <div className="text-[11px] text-slate-300/80">
+                      DRIVE LINKS REMOVED — PHOTOS ARE UPLOADED TO SUPABASE STORAGE.
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-5 flex gap-2">
                   <SchemaButton onClick={() => setStep(1)} variant="ghost">
@@ -1515,7 +1520,12 @@ function NewJobInner() {
                             >
                               <div className="text-sm font-semibold">{toCaps(a.name)}</div>
                               {sub ? (
-                                <div className={["text-[11px] mt-0.5", on ? "text-purple-100/70" : "text-slate-300/70"].join(" ")}>
+                                <div
+                                  className={[
+                                    "text-[11px] mt-0.5",
+                                    on ? "text-purple-100/70" : "text-slate-300/70",
+                                  ].join(" ")}
+                                >
                                   {toCaps(sub)}
                                 </div>
                               ) : null}
@@ -1546,7 +1556,12 @@ function NewJobInner() {
                   <div className="h-12 w-10 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-slate-300/80 font-semibold">
                     $
                   </div>
-                  <SchemaInput value={totalCharged} onChange={(e) => setTotalCharged(e.target.value)} placeholder="250" inputMode="decimal" />
+                  <SchemaInput
+                    value={totalCharged}
+                    onChange={(e) => setTotalCharged(e.target.value)}
+                    placeholder="250"
+                    inputMode="decimal"
+                  />
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
