@@ -223,7 +223,7 @@ function extractCityState(address: string): { city: string | null; state: string
   return { city: city || null, state };
 }
 
-export default function NewJobClient() {
+export default function newjobclient() {
   return (
     <Protected>
       <NewJobInner />
