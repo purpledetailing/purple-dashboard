@@ -6,6 +6,10 @@ import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
+/** =========================
+ * Types
+ * ========================= */
+
 type Service = {
   id: string;
   name: string;
@@ -25,7 +29,7 @@ type Vehicle = {
   trim: string | null;
 };
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5;
 
 type PendingJob = {
   id: string;
@@ -34,7 +38,6 @@ type PendingJob = {
 
   vin: string;
 
-  // REQUIRED vehicle identity (must be captured after VIN)
   vehicle_year: number | null;
   vehicle_make: string;
   vehicle_model: string;
@@ -47,9 +50,6 @@ type PendingJob = {
   customer_address: string;
   customer_zip: string;
 
-  // ✅ REMOVED: service_history_link (NO GOOGLE DRIVE)
-  // service_history_link: string;
-
   service_type: "full" | "interior" | "exterior" | "ceramic";
   selected_package_id: string;
   addon_ids: string[];
@@ -57,6 +57,16 @@ type PendingJob = {
   notes: string;
   performed_at: string;
 };
+
+type PendingPhoto = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
+
+/** =========================
+ * Config / Constants
+ * ========================= */
 
 const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
   full: "full_service",
@@ -66,6 +76,10 @@ const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
 };
 
 const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
+
+/** =========================
+ * Helpers
+ * ========================= */
 
 function centsToDollars(cents: number | null) {
   if (cents === null || cents === undefined) return "";
@@ -80,7 +94,6 @@ function dollarsToCents(input: string): number {
   return Math.round(num * 100);
 }
 
-/** CAPS helpers (tool should capture in ALL CAPS) */
 function toCaps(raw: string) {
   return (raw || "").toUpperCase();
 }
@@ -88,9 +101,9 @@ function capsTrim(raw: string) {
   return toCaps(raw).trim();
 }
 function normalizeEmailForDb(raw: string) {
-  // email is case-insensitive; we display CAPS in UI, but store lower for safety
   return (raw || "").trim().toLowerCase();
 }
+
 function normalizeYearInput(raw: string) {
   const digits = (raw || "").replace(/\D/g, "").slice(0, 4);
   return digits;
@@ -102,12 +115,10 @@ function yearToNumberOrNull(y: string) {
   return n;
 }
 
-/** VIN utils */
 function normalizeVin(raw: string) {
   return (raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 function isValidVin(vin: string) {
-  // Standard VIN excludes I, O, Q
   return /^[A-HJ-NPR-Z0-9]{17}$/.test(vin);
 }
 
@@ -156,7 +167,7 @@ function setQueue(items: PendingJob[]) {
   localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items));
 }
 
-function makeId() {
+function safeUuid() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c: any = typeof crypto !== "undefined" ? crypto : null;
   if (c?.randomUUID) return c.randomUUID();
@@ -166,7 +177,7 @@ function makeId() {
 function enqueueJob(item: Omit<PendingJob, "id" | "created_at" | "attempt_count">) {
   const q = getQueue();
   const newItem: PendingJob = {
-    id: makeId(),
+    id: safeUuid(),
     created_at: new Date().toISOString(),
     attempt_count: 0,
     ...item,
@@ -186,7 +197,6 @@ function bumpAttempt(id: string) {
   setQueue(q);
 }
 
-/** zip_code bigint helper (legacy table uses bigint) */
 function normalizeZipToBigint(raw: string): number | null {
   const digits = (raw || "").trim().replace(/\D/g, "");
   if (!digits) return null;
@@ -195,15 +205,12 @@ function normalizeZipToBigint(raw: string): number | null {
   return n;
 }
 
-/** customers.zip_code stored as text in this flow — keep it clean */
 function normalizeZipString(raw: string): string {
   const digits = (raw || "").replace(/\D/g, "");
   return digits.slice(0, 10);
 }
 
-/** Extract city/state from a loose address string:
- * "123 Main St, Wake Forest, NC 27587" -> { city:"Wake Forest", state:"NC" }
- */
+/** Extract city/state from "..., Wake Forest, NC 27587" */
 function extractCityState(address: string): { city: string | null; state: string | null } {
   const a = (address || "").trim();
   if (!a) return { city: null, state: null };
@@ -212,6 +219,7 @@ function extractCityState(address: string): { city: string | null; state: string
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean);
+
   if (parts.length < 2) return { city: null, state: null };
 
   const last = parts[parts.length - 1];
@@ -223,13 +231,21 @@ function extractCityState(address: string): { city: string | null; state: string
   return { city: city || null, state };
 }
 
-export default function newjobclient() {
+/** =========================
+ * Export Wrapper
+ * ========================= */
+
+export default function NewJobPage() {
   return (
     <Protected>
       <NewJobInner />
     </Protected>
   );
 }
+
+/** =========================
+ * Main Component
+ * ========================= */
 
 function NewJobInner() {
   const router = useRouter();
@@ -252,7 +268,7 @@ function NewJobInner() {
   const [vinStatus, setVinStatus] = useState<string>("");
   const [vinBusy, setVinBusy] = useState(false);
 
-  // REQUIRED: year/make/model must exist before moving past VIN
+  // Required year/make/model before leaving Step 1
   const [vehYearText, setVehYearText] = useState("");
   const [vehMake, setVehMake] = useState("");
   const [vehModel, setVehModel] = useState("");
@@ -267,15 +283,16 @@ function NewJobInner() {
   const [zipSuggestions, setZipSuggestions] = useState<string[]>([]);
   const zipLookupTimer = useRef<number | null>(null);
 
+  // Photos step
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoMsg, setPhotoMsg] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [photos, setPhotos] = useState<PendingPhoto[]>([]);
 
   const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">("full");
   const [selectedPackageId, setSelectedPackageId] = useState<string>("");
   const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>({});
   const [addonQuery, setAddonQuery] = useState("");
-
   const [addonsOpen, setAddonsOpen] = useState(false);
 
   const [totalCharged, setTotalCharged] = useState("");
@@ -283,6 +300,9 @@ function NewJobInner() {
 
   const quickTotals = useMemo(() => ["200", "250", "300", "350", "400"], []);
 
+  /** =========================
+   * Load services
+   * ========================= */
   useEffect(() => {
     (async () => {
       setLoadingServices(true);
@@ -333,9 +353,7 @@ function NewJobInner() {
     return "";
   };
 
-  const toggleAddon = (id: string) => {
-    setSelectedAddonIds((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  const toggleAddon = (id: string) => setSelectedAddonIds((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const needsDecode = (veh: Vehicle | null) => {
     if (!veh) return true;
@@ -349,35 +367,28 @@ function NewJobInner() {
     return Number.isFinite(asNum) ? asNum : null;
   }
 
-  // ✅ NEW: allow photo upload as soon as VIN is valid (do NOT require year/make/model)
-  const canUploadPhotos = useMemo(() => {
-    const v = normalizeVin(vin);
-    return isValidVin(v);
-  }, [vin]);
+  const canUploadPhotos = useMemo(() => isValidVin(normalizeVin(vin)), [vin]);
 
-  type PendingPhoto = {
-  file: File;
-  previewUrl: string;
-};
-
-const [photos, setPhotos] = useState<PendingPhoto[]>([]);
-const batchIdRef = useRef<string>(crypto.randomUUID());
-
-
-  // ✅ UPDATED: robust upload (calls /api/photos/upload which must insert into vehicle_photos)
-  async function uploadPhotosForVin(vin17: string, files: FileList | null) {
+  /** =========================
+   * Photos Upload (calls your /api/photos/upload route)
+   * ========================= */
+  async function uploadPhotosForVin(vin17: string, selected: PendingPhoto[]) {
     const v = normalizeVin(vin17);
 
     if (!isValidVin(v)) {
-      setPhotoMsg("Enter a valid 17-character VIN first.");
+      setPhotoMsg("ENTER A VALID 17-CHAR VIN FIRST.");
       return;
     }
-    if (!files || files.length === 0) return;
-
-    const list = Array.from(files).slice(0, 8);
-
-    if (files.length > 8) {
-      setPhotoMsg("Max 8 photos per upload.");
+    if (!selected || selected.length === 0) {
+      setPhotoMsg("ADD PHOTOS FIRST.");
+      return;
+    }
+    if (!isOnline()) {
+      setPhotoMsg("OFFLINE — UPLOAD WHEN BACK ONLINE.");
+      return;
+    }
+    if (selected.length > 8) {
+      setPhotoMsg("MAX 8 PHOTOS.");
       return;
     }
 
@@ -388,33 +399,55 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
       const fd = new FormData();
       fd.append("vin", v);
 
-      list.forEach((f) => {
+      selected.slice(0, 8).forEach((p) => {
+        const f = p.file;
         if (f.size > 18 * 1024 * 1024) {
-          throw new Error("One of the photos is too large (max ~18MB).");
+          throw new Error("ONE PHOTO IS TOO LARGE (MAX ~18MB).");
         }
         fd.append("photos", f, f.name);
       });
 
-      const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
+      const res = await fetch("/api/photos/upload", {
+        method: "POST",
+        body: fd,
+      });
 
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
 
       if (!res.ok) {
-        setPhotoMsg((data?.error || `Upload failed (${res.status})`).toString());
+        setPhotoMsg(String(data?.error || `UPLOAD FAILED (${res.status})`));
         return;
       }
 
-      setPhotoMsg(`Uploaded ${data.count ?? list.length} photo(s) ✅`);
+      setPhotoMsg(`UPLOADED ${data.count ?? selected.length} PHOTO(S) ✅`);
+
+      // optional: clear local selections after successful upload
+      selected.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+      setPhotos([]);
     } catch (e: any) {
-      setPhotoMsg((e?.message || "Upload failed.").toString());
+      setPhotoMsg(String(e?.message || "UPLOAD FAILED."));
     } finally {
       setPhotoBusy(false);
       if (photoInputRef.current) photoInputRef.current.value = "";
     }
   }
 
-  /** ZIP lookup from your table (NO Google) */
+  /** Cleanup previews if navigating away */
+  useEffect(() => {
+    return () => {
+      photos.forEach((p) => {
+        try {
+          URL.revokeObjectURL(p.previewUrl);
+        } catch {}
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** =========================
+   * ZIP lookup from your table
+   * ========================= */
   async function lookupZipSuggestionsFromAddress(addr: string) {
     if (!isOnline()) return;
 
@@ -442,7 +475,6 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
     }
   }
 
-  /** Debounced address -> zip suggestions */
   useEffect(() => {
     if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
 
@@ -461,7 +493,9 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerAddress]);
 
-  /** Legacy writer (reliable) */
+  /** =========================
+   * Legacy writer (customer_data_legacy)
+   * ========================= */
   async function upsertLegacyByVin(params: {
     vin: string;
     customerName: string;
@@ -491,20 +525,15 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
       customer_id,
       customer_name: capsTrim(params.customerName) || null,
       phone_number: (params.customerPhone || "").trim() || null,
-
       email: params.customerEmail ? normalizeEmailForDb(params.customerEmail) : null,
-
       address: address ? capsTrim(address) : null,
       zip_code,
       status: params.status ?? "active",
       notes: capsTrim(params.notes || "") || null,
-
       make: capsTrim(params.vehicle?.make || "") || null,
       model: capsTrim(params.vehicle?.model || "") || null,
       year: params.vehicle?.year ?? null,
     };
-
-    // ✅ REMOVED: service_history_link legacy write (NO GOOGLE DRIVE)
 
     const { data: existing, error: findErr } = await supabase
       .from("customer_data_legacy")
@@ -530,7 +559,7 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
 
     const { data, error } = await supabase
       .from("customer_data_legacy")
-      .select("customer_name, phone_number, email, address, zip_code, make, model, year")
+      .select("customer_name, phone_number, email, address, zip_code, make, model, year, trim")
       .eq("vin", v)
       .limit(1)
       .maybeSingle();
@@ -550,6 +579,7 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
     if (!vehMake.trim() && d.make) setVehMake(capsTrim(String(d.make)));
     if (!vehModel.trim() && d.model) setVehModel(capsTrim(String(d.model)));
     if (!vehYearText.trim() && d.year != null) setVehYearText(String(d.year));
+    if (!vehTrim.trim() && d.trim) setVehTrim(capsTrim(String(d.trim)));
   }
 
   const autofillCustomerFromVehicle = async (vehicleId: string) => {
@@ -634,6 +664,7 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
     setVinStatus("");
     setVehicle(null);
 
+    // reset vehicle fields
     setVehYearText("");
     setVehMake("");
     setVehModel("");
@@ -712,7 +743,17 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
     }
   };
 
+  /** =========================
+   * Reset
+   * ========================= */
   const resetForm = () => {
+    // cleanup previews
+    photos.forEach((p) => {
+      try {
+        URL.revokeObjectURL(p.previewUrl);
+      } catch {}
+    });
+
     setStep(1);
     setVin("");
     setVehicle(null);
@@ -730,6 +771,10 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
     setCustomerZip("");
     setZipSuggestions([]);
 
+    setPhotos([]);
+    setPhotoMsg(null);
+    setPhotoBusy(false);
+
     setServiceType("full");
     setSelectedAddonIds({});
     setAddonQuery("");
@@ -741,6 +786,9 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
     if (packages[0]?.id) setSelectedPackageId(packages[0].id);
   };
 
+  /** =========================
+   * Step gates
+   * ========================= */
   const canGoStep2 = () => {
     const v = normalizeVin(vin);
     if (!isValidVin(v)) return false;
@@ -754,8 +802,12 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
   };
 
   const canGoStep3 = () => customerName.trim().length > 0;
-  const canGoStep4 = () => !!selectedPackageId;
+  const canGoStep4 = () => true; // photos optional
+  const canGoStep5 = () => !!selectedPackageId;
 
+  /** =========================
+   * Save job
+   * ========================= */
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
     if (!isValidVin(v)) throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
@@ -769,6 +821,7 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
       throw new Error("YEAR/MAKE/MODEL REQUIRED (AFTER VIN).");
     }
 
+    // Legacy is source of truth
     await upsertLegacyByVin({
       vin: v,
       customerName: payload.customer_name,
@@ -776,16 +829,12 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
       customerEmail: payload.customer_email,
       customerAddress: payload.customer_address,
       customerZip: payload.customer_zip,
-      vehicle: {
-        year: yearNum,
-        make: makeCaps,
-        model: modelCaps,
-        trim: trimCaps,
-      },
+      vehicle: { year: yearNum, make: makeCaps, model: modelCaps, trim: trimCaps },
       notes: payload.notes,
       status: "active",
     });
 
+    // Mirror normalized tables best-effort
     try {
       let vehicleId: string | null = null;
 
@@ -795,16 +844,11 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
         vehicleId = foundVeh.data.id;
       } else {
         const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id").single();
-        if (!createdVeh.error && createdVeh.data?.id) {
-          vehicleId = createdVeh.data.id;
-        }
+        if (!createdVeh.error && createdVeh.data?.id) vehicleId = createdVeh.data.id;
       }
 
       if (vehicleId) {
-        await supabase
-          .from("vehicles")
-          .update({ year: yearNum, make: makeCaps, model: modelCaps, trim: trimCaps || null })
-          .eq("id", vehicleId);
+        await supabase.from("vehicles").update({ year: yearNum, make: makeCaps, model: modelCaps, trim: trimCaps || null }).eq("id", vehicleId);
 
         if (isOnline()) {
           try {
@@ -856,9 +900,7 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
             .select("id")
             .single();
 
-          if (!createdCust.error && createdCust.data?.id) {
-            customerId = createdCust.data.id;
-          }
+          if (!createdCust.error && createdCust.data?.id) customerId = createdCust.data.id;
         }
       } else {
         const createdCust = await supabase
@@ -873,9 +915,7 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
           .select("id")
           .single();
 
-        if (!createdCust.error && createdCust.data?.id) {
-          customerId = createdCust.data.id;
-        }
+        if (!createdCust.error && createdCust.data?.id) customerId = createdCust.data.id;
       }
 
       if (customerId && vehicleId) {
@@ -988,6 +1028,7 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
 
     if (!customerName.trim()) return setMsg("CUSTOMER NAME IS REQUIRED.");
     if (!selectedPackageId) return setMsg("SELECT A PACKAGE.");
+
     const totalCents = dollarsToCents(totalCharged);
     if (totalCents <= 0) return setMsg("TOTAL CHARGED MUST BE > $0.");
 
@@ -1011,6 +1052,7 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
       addon_ids: Object.entries(selectedAddonIds)
         .filter(([, on]) => on)
         .map(([id]) => id),
+
       total_charged: totalCharged,
       notes: capsTrim(notes),
       performed_at: new Date().toISOString(),
@@ -1061,6 +1103,10 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
     }
   };
 
+  /** =========================
+   * Header / UI
+   * ========================= */
+
   const headerSubtitle = useMemo(() => {
     const yearNum = yearToNumberOrNull(vehYearText);
     const label = vehicle ? vehicleLabel(vehicle) : vehicleLabelParts(yearNum, vehMake, vehModel, vehTrim);
@@ -1069,18 +1115,10 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
     return `${label} • ${maskVin(v)}`;
   }, [vehicle, vin, vehYearText, vehMake, vehModel, vehTrim]);
 
-  function StepPill({
-    n,
-    label,
-    active = false,
-  }: {
-    n: number;
-    label: string;
-    active?: boolean;
-  }) {
+  function StepPill({ n, label, active = false }: { n: number; label: string; active?: boolean }) {
     return (
       <div
-        className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition
+        className={`flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-[12px] font-medium transition
         ${
           active
             ? "bg-purple-600 text-white shadow"
@@ -1088,7 +1126,7 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
         }`}
       >
         <span
-          className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold
+          className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold
           ${active ? "bg-white text-purple-600" : "bg-zinc-700 text-zinc-200"}`}
         >
           {n}
@@ -1115,6 +1153,10 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
       ONLINE
     </div>
   );
+
+  /** =========================
+   * Render
+   * ========================= */
 
   return (
     <div className="min-h-[100dvh] text-slate-100 overscroll-contain">
@@ -1143,11 +1185,12 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
 
               <div className="mt-1 text-xs text-slate-300/80 truncate">{headerSubtitle}</div>
 
-              <div className="mt-3 grid grid-cols-4 gap-2">
+              <div className="mt-3 grid grid-cols-5 gap-2">
                 <StepPill n={1} label="VIN" active={step === 1} />
                 <StepPill n={2} label="Customer" active={step === 2} />
-                <StepPill n={3} label="Services" active={step === 3} />
-                <StepPill n={4} label="Total" active={step === 4} />
+                <StepPill n={3} label="Photos" active={step === 3} />
+                <StepPill n={4} label="Services" active={step === 4} />
+                <StepPill n={5} label="Total" active={step === 5} />
               </div>
             </div>
 
@@ -1177,6 +1220,9 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
           </SchemaCard>
         ) : (
           <div className="space-y-6">
+            {/* =========================
+             * STEP 1: VIN
+             * ========================= */}
             {step === 1 && (
               <SchemaCard title="VEHICLE VIN">
                 <SchemaLabel>VIN</SchemaLabel>
@@ -1193,55 +1239,13 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
                     autoCorrect="off"
                     maxLength={17}
                   />
-                  <SchemaButton onClick={lookupVin} disabled={vinBusy || !normalizeVin(vin).length} variant="primary">
+                  <SchemaButton onClick={lookupVin} disabled={vinBusy || !normalizeVin(vin).length} variant="primary" className="w-[120px]">
                     {vinBusy ? "…" : "LOOKUP"}
                   </SchemaButton>
                 </div>
 
                 <div className="mt-2 min-h-[18px] text-[11px] text-slate-300/80">
                   {vinStatus ? vinStatus : "TIP: LOOKUP LINKS VIN AND IDENTIFIES VEHICLE (ONLINE)."}
-                </div>
-
-                {/* ✅ PHOTO UPLOAD (SUPABASE BUCKET via /api/photos/upload) */}
-                <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
-                  <div className="text-[11px] font-semibold text-slate-300/80 mb-2">Photos (max 8)</div>
-
-                  <label className="block text-sm opacity-70 mt-6">Upload Photos</label>
-                  
-                  <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  capture="environment"
-                  onChange={(e) => {
-                    if (!e.target.files) return;
-                    
-                    const newPhotos = Array.from(e.target.files).map((file) => ({
-                      file,
-                      previewUrl: URL.createObjectURL(file),
-                    }));
-                    
-                    setPhotos((prev) => [...prev, ...newPhotos]);
-                    }}
-                    />
-
-                  <SchemaButton
-                    variant="primary"
-                    disabled={photoBusy || !canUploadPhotos}
-                    onClick={() => {
-                      setPhotoMsg(null);
-                      photoInputRef.current?.click();
-                    }}
-                    className="w-full"
-                  >
-                    {photoBusy ? "Uploading…" : canUploadPhotos ? "Upload Photos" : "Enter VIN to Upload"}
-                  </SchemaButton>
-
-                  {photoMsg ? (
-                    <div className="mt-2 text-[11px] text-slate-300/80">{photoMsg}</div>
-                  ) : (
-                    <div className="mt-2 text-[11px] text-slate-300/70">Tip: Take up to 8 photos tied to this VIN.</div>
-                  )}
                 </div>
 
                 <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
@@ -1274,11 +1278,20 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
                         inputMode="text"
                       />
                     </div>
+                    <div className="col-span-3">
+                      <SchemaLabel>TRIM (OPTIONAL)</SchemaLabel>
+                      <SchemaInput
+                        value={vehTrim}
+                        onChange={(e) => setVehTrim(toCaps(e.target.value))}
+                        placeholder="SR / PLATINUM / XL / etc"
+                        inputMode="text"
+                      />
+                    </div>
                   </div>
 
                   {!online && (
                     <div className="mt-3 text-[11px] text-amber-200/90">
-                      OFFLINE NOTE: ENTER YEAR/MAKE/MODEL MANUALLY — VIN DECODE WILL RESUME WHEN BACK ONLINE.
+                      OFFLINE NOTE: ENTER YEAR/MAKE/MODEL MANUALLY — VIN DECODE RESUMES WHEN BACK ONLINE.
                     </div>
                   )}
                 </div>
@@ -1308,8 +1321,357 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
               </SchemaCard>
             )}
 
-            {/* (Everything else below stays the same as your original file) */}
-            {/* You already pasted Steps 2–4 + Schema UI components and they remain unchanged */}
+            {/* =========================
+             * STEP 2: CUSTOMER
+             * ========================= */}
+            {step === 2 && (
+              <SchemaCard title="CUSTOMER">
+                <SchemaLabel>FULL NAME (REQUIRED)</SchemaLabel>
+                <SchemaInput value={customerName} onChange={(e) => setCustomerName(toCaps(e.target.value))} placeholder="CUSTOMER NAME" />
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="col-span-1">
+                    <SchemaLabel>PHONE</SchemaLabel>
+                    <SchemaInput value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="(919) 555-1234" inputMode="tel" />
+                  </div>
+                  <div className="col-span-1">
+                    <SchemaLabel>EMAIL</SchemaLabel>
+                    <SchemaInput value={customerEmail} onChange={(e) => setCustomerEmail(toCaps(e.target.value))} placeholder="EMAIL@DOMAIN.COM" inputMode="email" />
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <SchemaLabel>ADDRESS</SchemaLabel>
+                  <SchemaInput value={customerAddress} onChange={(e) => setCustomerAddress(toCaps(e.target.value))} placeholder="123 MAIN ST, ZEBULON, NC" />
+                </div>
+
+                <div className="mt-3">
+                  <SchemaLabel>ZIP</SchemaLabel>
+                  <SchemaInput value={customerZip} onChange={(e) => setCustomerZip(normalizeZipString(e.target.value))} placeholder="27597" inputMode="numeric" />
+                  {zipSuggestions.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {zipSuggestions.map((z) => (
+                        <button
+                          key={z}
+                          type="button"
+                          onClick={() => setCustomerZip(z)}
+                          className="rounded-full px-3 py-1 text-[11px] font-extrabold bg-white/5 ring-1 ring-white/10 text-slate-200 hover:text-white hover:ring-white/20 transition"
+                        >
+                          {z}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setStep(1)}
+                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
+                  >
+                    ← BACK
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStep(3)}
+                    disabled={!canGoStep3()}
+                    className={[
+                      "text-sm font-semibold transition",
+                      canGoStep3() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                    ].join(" ")}
+                  >
+                    CONTINUE →
+                  </button>
+                </div>
+              </SchemaCard>
+            )}
+
+            {/* =========================
+             * STEP 3: PHOTOS
+             * ========================= */}
+            {step === 3 && (
+              <SchemaCard title="PHOTOS">
+                <div className="text-[11px] text-slate-300/80">
+                  Upload photos tied to this VIN. Max 8.
+                </div>
+
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (!files || files.length === 0) return;
+
+                    const incoming = Array.from(files);
+
+                    setPhotos((prev) => {
+                      const remaining = Math.max(0, 8 - prev.length);
+                      const slice = incoming.slice(0, remaining);
+
+                      const mapped = slice.map((file) => ({
+                        id: safeUuid(),
+                        file,
+                        previewUrl: URL.createObjectURL(file),
+                      }));
+
+                      if (incoming.length > remaining) setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
+                      else setPhotoMsg(null);
+
+                      return [...prev, ...mapped];
+                    });
+
+                    e.currentTarget.value = "";
+                  }}
+                />
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <SchemaButton
+                    variant="ghost"
+                    disabled={!canUploadPhotos || photoBusy}
+                    onClick={() => {
+                      setPhotoMsg(null);
+                      photoInputRef.current?.click();
+                    }}
+                    className="w-full"
+                  >
+                    {canUploadPhotos ? "PICK PHOTOS" : "ENTER VIN FIRST"}
+                  </SchemaButton>
+
+                  <SchemaButton
+                    variant="primary"
+                    disabled={!online || !canUploadPhotos || photoBusy || photos.length === 0}
+                    onClick={() => uploadPhotosForVin(vin, photos)}
+                    className="w-full"
+                  >
+                    {photoBusy ? "UPLOADING…" : !online ? "OFFLINE" : "UPLOAD"}
+                  </SchemaButton>
+                </div>
+
+                {photos.length > 0 && (
+                  <div className="mt-4 grid grid-cols-4 gap-2">
+                    {photos.map((p) => (
+                      <div key={p.id} className="relative overflow-hidden rounded-xl ring-1 ring-white/10">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p.previewUrl} alt="preview" className="h-20 w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPhotos((prev) => {
+                              const next = prev.filter((x) => x.id !== p.id);
+                              try {
+                                URL.revokeObjectURL(p.previewUrl);
+                              } catch {}
+                              return next;
+                            });
+                          }}
+                          className="absolute top-1 right-1 rounded-full bg-black/60 px-2 py-1 text-[10px] font-extrabold text-white ring-1 ring-white/10"
+                        >
+                          X
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-3 text-[11px] text-slate-300/80">
+                  {photoMsg ? photoMsg : `Selected: ${photos.length}/8`}
+                </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setStep(2)}
+                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
+                  >
+                    ← BACK
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStep(4)}
+                    disabled={!canGoStep4()}
+                    className={[
+                      "text-sm font-semibold transition",
+                      canGoStep4() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                    ].join(" ")}
+                  >
+                    CONTINUE →
+                  </button>
+                </div>
+              </SchemaCard>
+            )}
+
+            {/* =========================
+             * STEP 4: SERVICES
+             * ========================= */}
+            {step === 4 && (
+              <SchemaCard title="SERVICES">
+                <SchemaLabel>SERVICE TYPE</SchemaLabel>
+                <SchemaSelect value={serviceType} onChange={(e) => setServiceType(e.target.value as any)}>
+                  <option value="full">FULL</option>
+                  <option value="interior">INTERIOR</option>
+                  <option value="exterior">EXTERIOR</option>
+                  <option value="ceramic">CERAMIC</option>
+                </SchemaSelect>
+
+                <div className="mt-4">
+                  <SchemaLabel>PACKAGE</SchemaLabel>
+                  <SchemaSelect value={selectedPackageId} onChange={(e) => setSelectedPackageId(e.target.value)}>
+                    {packages.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} {suggestedRangeText(p) ? `• ${suggestedRangeText(p)}` : ""}
+                      </option>
+                    ))}
+                  </SchemaSelect>
+                </div>
+
+                <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-extrabold text-white/90">ADD-ONS</div>
+                    <button
+                      type="button"
+                      onClick={() => setAddonsOpen((v) => !v)}
+                      className="text-[11px] font-extrabold text-purple-200 hover:text-purple-100 transition"
+                    >
+                      {addonsOpen ? "CLOSE" : "OPEN"}
+                    </button>
+                  </div>
+
+                  {addonsOpen && (
+                    <div className="mt-3">
+                      <SchemaInput
+                        value={addonQuery}
+                        onChange={(e) => setAddonQuery(e.target.value)}
+                        placeholder="Search add-ons…"
+                      />
+
+                      <div className="mt-3 space-y-2">
+                        {filteredAddons.map((a) => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => toggleAddon(a.id)}
+                            className={[
+                              "w-full rounded-2xl px-4 py-3 text-left ring-1 transition",
+                              selectedAddonIds[a.id]
+                                ? "bg-purple-500/15 ring-purple-400/30 text-purple-100"
+                                : "bg-white/5 ring-white/10 text-slate-200 hover:ring-white/20",
+                            ].join(" ")}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-extrabold truncate">{a.name}</div>
+                                {a.price_note ? (
+                                  <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div>
+                                ) : null}
+                              </div>
+                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">
+                                {suggestedRangeText(a)}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+
+                      {selectedAddons.length > 0 && (
+                        <div className="mt-3 text-[11px] text-slate-300/80">
+                          Selected: {selectedAddons.map((x) => x.name).join(", ")}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setStep(3)}
+                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
+                  >
+                    ← BACK
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStep(5)}
+                    disabled={!canGoStep5()}
+                    className={[
+                      "text-sm font-semibold transition",
+                      canGoStep5() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                    ].join(" ")}
+                  >
+                    CONTINUE →
+                  </button>
+                </div>
+              </SchemaCard>
+            )}
+
+            {/* =========================
+             * STEP 5: TOTAL
+             * ========================= */}
+            {step === 5 && (
+              <SchemaCard title="TOTAL">
+                <SchemaLabel>TOTAL CHARGED (REQUIRED)</SchemaLabel>
+                <SchemaInput
+                  value={totalCharged}
+                  onChange={(e) => setTotalCharged(e.target.value.replace(/[^0-9.]/g, ""))}
+                  placeholder="300"
+                  inputMode="decimal"
+                />
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {quickTotals.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTotalCharged(t)}
+                      className="rounded-full px-3 py-1 text-[11px] font-extrabold bg-white/5 ring-1 ring-white/10 text-slate-200 hover:text-white hover:ring-white/20 transition"
+                    >
+                      ${t}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-4">
+                  <SchemaLabel>NOTES</SchemaLabel>
+                  <SchemaInput value={notes} onChange={(e) => setNotes(toCaps(e.target.value))} placeholder="OPTIONAL NOTES" />
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <SchemaButton
+                    variant="ghost"
+                    onClick={() => setStep(4)}
+                    disabled={busy}
+                    className="w-full"
+                  >
+                    ← BACK
+                  </SchemaButton>
+
+                  <SchemaButton
+                    variant="primary"
+                    onClick={onSave}
+                    disabled={busy}
+                    className="w-full"
+                  >
+                    {busy ? "SAVING…" : "SAVE JOB"}
+                  </SchemaButton>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="mt-4 w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3 text-sm font-extrabold text-slate-200 hover:ring-white/20 hover:text-white transition"
+                >
+                  RESET
+                </button>
+              </SchemaCard>
+            )}
           </div>
         )}
       </div>
@@ -1317,7 +1679,9 @@ const batchIdRef = useRef<string>(crypto.randomUUID());
   );
 }
 
-/** Schema UI components */
+/** =========================
+ * Schema UI components
+ * ========================= */
 
 function SchemaCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
