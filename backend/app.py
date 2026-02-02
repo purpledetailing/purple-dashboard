@@ -380,7 +380,6 @@ def merged_profile_by_vin(vin: str):
         service_history = build_history_from_jobs(veh["id"])
 
     # --- Photos (latest batch only, max 8) ---
-    photo_urls = []
     photo_count = 0
     latest_batch_id = None
 
@@ -393,10 +392,8 @@ def merged_profile_by_vin(vin: str):
                 sp = (r.get("storage_path") or "").strip()
                 if sp:
                     u = sb_sign_storage_url(sp, expires_in=43200)
-                    if u:
-                        photo_urls.append(u)
+                
     except Exception:
-        photo_urls = []
         photo_count = 0
         latest_batch_id = None
 
@@ -415,9 +412,7 @@ def merged_profile_by_vin(vin: str):
             "customer_name": customer_name or "—",
             "phone_number": phone_number or "",
             "email": email or "",
-            "service_history_link": service_history_link,
             "service_history": service_history,
-            "photo_urls": photo_urls,
             "photo_count": photo_count,
             "latest_batch_id": latest_batch_id or "",
         }
@@ -480,9 +475,7 @@ def search():
             "year": m.get("year") or "",
             "status": m.get("status") or "",
             "notes": m.get("notes") or "",
-            "photo_urls": m.get("photo_urls") or [],
             "photo_count": m.get("photo_count") or 0,
-            "service_history_link": m.get("service_history_link") or "",
             "service_history": m.get("service_history") or [],
             "access_token": (data["veh"] or {}).get("access_token"),
             "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
@@ -532,7 +525,6 @@ def public_report(value):
                 vehicle=vehicle_for_template,
                 service_history=m.get("service_history") or [],
                 embed_url=embed_url,
-                photo_urls=m.get("photo_urls") or [],
             )
         except Exception:
             return render_template("public_report.html", not_found=True, vin=vin), 500
@@ -561,7 +553,6 @@ def public_report(value):
         vehicle=vehicle,
         service_history=history,
         embed_url=embed_url,
-        photo_urls=[],
     )
 
 if __name__ == "__main__":
