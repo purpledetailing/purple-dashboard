@@ -355,6 +355,15 @@ function NewJobInner() {
     return isValidVin(v);
   }, [vin]);
 
+  type PendingPhoto = {
+  file: File;
+  previewUrl: string;
+};
+
+const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+const batchIdRef = useRef<string>(crypto.randomUUID());
+
+
   // ✅ UPDATED: robust upload (calls /api/photos/upload which must insert into vehicle_photos)
   async function uploadPhotosForVin(vin17: string, files: FileList | null) {
     const v = normalizeVin(vin17);
@@ -1197,15 +1206,24 @@ function NewJobInner() {
                 <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
                   <div className="text-[11px] font-semibold text-slate-300/80 mb-2">Photos (max 8)</div>
 
+                  <label className="block text-sm opacity-70 mt-6">Upload Photos</label>
+                  
                   <input
-                    ref={photoInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => uploadPhotosForVin(vin, e.target.files)}
-                  />
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  capture="environment"
+                  onChange={(e) => {
+                    if (!e.target.files) return;
+                    
+                    const newPhotos = Array.from(e.target.files).map((file) => ({
+                      file,
+                      previewUrl: URL.createObjectURL(file),
+                    }));
+                    
+                    setPhotos((prev) => [...prev, ...newPhotos]);
+                    }}
+                    />
 
                   <SchemaButton
                     variant="primary"
