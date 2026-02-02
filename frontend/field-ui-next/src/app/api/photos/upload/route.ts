@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs"; // important for file uploads
-export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
-const SERVICE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-const BUCKET = "vehicle-photos";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const BUCKET = process.env.SUPABASE_PHOTO_BUCKET || "vehicle-photos";
 
 function normalizeVin(raw: string) {
   return (raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -14,90 +14,82 @@ function isValidVin(vin: string) {
   return /^[A-HJ-NPR-Z0-9]{17}$/.test(vin);
 }
 
-async function sbInsertVehiclePhotos(rows: any[]) {
-  const url = `${SUPABASE_URL}/rest/v1/vehicle_photos`;
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: "return=minimal",
-    },
-    body: JSON.stringify(rows),
-  });
-  if (!r.ok) throw new Error(`vehicle_photos insert failed: ${r.status} ${await r.text()}`);
-}
-
-async function storageUpload(path: string, file: File) {
-  const url = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`;
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      "Content-Type": file.type || "application/octet-stream",
-      "x-upsert": "true",
-    },
-    body: await file.arrayBuffer(),
-  });
-  if (!r.ok) throw new Error(`storage upload failed: ${r.status} ${await r.text()}`);
-}
-
 export async function POST(req: Request) {
   try {
-    if (!SUPABASE_URL || !SERVICE_KEY) {
-      return NextResponse.json({ error: "Server not configured (missing Supabase env vars)." }, { status: 500 });
+    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+      return NextResponse.json(
+        { error: "Missing env vars: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" },
+        { status: 500 }
+      );
     }
 
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+    });
+
     const form = await req.formData();
-    const vinRaw = String(form.get("vin") || "");
-    const vin = normalizeVin(vinRaw);
+    const vin = normalizeVin(String(form.get("vin") || ""));
 
     if (!isValidVin(vin)) {
       return NextResponse.json({ error: "Invalid VIN." }, { status: 400 });
     }
 
-    const files = form.getAll("photos").filter(Boolean) as File[];
-    if (!files.length) {
-      return NextResponse.json({ error: "No files received." }, { status: 400 });
+    const photos = form.getAll("photos") as File[];
+    if (!photos || photos.length === 0) {
+      return NextResponse.json({ error: "No photos received." }, { status: 400 });
     }
-    if (files.length > 8) {
+    if (photos.length > 8) {
       return NextResponse.json({ error: "Max 8 photos per upload." }, { status: 400 });
     }
 
-    // create a batch id (uuid v4) without needing a library
-    const batchId = crypto.randomUUID();
+    const uploadedPaths: string[] = [];
 
-    // upload + DB rows
-    const rows: any[] = [];
+    for (const file of photos) {
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-      const safeExt = ext.length > 8 ? "jpg" : ext;
+      const mime = file.type || "image/jpeg";
+      const ext =
+        mime.includes("png") ? "png" :
+        mime.includes("webp") ? "webp" :
+        mime.includes("heic") ? "heic" :
+        "jpg";
 
-      // store path: VIN/batch_id/000.jpg
-      const filename = `${String(i + 1).padStart(3, "0")}.${safeExt}`;
-      const path = `${vin}/${batchId}/${filename}`;
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const safeName = (file.name || `photo.${ext}`).replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${vin}/${stamp}_${safeName}`;
 
-      await storageUpload(path, file);
-
-      rows.push({
-        vin,
-        batch_id: batchId,
-        storage_path: path,
-        original_filename: file.name,
-        content_type: file.type || null,
-        bytes: file.size || null,
-        sort_order: i,
+      const up = await supabaseAdmin.storage.from(BUCKET).upload(path, bytes, {
+        contentType: mime,
+        upsert: false,
       });
+
+      if (up.error) {
+        return NextResponse.json({ error: `Storage upload failed: ${up.error.message}` }, { status: 500 });
+      }
+
+      uploadedPaths.push(path);
+
+      // ✅ This is why your dashboard table was empty
+      const ins = await supabaseAdmin.from("vehicle_photos").insert({
+        vin,
+        storage_bucket: BUCKET,
+        storage_path: path,
+        original_name: file.name || null,
+        mime_type: mime,
+        file_size: bytes.length,
+      });
+
+      if (ins.error) {
+        return NextResponse.json(
+          { error: `DB insert failed (vehicle_photos): ${ins.error.message}` },
+          { status: 500 }
+        );
+      }
     }
 
-    await sbInsertVehiclePhotos(rows);
-
-    return NextResponse.json({ ok: true, vin, batch_id: batchId, count: rows.length });
+    return NextResponse.json({ ok: true, vin, count: uploadedPaths.length, paths: uploadedPaths });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Upload failed." }, { status: 500 });
+    return NextResponse.json({ error: e?.message || "Upload route error." }, { status: 500 });
   }
 }
