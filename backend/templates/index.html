@@ -21,8 +21,7 @@
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-        sans-serif;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
     body {
@@ -39,8 +38,6 @@
       width: 100%;
       max-width: 1000px;
     }
-
-    /* Header */
 
     .header {
       margin-bottom: 24px;
@@ -64,8 +61,6 @@
       color: var(--text-muted);
       opacity: 0.95;
     }
-
-    /* Card */
 
     .card {
       background: var(--card-bg);
@@ -100,8 +95,6 @@
       background: #f9fafb;
     }
 
-    /* Search form */
-
     .search-row {
       display: flex;
       gap: 10px;
@@ -131,8 +124,7 @@
       color: var(--text-main);
       font-size: 0.95rem;
       outline: none;
-      transition: border 0.15s ease, box-shadow 0.15s ease,
-        background 0.15s ease;
+      transition: border 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
     }
 
     .search-input::placeholder {
@@ -158,8 +150,7 @@
       align-items: center;
       gap: 6px;
       box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
-      transition: transform 0.1s ease, box-shadow 0.15s ease,
-        filter 0.12s ease;
+      transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.12s ease;
       white-space: nowrap;
     }
 
@@ -188,16 +179,9 @@
     .divider {
       height: 1px;
       width: 100%;
-      background: linear-gradient(
-        90deg,
-        transparent,
-        var(--border-soft),
-        transparent
-      );
+      background: linear-gradient(90deg, transparent, var(--border-soft), transparent);
       margin: 14px 0;
     }
-
-    /* Status / messages */
 
     .status {
       font-size: 0.85rem;
@@ -212,8 +196,6 @@
     .status.ok {
       color: #15803d;
     }
-
-    /* Results layout */
 
     .results {
       display: grid;
@@ -337,8 +319,6 @@
       font-size: 0.68rem;
     }
 
-    /* Notes & dropdown blocks */
-
     details.notes {
       margin-top: 10px;
       border-radius: 12px;
@@ -373,62 +353,10 @@
       color: var(--text-main);
     }
 
-    /* Service history / gallery */
-
-    .gallery-wrapper {
-      margin-top: 6px;
-    }
-
-    .gallery-frame {
-      border-radius: 12px;
-      overflow: hidden;
-      border: 1px solid var(--border-soft);
-      background: #020617;
-      height: 320px;
-    }
-
-    .gallery-frame iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-      background: #020617;
-    }
-
-    .gallery-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 8px;
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .link-button {
-      font-size: 0.8rem;
-      text-decoration: none;
-      color: #ffffff;
-      padding: 4px 9px;
-      border-radius: 999px;
-      border: 1px solid var(--purple-main);
-      background: var(--purple-main);
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .link-button:hover {
-      background: var(--purple-dark);
-      border-color: var(--purple-dark);
-    }
-
     .muted {
       color: var(--text-muted);
       font-size: 0.8rem;
     }
-
-    /* Customer portal share */
 
     .section-label {
       font-size: 0.75rem;
@@ -484,6 +412,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <header class="header">
@@ -497,9 +426,7 @@
       <div class="card-header">
         <div class="left">
           <div class="card-title">VIN Lookup</div>
-          <div class="hint">
-            Enter a full 17-character VIN from your client list.
-          </div>
+          <div class="hint">Enter a full 17-character VIN from your client list.</div>
         </div>
         <div class="card-tag">Internal Use Only</div>
       </div>
@@ -537,11 +464,13 @@
               <div class="panel-title">Customer & Vehicle</div>
               <div id="statusBadge"></div>
             </div>
+
             <div class="info-grid">
               <div class="info-item">
                 <div class="info-label">Customer</div>
                 <div class="info-value" id="customerName"></div>
               </div>
+
               <div class="info-item">
                 <div class="info-label">Phone</div>
                 <div class="info-value" id="phoneNumber"></div>
@@ -551,12 +480,12 @@
                 <div class="info-label">Address</div>
                 <div class="info-value" id="address"></div>
               </div>
+
               <div class="info-item">
                 <div class="info-label">Zip</div>
                 <div class="info-value" id="zipCode"></div>
               </div>
 
-              <!-- ✅ CHANGED: Vehicle -> Email -->
               <div class="info-item">
                 <div class="info-label">Email</div>
                 <div class="info-value" id="emailAddress"></div>
@@ -577,7 +506,6 @@
               </div>
             </div>
 
-            <!-- Notes dropdown -->
             <details class="notes" id="notesBlock" style="display:none;">
               <summary>
                 <span class="label">Notes</span>
@@ -586,7 +514,6 @@
               <p id="notesText"></p>
             </details>
 
-            <!-- Service history dropdown -->
             <details class="notes" id="historyBlock" style="display:none;">
               <summary>
                 <span class="label">Service History</span>
@@ -595,26 +522,17 @@
               <div id="historyList" style="margin-top:8px;"></div>
             </details>
 
-            <!-- Customer portal link -->
             <div class="section-label">Customer Portal Link</div>
             <div class="share-box">
-              <input
-                id="shareLink"
-                class="share-input"
-                type="text"
-                readonly
-                value=""
-              />
-              <button type="button" id="copyShareBtn" class="share-button">
-                Copy
-              </button>
+              <input id="shareLink" class="share-input" type="text" readonly value="" />
+              <button type="button" id="copyShareBtn" class="share-button">Copy</button>
             </div>
             <div id="shareHint" class="share-hint">
               This link shows a read-only version of this vehicle for the customer.
             </div>
           </div>
 
-          <!-- Right: Service history gallery -->
+          <!-- Right: Photos -->
           <div class="panel">
             <div class="panel-header">
               <div class="panel-title">Service Gallery</div>
@@ -625,34 +543,6 @@
             <div id="noPhotosMsg" class="muted" style="display:none;">
               No photos uploaded yet for this VIN.
             </div>
-
-            <div id="noGalleryMsg" class="muted" style="display:none;">
-              No service history media linked yet for this vehicle.
-            </div>
-
-            <div class="gallery-wrapper" id="galleryWrapper" style="display:none;">
-              <div class="gallery-frame">
-                <iframe
-                  id="driveGallery"
-                  loading="lazy"
-                  referrerpolicy="no-referrer-when-downgrade"
-                ></iframe>
-              </div>
-              <div class="gallery-footer">
-                <span class="muted">
-                  Thumbnails pulled from Google Drive folder for this vehicle.
-                </span>
-                <a
-                  href="#"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  id="openFolderLink"
-                  class="link-button"
-                >
-                  Open full service folder ↗
-                </a>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -660,9 +550,8 @@
   </div>
 
   <script>
-    // ✅ OPTIONAL: If you already know your final public domain, set it here.
-    // Leave as "" to automatically use the current site domain (Render URL).
-    const PUBLIC_BASE_URL = ""; // e.g. "https://secure.purpledetailing.com"
+    // Optional: set to "https://secure.purpledetailing.com" if you want to force it.
+    const PUBLIC_BASE_URL = "";
 
     const form = document.getElementById("vinForm");
     const vinInput = document.getElementById("vinInput");
@@ -673,10 +562,7 @@
     const phoneNumberEl = document.getElementById("phoneNumber");
     const addressEl = document.getElementById("address");
     const zipCodeEl = document.getElementById("zipCode");
-
-    // ✅ CHANGED: new email element (replaces vehicleNickname)
     const emailAddressEl = document.getElementById("emailAddress");
-
     const mmYearEl = document.getElementById("mmYear");
     const vinNumberEl = document.getElementById("vinNumber");
     const statusBadgeEl = document.getElementById("statusBadge");
@@ -688,45 +574,12 @@
     const historyList = document.getElementById("historyList");
     const historyCountLabel = document.getElementById("historyCountLabel");
 
-    const galleryWrapper = document.getElementById("galleryWrapper");
-    const driveGalleryFrame = document.getElementById("driveGallery");
-    const openFolderLink = document.getElementById("openFolderLink");
-    const noGalleryMsg = document.getElementById("noGalleryMsg");
-
     const shareLinkEl = document.getElementById("shareLink");
     const copyShareBtn = document.getElementById("copyShareBtn");
     const shareHintEl = document.getElementById("shareHint");
 
     const photoGrid = document.getElementById("photoGrid");
     const noPhotosMsg = document.getElementById("noPhotosMsg");
-
-function renderPhotos(data) {
-// ======================
-// PHOTO GRID (SUPABASE)
-// ======================
-const photos = Array.isArray(data.photo_urls) ? data.photo_urls : [];
-
-if (photos.length > 0) {
-  photoGrid.style.display = "grid";
-  photoGrid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
-  photoGrid.style.gap = "10px";
-
-  photoGrid.innerHTML = photos.map((u) => `
-    <a href="${u}" target="_blank" rel="noopener noreferrer"
-       style="display:block;border-radius:12px;overflow:hidden;
-              border:1px solid #e5e7eb;background:#0f172a;">
-      <img src="${u}"
-           loading="lazy"
-           style="width:100%;height:180px;object-fit:cover;display:block;" />
-    </a>
-  `).join("");
-
-  noPhotosMsg.style.display = "none";
-} else {
-  photoGrid.style.display = "none";
-  photoGrid.innerHTML = "";
-  noPhotosMsg.style.display = "block";
-}
 
     function setStatus(message, type = "") {
       statusMessage.textContent = message || "";
@@ -736,7 +589,7 @@ if (photos.length > 0) {
 
     function makeStatusBadge(status) {
       if (!status) return "";
-      const normalized = status.trim().toUpperCase();
+      const normalized = String(status).trim().toUpperCase();
 
       let badgeClass = "badge";
       if (normalized === "VIP") badgeClass += " vip";
@@ -744,19 +597,6 @@ if (photos.length > 0) {
       else if (normalized === "ACTIVE") badgeClass += " active";
 
       return `<span class="${badgeClass}">${normalized}</span>`;
-    }
-
-    function getDriveEmbedUrl(folderUrl) {
-      if (!folderUrl) return null;
-      try {
-        const match = folderUrl.match(/\/folders\/([^/?]+)/);
-        if (!match) return null;
-        const folderId = match[1];
-        return `https://drive.google.com/embeddedfolderview?id=${folderId}#grid`;
-      } catch (e) {
-        console.error("Error parsing Drive folder URL:", e);
-        return null;
-      }
     }
 
     function getPublicBaseUrl() {
@@ -770,6 +610,7 @@ if (photos.length > 0) {
           return true;
         }
       } catch (e) {}
+
       const temp = document.createElement("textarea");
       temp.value = text;
       temp.style.position = "fixed";
@@ -787,8 +628,33 @@ if (photos.length > 0) {
       return ok;
     }
 
+    function renderPhotos(payload) {
+      const photos = Array.isArray(payload?.photo_urls) ? payload.photo_urls : [];
+
+      if (photos.length > 0) {
+        photoGrid.style.display = "grid";
+        photoGrid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+        photoGrid.style.gap = "10px";
+
+        photoGrid.innerHTML = photos.map((u) => `
+          <a href="${u}" target="_blank" rel="noopener noreferrer"
+            style="display:block;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;background:#0f172a;">
+            <img src="${u}" loading="lazy"
+              style="width:100%;height:180px;object-fit:cover;display:block;" />
+          </a>
+        `).join("");
+
+        noPhotosMsg.style.display = "none";
+      } else {
+        photoGrid.style.display = "none";
+        photoGrid.innerHTML = "";
+        noPhotosMsg.style.display = "block";
+      }
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+
       const vin = vinInput.value.trim().toUpperCase();
 
       if (!vin || vin.length !== 17) {
@@ -802,45 +668,42 @@ if (photos.length > 0) {
 
       try {
         const resp = await fetch(`/search?vin=${encodeURIComponent(vin)}`);
-        const data = await resp.json();
 
-        let data = null;
+        let payload = null;
         try {
-          data = await resp.json();
+          payload = await resp.json();
         } catch {
-          data = null;
+          payload = null;
         }
 
         if (!resp.ok) {
-          const msg = (data && data.error) || "Something went wrong while searching.";
+          const msg = (payload && payload.error) || "Something went wrong while searching.";
           setStatus(msg, "error");
           resultsSection.style.display = "none";
           shareLinkEl.value = "";
           return;
         }
-        
-        renderPhotos(data); // ✅ add this here
+
+        // ✅ Photos first
+        renderPhotos(payload);
 
         // Populate main info
-        customerNameEl.textContent = data.customer_name || "—";
-        phoneNumberEl.textContent = data.phone_number || "—";
-        addressEl.textContent = data.address || "—";
-        zipCodeEl.textContent = data.zip_code || "—";
+        customerNameEl.textContent = payload.customer_name || "—";
+        phoneNumberEl.textContent = payload.phone_number || "—";
+        addressEl.textContent = payload.address || "—";
+        zipCodeEl.textContent = payload.zip_code || "—";
 
-        // ✅ NEW: Email (fallback to vehicle_nickname so older rows still show something)
-        // If you prefer strict email only, remove the fallback.
-        const email = (data.email || "").trim();
-        const fallbackOldVehicle = (data.vehicle_nickname || "").trim();
+        const email = (payload.email || "").trim();
+        const fallbackOldVehicle = (payload.vehicle_nickname || "").trim();
         emailAddressEl.textContent = email || fallbackOldVehicle || "—";
 
-        mmYearEl.textContent = `${data.make || "—"} · ${data.model || "—"} · ${data.year || "—"}`;
-        vinNumberEl.textContent = data.vin_number || vin;
+        mmYearEl.textContent = `${payload.make || "—"} · ${payload.model || "—"} · ${payload.year || "—"}`;
+        vinNumberEl.textContent = payload.vin_number || vin;
 
-        // Status badge
-        statusBadgeEl.innerHTML = makeStatusBadge(data.status);
+        statusBadgeEl.innerHTML = makeStatusBadge(payload.status);
 
         // Notes dropdown
-        const notes = (data.notes || "").trim();
+        const notes = (payload.notes || "").trim();
         if (notes) {
           notesText.textContent = notes;
           notesBlock.style.display = "block";
@@ -849,65 +712,34 @@ if (photos.length > 0) {
           notesBlock.style.display = "none";
         }
 
-        // Service history dropdown
-        const history = Array.isArray(data.service_history) ? data.service_history : [];
-
+        // Service history dropdown (optional)
+        const history = Array.isArray(payload.service_history) ? payload.service_history : [];
         if (history.length > 0) {
           historyBlock.style.display = "block";
           historyBlock.open = false;
           historyCountLabel.textContent = history.length === 1 ? "1 visit" : `${history.length} visits`;
 
-          historyList.innerHTML = history
-            .map((entry) => {
-              const date = entry.date || "Date N/A";
-              const type = entry.service_type || "—";
-              const notes = entry.service_notes || "—";
-              const next = entry.next_recommended_service || "—";
+          historyList.innerHTML = history.map((entry) => {
+            const date = entry.date || "Date N/A";
+            const type = entry.service_type || "—";
+            const n = entry.service_notes || "—";
+            const next = entry.next_recommended_service || "—";
 
-              return `
-                <div style="
-                  border-radius:10px;
-                  border:1px solid rgba(209,213,219,1);
-                  padding:8px 10px;
-                  margin-bottom:8px;
-                  background:#ffffff;
-                ">
-                  <div style="font-size:0.8rem;color:#6b7280;margin-bottom:2px;">
-                    ${date}
-                  </div>
-                  <div style="font-size:0.9rem;color:#111827;font-weight:500;">
-                    ${type}
-                  </div>
-                  <div style="margin-top:4px;font-size:0.8rem;color:#111827;">
-                    <strong>Notes:</strong> ${notes}
-                  </div>
-                  <div style="margin-top:2px;font-size:0.8rem;color:#6b7280;">
-                    <strong>Next:</strong> ${next}
-                  </div>
-                </div>
-              `;
-            })
-            .join("");
+            return `
+              <div style="border-radius:10px;border:1px solid rgba(209,213,219,1);padding:8px 10px;margin-bottom:8px;background:#ffffff;">
+                <div style="font-size:0.8rem;color:#6b7280;margin-bottom:2px;">${date}</div>
+                <div style="font-size:0.9rem;color:#111827;font-weight:500;">${type}</div>
+                <div style="margin-top:4px;font-size:0.8rem;color:#111827;"><strong>Notes:</strong> ${n}</div>
+                <div style="margin-top:2px;font-size:0.8rem;color:#6b7280;"><strong>Next:</strong> ${next}</div>
+              </div>
+            `;
+          }).join("");
         } else {
           historyBlock.style.display = "none";
           historyList.innerHTML = "";
         }
 
-        // Gallery / service history images
-        const folderUrl = (data.service_history_link || "").trim();
-        const embedUrl = getDriveEmbedUrl(folderUrl);
-
-        if (embedUrl) {
-          driveGalleryFrame.src = embedUrl;
-          openFolderLink.href = folderUrl;
-          galleryWrapper.style.display = "block";
-          noGalleryMsg.style.display = "none";
-        } else {
-          galleryWrapper.style.display = "none";
-          noGalleryMsg.style.display = "block";
-        }
-
-        // ✅ Customer portal link
+        // Customer portal link
         const publicUrl = `${getPublicBaseUrl()}/vin/${vin}`;
         shareLinkEl.value = publicUrl;
         shareHintEl.textContent = "Copy this link to share a read-only vehicle page with your customer.";
@@ -916,7 +748,7 @@ if (photos.length > 0) {
         setStatus("Vehicle found and loaded.", "ok");
       } catch (err) {
         console.error(err);
-        setStatus("Unexpected error talking to the server. Check if Flask is running.", "error");
+        setStatus("Unexpected error talking to the server. Check if the backend is running.", "error");
         resultsSection.style.display = "none";
         shareLinkEl.value = "";
       }
