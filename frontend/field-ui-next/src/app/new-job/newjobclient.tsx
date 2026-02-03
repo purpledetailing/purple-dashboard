@@ -26,7 +26,7 @@ type Vehicle = {
   year: number | null;
   make: string | null;
   model: string | null;
-  trim: string | null;
+  // trim removed
 };
 
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -41,7 +41,6 @@ type PendingJob = {
   vehicle_year: number | null;
   vehicle_make: string;
   vehicle_model: string;
-  vehicle_trim: string;
 
   customer_name: string;
   customer_phone: string;
@@ -134,13 +133,13 @@ function maskVin(vin17: string) {
   return `•••• ${v.slice(-6)}`;
 }
 
-function vehicleLabelParts(year: number | null, make: string, model: string, trim: string) {
-  const parts = [year || "", make, model, trim].map((x) => String(x || "").trim()).filter(Boolean);
+function vehicleLabelParts(year: number | null, make: string, model: string) {
+  const parts = [year || "", make, model].map((x) => String(x || "").trim()).filter(Boolean);
   return parts.join(" ") || "Vehicle";
 }
 
 function vehicleLabel(v: Vehicle) {
-  const parts = [v.year, v.make, v.model, v.trim].filter(Boolean).join(" ");
+  const parts = [v.year, v.make, v.model].filter(Boolean).join(" ");
   return parts || "Vehicle";
 }
 
@@ -272,7 +271,6 @@ function NewJobInner() {
   const [vehYearText, setVehYearText] = useState("");
   const [vehMake, setVehMake] = useState("");
   const [vehModel, setVehModel] = useState("");
-  const [vehTrim, setVehTrim] = useState("");
 
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -401,17 +399,11 @@ function NewJobInner() {
 
       selected.slice(0, 8).forEach((p) => {
         const f = p.file;
-        if (f.size > 18 * 1024 * 1024) {
-          throw new Error("ONE PHOTO IS TOO LARGE (MAX ~18MB).");
-        }
+        if (f.size > 18 * 1024 * 1024) throw new Error("ONE PHOTO IS TOO LARGE (MAX ~18MB).");
         fd.append("photos", f, f.name);
       });
 
-      const res = await fetch("/api/photos/upload", {
-        method: "POST",
-        body: fd,
-      });
-
+      const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
 
@@ -422,18 +414,22 @@ function NewJobInner() {
 
       setPhotoMsg(`UPLOADED ${data.count ?? selected.length} PHOTO(S) ✅`);
 
-      // optional: clear local selections after successful upload
-      selected.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+      // clear selections after success
+      selected.forEach((p) => {
+        try {
+          URL.revokeObjectURL(p.previewUrl);
+        } catch {}
+      });
       setPhotos([]);
+      if (photoInputRef.current) photoInputRef.current.value = "";
     } catch (e: any) {
       setPhotoMsg(String(e?.message || "UPLOAD FAILED."));
     } finally {
       setPhotoBusy(false);
-      if (photoInputRef.current) photoInputRef.current.value = "";
     }
   }
 
-  /** Cleanup previews if navigating away */
+  /** Cleanup previews if component unmounts */
   useEffect(() => {
     return () => {
       photos.forEach((p) => {
@@ -503,7 +499,7 @@ function NewJobInner() {
     customerEmail?: string;
     customerAddress?: string;
     customerZip?: string;
-    vehicle: { year: number | null; make: string; model: string; trim?: string };
+    vehicle: { year: number | null; make: string; model: string };
     notes?: string;
     status?: string;
   }) {
@@ -559,7 +555,7 @@ function NewJobInner() {
 
     const { data, error } = await supabase
       .from("customer_data_legacy")
-      .select("customer_name, phone_number, email, address, zip_code, make, model, year, trim")
+      .select("customer_name, phone_number, email, address, zip_code, make, model, year")
       .eq("vin", v)
       .limit(1)
       .maybeSingle();
@@ -579,7 +575,6 @@ function NewJobInner() {
     if (!vehMake.trim() && d.make) setVehMake(capsTrim(String(d.make)));
     if (!vehModel.trim() && d.model) setVehModel(capsTrim(String(d.model)));
     if (!vehYearText.trim() && d.year != null) setVehYearText(String(d.year));
-    if (!vehTrim.trim() && d.trim) setVehTrim(capsTrim(String(d.trim)));
   }
 
   const autofillCustomerFromVehicle = async (vehicleId: string) => {
@@ -622,18 +617,18 @@ function NewJobInner() {
         return;
       }
 
+      // trim removed
       const patch = {
         year: decoded.year ?? null,
         make: decoded.make ?? null,
         model: decoded.model ?? null,
-        trim: decoded.trim ?? null,
       };
 
       const { data, error } = await supabase
         .from("vehicles")
         .update(patch)
         .eq("id", vehicleId)
-        .select("id,vin,year,make,model,trim")
+        .select("id,vin,year,make,model")
         .single();
 
       if (error) {
@@ -647,7 +642,6 @@ function NewJobInner() {
       setVehYearText(v.year ? String(v.year) : "");
       setVehMake(v.make ? capsTrim(v.make) : "");
       setVehModel(v.model ? capsTrim(v.model) : "");
-      setVehTrim(v.trim ? capsTrim(v.trim) : "");
 
       setVinStatus("VEHICLE IDENTIFIED ✅");
     } catch {
@@ -668,7 +662,6 @@ function NewJobInner() {
     setVehYearText("");
     setVehMake("");
     setVehModel("");
-    setVehTrim("");
 
     const v = normalizeVin(vin);
 
@@ -679,9 +672,7 @@ function NewJobInner() {
 
     try {
       await autofillCustomerFromLegacy(v);
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     if (!isOnline()) {
       setVinStatus("OFFLINE — ENTER YEAR/MAKE/MODEL MANUALLY TO CONTINUE.");
@@ -692,7 +683,7 @@ function NewJobInner() {
     try {
       const { data, error } = await supabase
         .from("vehicles")
-        .select("id,vin,year,make,model,trim")
+        .select("id,vin,year,make,model")
         .eq("vin", v)
         .limit(1)
         .maybeSingle();
@@ -706,7 +697,7 @@ function NewJobInner() {
       let veh: Vehicle | null = (data as Vehicle) ?? null;
 
       if (!veh) {
-        const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id,vin,year,make,model,trim").single();
+        const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id,vin,year,make,model").single();
         if (!createdVeh.error && createdVeh.data?.id) {
           veh = createdVeh.data as Vehicle;
         }
@@ -718,15 +709,12 @@ function NewJobInner() {
         setVehYearText(veh.year ? String(veh.year) : "");
         setVehMake(veh.make ? capsTrim(veh.make) : "");
         setVehModel(veh.model ? capsTrim(veh.model) : "");
-        setVehTrim(veh.trim ? capsTrim(veh.trim) : "");
 
         setVinStatus("VIN LINKED ✅");
 
         try {
           await autofillCustomerFromVehicle(veh.id);
-        } catch {
-          // ignore
-        }
+        } catch {}
 
         if (needsDecode(veh)) {
           try {
@@ -747,7 +735,6 @@ function NewJobInner() {
    * Reset
    * ========================= */
   const resetForm = () => {
-    // cleanup previews
     photos.forEach((p) => {
       try {
         URL.revokeObjectURL(p.previewUrl);
@@ -762,7 +749,6 @@ function NewJobInner() {
     setVehYearText("");
     setVehMake("");
     setVehModel("");
-    setVehTrim("");
 
     setCustomerName("");
     setCustomerPhone("");
@@ -774,6 +760,7 @@ function NewJobInner() {
     setPhotos([]);
     setPhotoMsg(null);
     setPhotoBusy(false);
+    if (photoInputRef.current) photoInputRef.current.value = "";
 
     setServiceType("full");
     setSelectedAddonIds({});
@@ -815,7 +802,6 @@ function NewJobInner() {
     const yearNum = payload.vehicle_year;
     const makeCaps = capsTrim(payload.vehicle_make || "");
     const modelCaps = capsTrim(payload.vehicle_model || "");
-    const trimCaps = capsTrim(payload.vehicle_trim || "");
 
     if (!yearNum || !makeCaps || !modelCaps) {
       throw new Error("YEAR/MAKE/MODEL REQUIRED (AFTER VIN).");
@@ -829,7 +815,7 @@ function NewJobInner() {
       customerEmail: payload.customer_email,
       customerAddress: payload.customer_address,
       customerZip: payload.customer_zip,
-      vehicle: { year: yearNum, make: makeCaps, model: modelCaps, trim: trimCaps },
+      vehicle: { year: yearNum, make: makeCaps, model: modelCaps },
       notes: payload.notes,
       status: "active",
     });
@@ -838,7 +824,7 @@ function NewJobInner() {
     try {
       let vehicleId: string | null = null;
 
-      const foundVeh = await supabase.from("vehicles").select("id,vin,year,make,model,trim").eq("vin", v).limit(1).maybeSingle();
+      const foundVeh = await supabase.from("vehicles").select("id,vin,year,make,model").eq("vin", v).limit(1).maybeSingle();
 
       if (!foundVeh.error && foundVeh.data?.id) {
         vehicleId = foundVeh.data.id;
@@ -848,14 +834,13 @@ function NewJobInner() {
       }
 
       if (vehicleId) {
-        await supabase.from("vehicles").update({ year: yearNum, make: makeCaps, model: modelCaps, trim: trimCaps || null }).eq("id", vehicleId);
+        // trim removed
+        await supabase.from("vehicles").update({ year: yearNum, make: makeCaps, model: modelCaps }).eq("id", vehicleId);
 
         if (isOnline()) {
           try {
             await decodeVinAndUpdateVehicle(vehicleId, v);
-          } catch {
-            // ignore
-          }
+          } catch {}
         }
       }
 
@@ -1032,13 +1017,12 @@ function NewJobInner() {
     const totalCents = dollarsToCents(totalCharged);
     if (totalCents <= 0) return setMsg("TOTAL CHARGED MUST BE > $0.");
 
-    const payloadBase = {
+    const payloadBase: Omit<PendingJob, "id" | "created_at" | "attempt_count"> = {
       vin: v,
 
       vehicle_year: yearNum,
       vehicle_make: capsTrim(vehMake),
       vehicle_model: capsTrim(vehModel),
-      vehicle_trim: capsTrim(vehTrim),
 
       customer_name: capsTrim(customerName),
       customer_phone: customerPhone,
@@ -1059,7 +1043,7 @@ function NewJobInner() {
     };
 
     if (!isOnline()) {
-      enqueueJob(payloadBase as any);
+      enqueueJob(payloadBase);
       setQueuedCount(getQueue().length);
       setMsg("OFFLINE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY WHEN YOU’RE BACK ONLINE.");
       resetForm();
@@ -1072,7 +1056,7 @@ function NewJobInner() {
         id: "live",
         created_at: new Date().toISOString(),
         attempt_count: 0,
-        ...(payloadBase as any),
+        ...payloadBase,
       };
 
       await saveJobToSupabase(tempPending);
@@ -1091,7 +1075,7 @@ function NewJobInner() {
         message.includes("timeout");
 
       if (likelyNetwork) {
-        enqueueJob(payloadBase as any);
+        enqueueJob(payloadBase);
         setQueuedCount(getQueue().length);
         setMsg("CONNECTION ISSUE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY.");
         resetForm();
@@ -1109,21 +1093,17 @@ function NewJobInner() {
 
   const headerSubtitle = useMemo(() => {
     const yearNum = yearToNumberOrNull(vehYearText);
-    const label = vehicle ? vehicleLabel(vehicle) : vehicleLabelParts(yearNum, vehMake, vehModel, vehTrim);
+    const label = vehicle ? vehicleLabel(vehicle) : vehicleLabelParts(yearNum, vehMake, vehModel);
     const v = normalizeVin(vin);
     if (!v) return "FAST CAPTURE WHILE YOU’RE ONSITE.";
     return `${label} • ${maskVin(v)}`;
-  }, [vehicle, vin, vehYearText, vehMake, vehModel, vehTrim]);
+  }, [vehicle, vin, vehYearText, vehMake, vehModel]);
 
   function StepPill({ n, label, active = false }: { n: number; label: string; active?: boolean }) {
     return (
       <div
         className={`flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-[12px] font-medium transition
-        ${
-          active
-            ? "bg-purple-600 text-white shadow"
-            : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"
-        }`}
+        ${active ? "bg-purple-600 text-white shadow" : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"}`}
       >
         <span
           className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold
@@ -1239,7 +1219,12 @@ function NewJobInner() {
                     autoCorrect="off"
                     maxLength={17}
                   />
-                  <SchemaButton onClick={lookupVin} disabled={vinBusy || !normalizeVin(vin).length} variant="primary" className="w-[120px]">
+                  <SchemaButton
+                    onClick={lookupVin}
+                    disabled={vinBusy || !normalizeVin(vin).length}
+                    variant="primary"
+                    className="w-[120px]"
+                  >
                     {vinBusy ? "…" : "LOOKUP"}
                   </SchemaButton>
                 </div>
@@ -1278,15 +1263,6 @@ function NewJobInner() {
                         inputMode="text"
                       />
                     </div>
-                    <div className="col-span-3">
-                      <SchemaLabel>TRIM (OPTIONAL)</SchemaLabel>
-                      <SchemaInput
-                        value={vehTrim}
-                        onChange={(e) => setVehTrim(toCaps(e.target.value))}
-                        placeholder="SR / PLATINUM / XL / etc"
-                        inputMode="text"
-                      />
-                    </div>
                   </div>
 
                   {!online && (
@@ -1299,7 +1275,7 @@ function NewJobInner() {
                 <div className="mt-3 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-white/90 truncate">
-                      {vehicleLabelParts(yearToNumberOrNull(vehYearText), vehMake, vehModel, vehTrim)}
+                      {vehicleLabelParts(yearToNumberOrNull(vehYearText), vehMake, vehModel)}
                     </div>
                     <div className="text-xs text-slate-300/70">
                       {normalizeVin(vin).length ? maskVin(vin) : "ENTER VIN TO BEGIN"}
@@ -1426,6 +1402,7 @@ function NewJobInner() {
                       return [...prev, ...mapped];
                     });
 
+                    // allow selecting same files again
                     e.currentTarget.value = "";
                   }}
                 />
@@ -1545,11 +1522,7 @@ function NewJobInner() {
 
                   {addonsOpen && (
                     <div className="mt-3">
-                      <SchemaInput
-                        value={addonQuery}
-                        onChange={(e) => setAddonQuery(e.target.value)}
-                        placeholder="Search add-ons…"
-                      />
+                      <SchemaInput value={addonQuery} onChange={(e) => setAddonQuery(e.target.value)} placeholder="Search add-ons…" />
 
                       <div className="mt-3 space-y-2">
                         {filteredAddons.map((a) => (
@@ -1567,13 +1540,9 @@ function NewJobInner() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm font-extrabold truncate">{a.name}</div>
-                                {a.price_note ? (
-                                  <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div>
-                                ) : null}
+                                {a.price_note ? <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div> : null}
                               </div>
-                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">
-                                {suggestedRangeText(a)}
-                              </div>
+                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">{suggestedRangeText(a)}</div>
                             </div>
                           </button>
                         ))}
@@ -1589,11 +1558,7 @@ function NewJobInner() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => setStep(3)}
-                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
-                  >
+                  <button type="button" onClick={() => setStep(3)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
                     ← BACK
                   </button>
 
@@ -1644,21 +1609,11 @@ function NewJobInner() {
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-2">
-                  <SchemaButton
-                    variant="ghost"
-                    onClick={() => setStep(4)}
-                    disabled={busy}
-                    className="w-full"
-                  >
+                  <SchemaButton variant="ghost" onClick={() => setStep(4)} disabled={busy} className="w-full">
                     ← BACK
                   </SchemaButton>
 
-                  <SchemaButton
-                    variant="primary"
-                    onClick={onSave}
-                    disabled={busy}
-                    className="w-full"
-                  >
+                  <SchemaButton variant="primary" onClick={onSave} disabled={busy} className="w-full">
                     {busy ? "SAVING…" : "SAVE JOB"}
                   </SchemaButton>
                 </div>
