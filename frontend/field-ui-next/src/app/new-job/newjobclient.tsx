@@ -134,7 +134,9 @@ function maskVin(vin17: string) {
 }
 
 function vehicleLabelParts(year: number | null, make: string, model: string) {
-  const parts = [year || "", make, model].map((x) => String(x || "").trim()).filter(Boolean);
+  const parts = [year || "", make, model]
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
   return parts.join(" ") || "Vehicle";
 }
 
@@ -231,6 +233,57 @@ function extractCityState(address: string): { city: string | null; state: string
 }
 
 /** =========================
+ * Photo compression (client-side)
+ * - reduces upload size + lowers memory pressure on mobile
+ * ========================= */
+async function compressImageFile(file: File, opts?: { maxDim?: number; quality?: number }): Promise<File> {
+  const maxDim = opts?.maxDim ?? 1600;
+  const quality = opts?.quality ?? 0.82;
+
+  // If not an image, return as-is
+  if (!file.type?.startsWith("image/")) return file;
+
+  // Use createImageBitmap when available (faster / less memory than Image() in many browsers)
+  const bitmap = await createImageBitmap(file);
+  try {
+    const w = bitmap.width;
+    const h = bitmap.height;
+
+    const scale = Math.min(1, maxDim / Math.max(w, h));
+    const outW = Math.max(1, Math.round(w * scale));
+    const outH = Math.max(1, Math.round(h * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+
+    ctx.drawImage(bitmap, 0, 0, outW, outH);
+
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (b) => {
+          if (!b) return reject(new Error("IMAGE COMPRESSION FAILED."));
+          resolve(b);
+        },
+        "image/jpeg",
+        quality
+      );
+    });
+
+    const baseName = (file.name || "photo").replace(/\.[^/.]+$/, "");
+    const newName = `${baseName}.jpg`;
+    return new File([blob], newName, { type: "image/jpeg" });
+  } finally {
+    try {
+      bitmap.close();
+    } catch {}
+  }
+}
+
+/** =========================
  * Export Wrapper
  * ========================= */
 
@@ -284,7 +337,8 @@ function NewJobInner() {
   // Photos step
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoMsg, setPhotoMsg] = useState<string | null>(null);
-  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null); // gallery/files
+  const cameraInputRef = useRef<HTMLInputElement | null>(null); // camera capture
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
 
   const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">("full");
@@ -368,6 +422,42 @@ function NewJobInner() {
   const canUploadPhotos = useMemo(() => isValidVin(normalizeVin(vin)), [vin]);
 
   /** =========================
+   * Photos helpers
+   * ========================= */
+  function resetPhotos() {
+    photos.forEach((p) => {
+      try {
+        URL.revokeObjectURL(p.previewUrl);
+      } catch {}
+    });
+    setPhotos([]);
+    setPhotoMsg(null);
+    setPhotoBusy(false);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+  }
+
+  function addIncomingPhotos(incoming: File[]) {
+    if (!incoming || incoming.length === 0) return;
+
+    setPhotos((prev) => {
+      const remaining = Math.max(0, 8 - prev.length);
+      const slice = incoming.slice(0, remaining);
+
+      const mapped: PendingPhoto[] = slice.map((file) => ({
+        id: safeUuid(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+
+      if (incoming.length > remaining) setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
+      else setPhotoMsg(null);
+
+      return [...prev, ...mapped];
+    });
+  }
+
+  /** =========================
    * Photos Upload (calls your /api/photos/upload route)
    * ========================= */
   async function uploadPhotosForVin(vin17: string, selected: PendingPhoto[]) {
@@ -397,11 +487,27 @@ function NewJobInner() {
       const fd = new FormData();
       fd.append("vin", v);
 
-      selected.slice(0, 8).forEach((p) => {
-        const f = p.file;
-        if (f.size > 18 * 1024 * 1024) throw new Error("ONE PHOTO IS TOO LARGE (MAX ~18MB).");
-        fd.append("photos", f, f.name);
-      });
+      setPhotoMsg("PREPARING PHOTOS…");
+
+      // compress before upload to reduce size + avoid mobile memory issues
+      const prepared = await Promise.all(
+        selected.slice(0, 8).map(async (p) => {
+          const f = p.file;
+
+          // If huge originals, compress down; otherwise still compress to JPEG for consistency.
+          const compressed = await compressImageFile(f, { maxDim: 1600, quality: 0.82 });
+
+          // Hard cap after compression (still protect server)
+          if (compressed.size > 18 * 1024 * 1024) {
+            throw new Error("ONE PHOTO IS TOO LARGE (MAX ~18MB) EVEN AFTER COMPRESS.");
+          }
+          return compressed;
+        })
+      );
+
+      prepared.forEach((f) => fd.append("photos", f, f.name));
+
+      setPhotoMsg("UPLOADING…");
 
       const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
       const text = await res.text();
@@ -422,6 +528,7 @@ function NewJobInner() {
       });
       setPhotos([]);
       if (photoInputRef.current) photoInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
     } catch (e: any) {
       setPhotoMsg(String(e?.message || "UPLOAD FAILED."));
     } finally {
@@ -735,11 +842,7 @@ function NewJobInner() {
    * Reset
    * ========================= */
   const resetForm = () => {
-    photos.forEach((p) => {
-      try {
-        URL.revokeObjectURL(p.previewUrl);
-      } catch {}
-    });
+    resetPhotos();
 
     setStep(1);
     setVin("");
@@ -756,11 +859,6 @@ function NewJobInner() {
     setCustomerAddress("");
     setCustomerZip("");
     setZipSuggestions([]);
-
-    setPhotos([]);
-    setPhotoMsg(null);
-    setPhotoBusy(false);
-    if (photoInputRef.current) photoInputRef.current.value = "";
 
     setServiceType("full");
     setSelectedAddonIds({});
@@ -1369,12 +1467,27 @@ function NewJobInner() {
              * ========================= */}
             {step === 3 && (
               <SchemaCard title="PHOTOS">
-                <div className="text-[11px] text-slate-300/80">
-                  Upload photos tied to this VIN. Max 8.
-                </div>
+                <div className="text-[11px] text-slate-300/80">Upload photos tied to this VIN. Max 8.</div>
 
+                {/* GALLERY / FILE PICKER */}
                 <input
                   ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (!files || files.length === 0) return;
+                    addIncomingPhotos(Array.from(files));
+                    // allow selecting same files again
+                    e.currentTarget.value = "";
+                  }}
+                />
+
+                {/* CAMERA CAPTURE */}
+                <input
+                  ref={cameraInputRef}
                   type="file"
                   accept="image/*"
                   multiple
@@ -1383,26 +1496,7 @@ function NewJobInner() {
                   onChange={(e) => {
                     const files = e.target.files;
                     if (!files || files.length === 0) return;
-
-                    const incoming = Array.from(files);
-
-                    setPhotos((prev) => {
-                      const remaining = Math.max(0, 8 - prev.length);
-                      const slice = incoming.slice(0, remaining);
-
-                      const mapped = slice.map((file) => ({
-                        id: safeUuid(),
-                        file,
-                        previewUrl: URL.createObjectURL(file),
-                      }));
-
-                      if (incoming.length > remaining) setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
-                      else setPhotoMsg(null);
-
-                      return [...prev, ...mapped];
-                    });
-
-                    // allow selecting same files again
+                    addIncomingPhotos(Array.from(files));
                     e.currentTarget.value = "";
                   }}
                 />
@@ -1413,20 +1507,34 @@ function NewJobInner() {
                     disabled={!canUploadPhotos || photoBusy}
                     onClick={() => {
                       setPhotoMsg(null);
-                      photoInputRef.current?.click();
+                      photoInputRef.current?.click(); // opens gallery/files
                     }}
                     className="w-full"
                   >
-                    {canUploadPhotos ? "PICK PHOTOS" : "ENTER VIN FIRST"}
+                    {canUploadPhotos ? "GALLERY" : "ENTER VIN FIRST"}
                   </SchemaButton>
 
+                  <SchemaButton
+                    variant="ghost"
+                    disabled={!canUploadPhotos || photoBusy}
+                    onClick={() => {
+                      setPhotoMsg(null);
+                      cameraInputRef.current?.click(); // opens camera
+                    }}
+                    className="w-full"
+                  >
+                    CAMERA
+                  </SchemaButton>
+                </div>
+
+                <div className="mt-2">
                   <SchemaButton
                     variant="primary"
                     disabled={!online || !canUploadPhotos || photoBusy || photos.length === 0}
                     onClick={() => uploadPhotosForVin(vin, photos)}
                     className="w-full"
                   >
-                    {photoBusy ? "UPLOADING…" : !online ? "OFFLINE" : "UPLOAD"}
+                    {photoBusy ? "UPLOADING…" : !online ? "OFFLINE" : `UPLOAD (${photos.length})`}
                   </SchemaButton>
                 </div>
 
@@ -1456,8 +1564,22 @@ function NewJobInner() {
                   </div>
                 )}
 
-                <div className="mt-3 text-[11px] text-slate-300/80">
-                  {photoMsg ? photoMsg : `Selected: ${photos.length}/8`}
+                <div className="mt-3 text-[11px] text-slate-300/80">{photoMsg ? photoMsg : `Selected: ${photos.length}/8`}</div>
+
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={resetPhotos}
+                    disabled={photoBusy || photos.length === 0}
+                    className={[
+                      "w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3 text-sm font-extrabold transition",
+                      photoBusy || photos.length === 0
+                        ? "text-slate-500 cursor-not-allowed"
+                        : "text-slate-200 hover:ring-white/20 hover:text-white",
+                    ].join(" ")}
+                  >
+                    CLEAR PHOTOS
+                  </button>
                 </div>
 
                 <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
