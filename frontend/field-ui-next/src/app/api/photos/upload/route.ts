@@ -5,13 +5,7 @@ import { randomUUID } from "crypto";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const BUCKET = process.env.SUPABASE_PHOTO_BUCKET || "vehicle-photos";
-
-// ✅ Add this env var and send header x-upload-secret
-const UPLOAD_SECRET = process.env.UPLOAD_SECRET || "";
-
+// Helpers
 function normalizeVin(raw: string) {
   return (raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -21,7 +15,6 @@ function isValidVin(vin: string) {
 
 function normalizeBatchId(raw: string) {
   const v = (raw || "").trim();
-  // basic UUID format check
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)) {
     return v;
   }
@@ -40,8 +33,29 @@ function getExtFromMime(mime: string) {
 export async function POST(req: Request) {
   const uploadedPaths: string[] = [];
 
+  // ✅ Read env vars at runtime + allow fallbacks
+  const SUPABASE_URL =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    process.env.SUPABASE_PROJECT_URL ||
+    "";
+
+  const SERVICE_ROLE_KEY =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    "";
+
+  // ✅ Bucket env var support (use whichever you set)
+  const BUCKET =
+    process.env.SUPABASE_PHOTO_BUCKET ||
+    process.env.SUPABASE_STORAGE_BUCKET ||
+    "vehicle-photos";
+
+  // ✅ Optional hardening secret (header x-upload-secret)
+  const UPLOAD_SECRET = process.env.UPLOAD_SECRET || "";
+
   try {
-    // ✅ Basic hardening (highly recommended)
+    // ✅ Optional protection
     if (UPLOAD_SECRET) {
       const headerSecret = req.headers.get("x-upload-secret") || "";
       if (headerSecret !== UPLOAD_SECRET) {
@@ -49,9 +63,24 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+    // ✅ Strong env check + explicit missing list
+    const missing: string[] = [];
+    if (!SUPABASE_URL) missing.push("NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL)");
+    if (!SERVICE_ROLE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+    if (!BUCKET) missing.push("SUPABASE_PHOTO_BUCKET (optional)"); // BUCKET always has default, but keep for clarity
+
+    if (missing.length) {
       return NextResponse.json(
-        { error: "Missing env vars: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" },
+        {
+          error: "Missing env vars.",
+          missing,
+          // Helpful debug (safe): don't echo secrets
+          seen: {
+            hasSupabaseUrl: !!SUPABASE_URL,
+            hasServiceRoleKey: !!SERVICE_ROLE_KEY,
+            bucket: BUCKET || null,
+          },
+        },
         { status: 500 }
       );
     }
@@ -64,14 +93,18 @@ export async function POST(req: Request) {
     const vin = normalizeVin(String(form.get("vin") || ""));
 
     if (!isValidVin(vin)) {
-      return NextResponse.json({ error: "Invalid VIN (must be 17 chars, no I/O/Q)." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid VIN (must be 17 chars, no I/O/Q)." },
+        { status: 400 }
+      );
     }
 
-    // ✅ Allow client to provide batch_id (optional)
+    // ✅ optional client-provided batch_id, else generate
     const providedBatch = normalizeBatchId(String(form.get("batch_id") || ""));
     const batch_id = providedBatch || randomUUID();
 
     const photos = form.getAll("photos").filter(Boolean) as File[];
+
     if (!photos || photos.length === 0) {
       return NextResponse.json({ error: "No photos received." }, { status: 400 });
     }
@@ -79,7 +112,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Max 8 photos per upload." }, { status: 400 });
     }
 
-    // ✅ file validation: type + size
+    // ✅ file validation
     const MAX_BYTES_PER_FILE = 8 * 1024 * 1024; // 8MB
     const allowed = new Set([
       "image/jpeg",
@@ -93,10 +126,16 @@ export async function POST(req: Request) {
     for (const f of photos) {
       const mime = (f.type || "").toLowerCase();
       if (mime && !allowed.has(mime)) {
-        return NextResponse.json({ error: `Unsupported file type: ${f.type}` }, { status: 400 });
+        return NextResponse.json(
+          { error: `Unsupported file type: ${f.type || "(unknown)"}` },
+          { status: 400 }
+        );
       }
       if (typeof f.size === "number" && f.size > MAX_BYTES_PER_FILE) {
-        return NextResponse.json({ error: `File too large: ${f.name} (max 8MB)` }, { status: 400 });
+        return NextResponse.json(
+          { error: `File too large: ${f.name} (max 8MB)` },
+          { status: 400 }
+        );
       }
     }
 
@@ -121,7 +160,7 @@ export async function POST(req: Request) {
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       const safeName = (file.name || `photo.${ext}`).replace(/[^a-zA-Z0-9._-]/g, "_");
 
-      // ✅ Slightly cleaner prefix (optional)
+      // ✅ storage path
       const storage_path = `vin/${vin}/${batch_id}/${String(i).padStart(2, "0")}_${stamp}_${safeName}`;
 
       const up = await supabaseAdmin.storage.from(BUCKET).upload(storage_path, bytesArr, {
@@ -130,7 +169,10 @@ export async function POST(req: Request) {
       });
 
       if (up.error) {
-        return NextResponse.json({ error: `Storage upload failed: ${up.error.message}` }, { status: 500 });
+        return NextResponse.json(
+          { error: `Storage upload failed: ${up.error.message}` },
+          { status: 500 }
+        );
       }
 
       uploadedPaths.push(storage_path);
@@ -153,7 +195,10 @@ export async function POST(req: Request) {
       if (uploadedPaths.length) {
         await supabaseAdmin.storage.from(BUCKET).remove(uploadedPaths);
       }
-      return NextResponse.json({ error: `DB insert failed (vehicle_photos): ${insErr.message}` }, { status: 500 });
+      return NextResponse.json(
+        { error: `DB insert failed (vehicle_photos): ${insErr.message}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
@@ -161,16 +206,35 @@ export async function POST(req: Request) {
       vin,
       batch_id,
       count: uploadedRows.length,
+      bucket: BUCKET,
       paths: uploadedRows.map((r) => r.storage_path),
     });
   } catch (e: any) {
-    // ✅ cleanup on unexpected crash after uploads
+    // ✅ cleanup if something crashes after uploads
     try {
-      if (uploadedPaths.length && SUPABASE_URL && SERVICE_ROLE_KEY) {
-        const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-          auth: { persistSession: false },
-        });
-        await supabaseAdmin.storage.from(BUCKET).remove(uploadedPaths);
+      if (uploadedPaths.length) {
+        const SUPABASE_URL =
+          process.env.NEXT_PUBLIC_SUPABASE_URL ||
+          process.env.SUPABASE_URL ||
+          process.env.SUPABASE_PROJECT_URL ||
+          "";
+
+        const SERVICE_ROLE_KEY =
+          process.env.SUPABASE_SERVICE_ROLE_KEY ||
+          process.env.SUPABASE_SERVICE_KEY ||
+          "";
+
+        const BUCKET =
+          process.env.SUPABASE_PHOTO_BUCKET ||
+          process.env.SUPABASE_STORAGE_BUCKET ||
+          "vehicle-photos";
+
+        if (SUPABASE_URL && SERVICE_ROLE_KEY) {
+          const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+            auth: { persistSession: false },
+          });
+          await supabaseAdmin.storage.from(BUCKET).remove(uploadedPaths);
+        }
       }
     } catch {}
 
