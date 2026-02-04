@@ -168,38 +168,43 @@ def home():
 
 @app.route("/search", methods=["GET"])
 def search():
-    vin = normalize_vin(request.args.get("vin", ""))
-
-    if not is_valid_vin(vin):
+    vin = normalize_vin(request.args.get("vin"))
+    if len(vin) != 17:
         return jsonify({"error": "VIN must be 17 characters."}), 400
 
     if not supabase_ready():
         return jsonify({"error": "Supabase not configured on server."}), 500
 
     try:
-        legacy = sb_get(LEGACY_TABLE, {
-            "select": "*",
-            "vin": f"eq.{vin}",
-            "limit": "1",
-        })
-        legacy = legacy[0] if legacy else {}
+        data = merged_profile_by_vin(vin)
+        if not data:
+            return jsonify({"error": "Vin not found."}), 404
 
-        photo_urls = sb_list_and_sign_photos(vin)
+        m = data.get("merged") or {}
+        legacy = data.get("legacy") or {}
+
+        # 🔧 FIX: Ensure frontend always receives photo_urls
+        photo_urls = m.get("photo_urls") or []
 
         payload = {
-            "vin_number": vin,
-            "customer_name": legacy.get("customer_name"),
-            "phone_number": legacy.get("phone_number"),
-            "email": legacy.get("email"),
-            "address": legacy.get("address"),
-            "zip_code": legacy.get("zip_code"),
-            "make": legacy.get("make"),
-            "model": legacy.get("model"),
-            "year": legacy.get("year"),
-            "status": legacy.get("status"),
-            "notes": legacy.get("notes"),
-            "service_history": [],
-            "photo_urls": photo_urls,  # 🔧 FIX: frontend expects this
+            "customer_id": legacy.get("customer_id"),
+            "customer_name": m.get("customer_name") or legacy.get("customer_name") or "—",
+            "phone_number": m.get("phone_number") or legacy.get("phone_number") or "",
+            "email": legacy.get("email") or m.get("email") or "",
+            "address": legacy.get("address") or "",
+            "zip_code": legacy.get("zip_code") or "",
+            "vehicle_nickname": m.get("vehicle_nickname") or legacy.get("vehicle_nickname") or "",
+            "vin_number": m.get("vin") or vin,
+            "make": m.get("make") or legacy.get("make") or "",
+            "model": m.get("model") or legacy.get("model") or "",
+            "year": m.get("year") or legacy.get("year") or "",
+            "status": m.get("status") or legacy.get("status") or "",
+            "notes": m.get("notes") or legacy.get("notes") or "",
+            "photo_count": len(photo_urls),
+            "photo_urls": photo_urls, # ✅ REQUIRED: frontend expects this
+            "service_history": m.get("service_history") or [],
+            "access_token": (data.get("veh") or {}).get("access_token"),
+            "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
         }
 
         return jsonify(payload), 200
