@@ -148,12 +148,20 @@ def sb_photos_for_vin_batch(vin: str, batch_id: str, limit: int = 8):
 
 def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
     """
-    Return a signed URL for a storage object path in PHOTO_BUCKET.
+    Returns a signed URL for a Supabase Storage object.
+    IMPORTANT: storage_path must be RELATIVE to the bucket.
     """
     if not storage_path:
         return None
 
+    # 🔧 FIX: strip bucket name if it was accidentally stored
+    if storage_path.startswith(f"{PHOTO_BUCKET}/"):
+        storage_path = storage_path[len(f"{PHOTO_BUCKET}/"):]
+
+    storage_path = storage_path.lstrip("/")
+
     url = f"{SUPABASE_URL}/storage/v1/object/sign/{PHOTO_BUCKET}/{storage_path}"
+
     r = requests.post(
         url,
         headers={
@@ -162,19 +170,24 @@ def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
             "Content-Type": "application/json",
         },
         json={"expiresIn": expires_in},
-        timeout=20
+        timeout=20,
     )
+
     if r.status_code != 200:
+        print("SIGN ERROR:", r.text)
         return None
 
     data = r.json() or {}
-    signed_path = data.get("signedURL") or data.get("signedUrl") or ""
+    signed_path = data.get("signedURL") or data.get("signedUrl")
+
     if not signed_path:
         return None
 
-    if signed_path.startswith("http"):
-        return signed_path
-    return f"{SUPABASE_URL}{signed_path}"
+    # Supabase sometimes returns a relative signed path
+    if signed_path.startswith("/"):
+        return f"{SUPABASE_URL}{signed_path}"
+
+    return signed_path
 
 # ============================================================
 # SQLITE (legacy token route fallback)
