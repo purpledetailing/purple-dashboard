@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,14 +11,14 @@ const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
   "";
 
-const BUCKET =
-  process.env.SUPABASE_PHOTO_BUCKET ||
-  "vehicle-photos";
+// ✅ FIX: define service role key
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+// Bucket name
+const BUCKET = process.env.SUPABASE_PHOTO_BUCKET || "vehicle-photos";
 
 // Optional extra protection
-const UPLOAD_SECRET =
-  process.env.UPLOAD_SECRET ||
-  "";
+const UPLOAD_SECRET = process.env.UPLOAD_SECRET || "";
 
 function normalizeVin(raw: string) {
   return (raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -59,8 +60,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid VIN." }, { status: 400 });
     }
 
-    const files = form.getAll("photos");
-    if (!files || files.length === 0) {
+    // ✅ FIX: File typing / extraction
+    const files = form.getAll("photos").filter((f): f is File => f instanceof File);
+
+    if (files.length === 0) {
       return NextResponse.json({ error: "No photos provided." }, { status: 400 });
     }
 
@@ -73,7 +76,6 @@ export async function POST(req: Request) {
 
     for (let i = 0; i < files.length; i++) {
       const item = files[i];
-      if (!(item instanceof File)) continue;
 
       // 8MB cap (should be safe after your client resize)
       const MAX_BYTES = 8 * 1024 * 1024;
@@ -84,8 +86,8 @@ export async function POST(req: Request) {
         );
       }
 
-      const ext = "jpg"; // we convert to jpg on client
       const ts = Date.now();
+      const ext = "jpg"; // you said you convert to jpg on client
       const safeName = `${i + 1}_${ts}.${ext}`;
 
       // Store under VIN folder so you can find it in dashboard easily
@@ -94,9 +96,12 @@ export async function POST(req: Request) {
       const arrayBuffer = await item.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
 
+      // ✅ FIX: Supabase storage upload accepts Blob/File in edge; in node we can pass Buffer safely
+      const body = Buffer.from(bytes);
+
       const { error: upErr } = await supabaseAdmin.storage
         .from(BUCKET)
-        .upload(storage_path, bytes, {
+        .upload(storage_path, body, {
           contentType: item.type || "image/jpeg",
           upsert: false,
         });
@@ -112,21 +117,22 @@ export async function POST(req: Request) {
     }
 
     // Optional: write rows to your table
-    // (matches your screenshot: public.vehicle_photos has vin, batch_id, storage_path)
     const rows = uploaded.map((u) => ({
       vin,
       batch_id,
       storage_path: u.storage_path,
     }));
 
-    const { error: insErr } = await supabaseAdmin
-      .from("vehicle_photos")
-      .insert(rows);
+    const { error: insErr } = await supabaseAdmin.from("vehicle_photos").insert(rows);
 
     if (insErr) {
       // Upload succeeded, DB write failed — still return success
       return NextResponse.json(
-        { count: uploaded.length, batch_id, warning: `DB insert failed: ${insErr.message}` },
+        {
+          count: uploaded.length,
+          batch_id,
+          warning: `DB insert failed: ${insErr.message}`,
+        },
         { status: 200 }
       );
     }
