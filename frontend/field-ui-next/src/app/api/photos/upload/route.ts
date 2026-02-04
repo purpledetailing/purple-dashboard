@@ -1,147 +1,49 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
+// ✅ Drop-in replacement block (replace your current insert + return section with this)
+const { data: inserted, error: insErr } = await supabaseAdmin
+  .from("vehicle_photos")
+  .insert(rows)
+  .select("id, vin, batch_id, storage_path");
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+if (insErr) {
+  // IMPORTANT: If DB insert fails, the storage upload might still have succeeded.
+  // Return 500 so the UI doesn't lie, but include debug details.
+  console.error("vehicle_photos insert failed:", {
+    message: insErr.message,
+    details: (insErr as any).details,
+    hint: (insErr as any).hint,
+    code: (insErr as any).code,
+    batch_id,
+    vin,
+    rowsPreview: rows?.slice?.(0, 2),
+  });
 
-// Support either naming scheme
-const SUPABASE_URL =
-  process.env.SUPABASE_URL ||
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  "";
-
-// ✅ FIX: define service role key
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-
-// Bucket name
-const BUCKET = process.env.SUPABASE_PHOTO_BUCKET || "vehicle-photos";
-
-// Optional extra protection
-const UPLOAD_SECRET = process.env.UPLOAD_SECRET || "";
-
-function normalizeVin(raw: string) {
-  return (raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
-function isValidVin(v: string) {
-  return /^[A-HJ-NPR-Z0-9]{17}$/.test(v);
-}
-
-export async function POST(req: Request) {
-  try {
-    // Optional secret header gate (if you set UPLOAD_SECRET)
-    if (UPLOAD_SECRET) {
-      const got = req.headers.get("x-upload-secret") || "";
-      if (got !== UPLOAD_SECRET) {
-        return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-      }
-    }
-
-    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-      return NextResponse.json(
-        {
-          error:
-            "Missing env vars. Need SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY.",
-        },
-        { status: 500 }
-      );
-    }
-
-    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-      auth: { persistSession: false },
-    });
-
-    const form = await req.formData();
-
-    const vinRaw = String(form.get("vin") || "");
-    const vin = normalizeVin(vinRaw);
-
-    if (!isValidVin(vin)) {
-      return NextResponse.json({ error: "Invalid VIN." }, { status: 400 });
-    }
-
-    // ✅ FIX: File typing / extraction
-    const files = form.getAll("photos").filter((f): f is File => f instanceof File);
-
-    if (files.length === 0) {
-      return NextResponse.json({ error: "No photos provided." }, { status: 400 });
-    }
-
-    if (files.length > 8) {
-      return NextResponse.json({ error: "Max 8 photos." }, { status: 400 });
-    }
-
-    const batch_id = crypto.randomUUID();
-    const uploaded: { storage_path: string }[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const item = files[i];
-
-      // 8MB cap (should be safe after your client resize)
-      const MAX_BYTES = 8 * 1024 * 1024;
-      if (item.size > MAX_BYTES) {
-        return NextResponse.json(
-          { error: "One photo too large (max 8MB)." },
-          { status: 413 }
-        );
-      }
-
-      const ts = Date.now();
-      const ext = "jpg"; // you said you convert to jpg on client
-      const safeName = `${i + 1}_${ts}.${ext}`;
-
-      // Store under VIN folder so you can find it in dashboard easily
-      const storage_path = `${vin}/${batch_id}/${safeName}`;
-
-      const arrayBuffer = await item.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-
-      // ✅ FIX: Supabase storage upload accepts Blob/File in edge; in node we can pass Buffer safely
-      const body = Buffer.from(bytes);
-
-      const { error: upErr } = await supabaseAdmin.storage
-        .from(BUCKET)
-        .upload(storage_path, body, {
-          contentType: item.type || "image/jpeg",
-          upsert: false,
-        });
-
-      if (upErr) {
-        return NextResponse.json(
-          { error: `Storage upload failed: ${upErr.message}` },
-          { status: 500 }
-        );
-      }
-
-      uploaded.push({ storage_path });
-    }
-
-    // Optional: write rows to your table
-    const rows = uploaded.map((u) => ({
-      vin,
+  return NextResponse.json(
+    {
+      error: "Upload succeeded but DB insert failed.",
+      uploaded_count: uploaded.length,
       batch_id,
-      storage_path: u.storage_path,
-    }));
-
-    const { error: insErr } = await supabaseAdmin.from("vehicle_photos").insert(rows);
-
-    if (insErr) {
-      // Upload succeeded, DB write failed — still return success
-      return NextResponse.json(
-        {
-          count: uploaded.length,
-          batch_id,
-          warning: `DB insert failed: ${insErr.message}`,
-        },
-        { status: 200 }
-      );
-    }
-
-    return NextResponse.json({ count: uploaded.length, batch_id }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: String(e?.message || "Upload failed.") },
-      { status: 500 }
-    );
-  }
+      db_error: {
+        message: insErr.message,
+        details: (insErr as any).details,
+        hint: (insErr as any).hint,
+        code: (insErr as any).code,
+      },
+      uploaded_paths: uploaded.map((u: any) => u?.path || u?.storage_path || u),
+    },
+    { status: 500 }
+  );
 }
+
+return NextResponse.json(
+  {
+    count: uploaded.length,
+    batch_id,
+    inserted: inserted || [],
+    uploaded_paths: uploaded.map((u: any) => u?.path || u?.storage_path || u),
+  },
+  { status: 200 }
+);
+```0
+
+
+
