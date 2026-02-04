@@ -2,191 +2,176 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs"; // we use Buffer
+export const runtime = "nodejs";
 
-const BUCKET = process.env.PHOTO_BUCKET?.trim() || "vehicle-photos";
-const MAX_PHOTOS = 8;
+const BUCKET = "vehicle-photos";
 
-function env(name: string) {
-  return (process.env[name] || "").trim();
+function cleanEnv(v: string | undefined | null) {
+  return (v ?? "").trim();
+}
+
+function cleanUrl(v: string | undefined | null) {
+  // Remove ALL whitespace (spaces/newlines) because one stray space breaks it.
+  return (v ?? "").trim().replace(/\s+/g, "").replace(/\/$/, "");
 }
 
 function getSupabaseUrl() {
-  return (
-    env("SUPABASE_URL") ||
-    env("NEXT_PUBLIC_SUPABASE_URL") ||
-    env("NEXT_PUBLIC_SUPABASE_URL".toUpperCase()) // harmless fallback
-  ).replace(/\/$/, "");
+  // Prefer server var, fall back to NEXT_PUBLIC (since you have both)
+  return cleanUrl(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL);
 }
 
 function getServiceRoleKey() {
-  return env("SUPABASE_SERVICE_ROLE_KEY");
-}
-
-function normalizeVin(v: string) {
-  return (v || "").trim().toUpperCase();
+  return cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
 function safeFilename(name: string) {
-  // keep it simple and filesystem-safe for object storage
-  return (name || "photo.jpg")
-    .trim()
+  return (name || "photo")
     .replace(/[^\w.\-]+/g, "_")
     .replace(/_+/g, "_")
-    .slice(0, 80);
-}
-
-function extFromContentType(ct?: string) {
-  if (!ct) return "";
-  if (ct.includes("jpeg")) return ".jpg";
-  if (ct.includes("png")) return ".png";
-  if (ct.includes("webp")) return ".webp";
-  if (ct.includes("heic")) return ".heic";
-  return "";
+    .slice(0, 120);
 }
 
 export async function POST(req: Request) {
-  try {
-    const SUPABASE_URL = getSupabaseUrl();
-    const SERVICE_ROLE = getServiceRoleKey();
+  const supabaseUrl = getSupabaseUrl();
+  const serviceRoleKey = getServiceRoleKey();
 
-    if (!SUPABASE_URL || !SERVICE_ROLE) {
+  // 🔎 Debug: prove exactly what the route sees at runtime
+  const debug = {
+    got: {
+      SUPABASE_URL: Boolean(cleanEnv(process.env.SUPABASE_URL)),
+      NEXT_PUBLIC_SUPABASE_URL: Boolean(cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL)),
+      SUPABASE_SERVICE_ROLE_KEY: Boolean(serviceRoleKey),
+    },
+    sanitized: {
+      supabaseUrlPreview: supabaseUrl ? `${supabaseUrl.slice(0, 20)}...` : "",
+      supabaseUrlLen: supabaseUrl.length,
+      serviceRoleKeyLen: serviceRoleKey.length,
+    },
+    bucket: BUCKET,
+  };
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return NextResponse.json(
+      {
+        error:
+          "Missing env vars. Need SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY.",
+        debug,
+      },
+      { status: 500 }
+    );
+  }
+
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+
+  try {
+    const form = await req.formData();
+
+    const vinRaw = String(form.get("vin") || form.get("vehicle_vin") || "")
+      .trim()
+      .toUpperCase();
+
+    const batch_id = String(form.get("batch_id") || crypto.randomUUID()).trim();
+
+    const files = form
+      .getAll("photos")
+      .filter((x): x is File => x instanceof File);
+
+    if (!vinRaw || vinRaw.length !== 17) {
+      return NextResponse.json(
+        { error: "VIN missing or not 17 chars.", debug },
+        { status: 400 }
+      );
+    }
+
+    if (files.length === 0) {
+      return NextResponse.json(
+        { error: "No photos received. Expected form field name: photos", debug },
+        { status: 400 }
+      );
+    }
+
+    // Upload max 8
+    const toUpload = files.slice(0, 8);
+
+    const uploaded: { storage_path: string; sort_order: number }[] = [];
+    const upload_errors: { name: string; message: string }[] = [];
+
+    for (let i = 0; i < toUpload.length; i++) {
+      const file = toUpload[i];
+      const ab = await file.arrayBuffer();
+      const buf = Buffer.from(ab);
+
+      const extGuess =
+        (file.name.split(".").pop() || "").toLowerCase().slice(0, 8) || "jpg";
+      const cleanName = safeFilename(file.name);
+
+      // Put in a folder per VIN + batch
+      const storage_path = `${vinRaw}/${batch_id}/${String(i + 1).padStart(
+        2,
+        "0"
+      )}_${Date.now()}_${cleanName}`;
+
+      const { error: upErr } = await supabaseAdmin.storage
+        .from(BUCKET)
+        .upload(storage_path, buf, {
+          contentType: file.type || "image/jpeg",
+          upsert: false,
+        });
+
+      if (upErr) {
+        upload_errors.push({ name: file.name, message: upErr.message });
+        continue;
+      }
+
+      uploaded.push({ storage_path, sort_order: i + 1 });
+    }
+
+    // If nothing uploaded, return hard failure (don’t “pretend success”)
+    if (uploaded.length === 0) {
       return NextResponse.json(
         {
-          error:
-            "Missing env vars. Need SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY.",
-          got: {
-            SUPABASE_URL: !!SUPABASE_URL,
-            NEXT_PUBLIC_SUPABASE_URL: !!env("NEXT_PUBLIC_SUPABASE_URL"),
-            SUPABASE_SERVICE_ROLE_KEY: !!SERVICE_ROLE,
-          },
+          error: "All uploads failed.",
+          upload_errors,
+          debug,
         },
         { status: 500 }
       );
     }
 
-    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const fd = await req.formData();
-
-    // We support either:
-    // - vin in formData
-    // - vehicle_vin in formData
-    const vin = normalizeVin(
-      String(fd.get("vin") || fd.get("vehicle_vin") || "")
-    );
-
-    if (vin.length !== 17) {
-      return NextResponse.json(
-        { error: "VIN must be 17 characters." },
-        { status: 400 }
-      );
-    }
-
-    // photos[] are appended as "photos" (as in your screenshot)
-    const incoming = fd.getAll("photos");
-    const files = incoming.filter((x): x is File => x instanceof File);
-
-    if (!files.length) {
-      return NextResponse.json(
-        { error: "No photos received. Make sure formData uses key 'photos'." },
-        { status: 400 }
-      );
-    }
-
-    const selected = files.slice(0, MAX_PHOTOS);
-    const batch_id =
-      String(fd.get("batch_id") || "").trim() || crypto.randomUUID();
-
-    const uploaded: { storage_path: string; name: string }[] = [];
-    const uploadErrors: { name: string; error: string }[] = [];
-
-    for (let i = 0; i < selected.length; i++) {
-      const f = selected[i];
-
-      // Build a stable storage path
-      const ts = Date.now();
-      const base = safeFilename(f.name);
-      const ext = base.includes(".") ? "" : extFromContentType(f.type);
-      const filename = `${String(i + 1).padStart(2, "0")}_${ts}_${base}${ext}`;
-      const storage_path = `${vin}/${batch_id}/${filename}`;
-
-      try {
-        const ab = await f.arrayBuffer();
-        const buf = Buffer.from(ab);
-
-        const { error: upErr } = await supabaseAdmin.storage
-          .from(BUCKET)
-          .upload(storage_path, buf, {
-            contentType: f.type || "application/octet-stream",
-            upsert: false,
-            cacheControl: "3600",
-          });
-
-        if (upErr) {
-          uploadErrors.push({ name: f.name, error: upErr.message });
-          continue;
-        }
-
-        uploaded.push({ storage_path, name: f.name });
-      } catch (e: any) {
-        uploadErrors.push({
-          name: f.name,
-          error: String(e?.message || "Upload failed"),
-        });
-      }
-    }
-
-    // Even if some uploads fail, we still insert the successful ones
-    const rows = uploaded.map((u, idx) => ({
-      vin,
+    // Insert DB rows (non-fatal if it fails)
+    const rows = uploaded.map((u) => ({
+      vin: vinRaw,
       batch_id,
       storage_path: u.storage_path,
-      sort_order: idx + 1,
+      sort_order: u.sort_order,
     }));
 
-    if (rows.length) {
-      const { error: insErr } = await supabaseAdmin
-        .from("vehicle_photos")
-        .insert(rows);
+    const { error: insErr } = await supabaseAdmin.from("vehicle_photos").insert(rows);
 
-      if (insErr) {
-        // Upload succeeded, DB write failed — still return success
-        return NextResponse.json(
-          {
-            count: uploaded.length,
-            batch_id,
-            uploaded,
-            upload_errors: uploadErrors,
-            warning: `DB insert failed: ${insErr.message}`,
-          },
-          { status: 200 }
-        );
-      }
+    if (insErr) {
+      return NextResponse.json(
+        {
+          count: uploaded.length,
+          batch_id,
+          uploaded,
+          upload_errors,
+          warning: `DB insert failed: ${insErr.message}`,
+          debug,
+        },
+        { status: 200 }
+      );
     }
 
     return NextResponse.json(
-      {
-        count: uploaded.length,
-        batch_id,
-        uploaded,
-        upload_errors: uploadErrors,
-        message:
-          uploadErrors.length && uploaded.length
-            ? "Some photos uploaded, some failed."
-            : uploadErrors.length
-            ? "All uploads failed."
-            : "Uploaded successfully.",
-      },
-      { status: uploaded.length ? 200 : 500 }
+      { count: uploaded.length, batch_id, uploaded, upload_errors, debug },
+      { status: 200 }
     );
   } catch (e: any) {
     return NextResponse.json(
-      { error: String(e?.message || "Upload failed.") },
+      { error: String(e?.message || "Upload failed."), debug },
       { status: 500 }
     );
   }
 }
-```0
