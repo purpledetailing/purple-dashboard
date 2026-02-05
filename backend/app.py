@@ -391,21 +391,35 @@ def merged_profile_by_vin(vin: str):
     if veh and veh.get("id"):
         service_history = build_history_from_jobs(veh["id"])
 
-    # ✅ photos (signed URLs) — FRONTEND EXPECTS "photo_urls"
+    # --- Photos (latest batch only, max 8) ---
+photo_urls = []
+latest_batch_id = ""
+photo_count = 0
+
+try:
+    latest_batch_id = sb_latest_batch_id_for_vin(vin) or ""
+
+    if latest_batch_id:
+        rows = sb_photos_for_vin_batch(vin, latest_batch_id, limit=8)
+        photo_count = len(rows)
+
+        for r in rows:
+            sp = (r.get("storage_path") or "").strip()
+            if not sp:
+                continue
+
+            # ✅ CRITICAL FIX:
+            # storage_path MUST be RELATIVE to the bucket
+            # Supabase adds "vehicle-photos" automatically
+            sp = sp.replace("vehicle-photos/", "").lstrip("/")
+
+            signed = sb_sign_storage_url(sp, expires_in=43200)
+            if signed:
+                photo_urls.append(signed)
+
+except Exception as e:
+    print("PHOTO SIGN ERROR:", e)
     photo_urls = []
-    try:
-        latest_batch_id = sb_latest_batch_id_for_vin(vin)
-        if latest_batch_id:
-            rows = sb_photos_for_vin_batch(vin, latest_batch_id, limit=8)
-            for r in rows:
-                sp = (r.get("storage_path") or "").strip()
-                if not sp:
-                    continue
-                signed = sb_sign_storage_url(sp, expires_in=43200)
-                if signed:
-                    photo_urls.append(signed)
-    except Exception:
-        photo_urls = []
 
     return {
         "veh": veh or {},
@@ -470,24 +484,27 @@ def search():
         m = (data.get("merged") or {})
 
         payload = {
-            "customer_id": legacy.get("customer_id"),
-            "customer_name": m.get("customer_name") or "—",
-            "phone_number": m.get("phone_number") or "",
-            "email": legacy.get("email") or (m.get("email") or ""),
-            "address": legacy.get("address") or "",
-            "zip_code": legacy.get("zip_code") or "",
-            "vehicle_nickname": legacy.get("vehicle_nickname") or "",
-            "vin_number": m.get("vin") or vin,
-            "make": m.get("make") or "",
-            "model": m.get("model") or "",
-            "year": m.get("year") or "",
-            "status": m.get("status") or "",
-            "notes": m.get("notes") or "",
-            "service_history": m.get("service_history") or [],
-            "photo_urls": m.get("photo_urls") or [],  # ✅ FIX: frontend expects this
-            "access_token": (data.get("veh") or {}).get("access_token"),
-            "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
-        }
+    "customer_id": legacy.get("customer_id"),
+    "customer_name": m.get("customer_name") or "--",
+    "phone_number": m.get("phone_number") or "",
+    "email": legacy.get("email") or (m.get("email") or ""),
+    "address": legacy.get("address") or "",
+    "zip_code": legacy.get("zip_code") or "",
+    "vehicle_nickname": legacy.get("vehicle_nickname") or "",
+    "vin_number": m.get("vin") or vin,
+    "make": m.get("make") or "",
+    "model": m.get("model") or "",
+    "year": m.get("year") or "",
+    "status": m.get("status") or "",
+    "notes": m.get("notes") or "",
+    "service_history": m.get("service_history") or [],
+
+    # ✅ THIS is the critical fix
+    "photo_urls": photo_urls,
+
+    "access_token": (data.get("veh") or {}).get("access_token"),
+    "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
+}
 
         return jsonify(payload), 200
 
