@@ -529,24 +529,25 @@ def search():
 def public_report(value):
     """
     Public:
-      - /vin/<VIN>   (17 chars) -> Supabase merge (vehicles + legacy + photos)
+      - /vin/<VIN>   (17 chars) -> Supabase merge (vehicles + customer_data_legacy)
       - /vin/<TOKEN> (not 17)   -> SQLite token (legacy support)
     """
-    value = (value or "").strip()
+    try:
+        value = (value or "").strip()
 
-    # VIN route
-    if len(value) == 17:
-        vin = normalize_vin(value)
+        # VIN route
+        if len(value) == 17:
+            vin = normalize_vin(value)
 
-        if not supabase_ready():
-            return render_template("public_report.html", not_found=True, vin=vin), 500
+            if not supabase_ready():
+                # Return a meaningful message instead of generic 500
+                return render_template("public_report.html", not_found=True, vin=vin), 500
 
-        try:
             data = merged_profile_by_vin(vin)
             if not data:
                 return render_template("public_report.html", not_found=True, vin=vin), 404
 
-            m = data.get("merged") or {}
+            m = (data.get("merged") or {})
 
             # PUBLIC: hide sensitive fields (including email)
             vehicle_for_template = {
@@ -557,7 +558,10 @@ def public_report(value):
             }
 
             # If you're still using Google Drive embed on the public page:
-            embed_url = drive_embed_from_folder((data.get("legacy") or {}).get("service_history_link") or "")
+            embed_url = drive_embed_from_folder(m.get("service_history_link") or "")
+
+            # OPTIONAL: if your public_report.html expects photo_urls, pass it safely
+            photo_urls = m.get("photo_urls") or []
 
             return render_template(
                 "public_report.html",
@@ -566,9 +570,47 @@ def public_report(value):
                 vehicle=vehicle_for_template,
                 service_history=m.get("service_history") or [],
                 embed_url=embed_url,
+                photo_urls=photo_urls,  # safe even if template ignores it
             )
-        except Exception:
-            return render_template("public_report.html", not_found=True, vin=vin), 500
+
+        # TOKEN route (legacy)
+        token = normalize_token(value)
+        vehicle = get_vehicle_by_token_sqlite(token)
+        if not vehicle:
+            return render_template("public_report.html", not_found=True, vin="—"), 404
+
+        vin = normalize_vin(vehicle.get("vin_number"))
+
+        # ALWAYS HIDE on public
+        vehicle["phone_number"] = ""
+        vehicle["address"] = ""
+        vehicle["zip_code"] = ""
+        vehicle["email"] = ""
+
+        history = get_service_history_for_vin_sqlite(vin)
+        embed_url = drive_embed_from_folder(vehicle.get("service_history_link"))
+
+        return render_template(
+            "public_report.html",
+            not_found=False,
+            vin=vin,
+            vehicle=vehicle,
+            service_history=history,
+            embed_url=embed_url,
+            photo_urls=[],  # keep consistent
+        )
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        print("🔥 ERROR in /vin route:", str(e))
+        print(tb)
+
+        # If you append ?debug=1, show the traceback in the browser
+        if request.args.get("debug") == "1":
+            return f"<pre>{tb}</pre>", 500
+
+        # Normal behavior: generic error page
+        return "Internal Server Error", 500
 
     # TOKEN route (legacy)
     token = normalize_token(value)
