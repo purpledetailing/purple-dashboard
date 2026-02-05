@@ -363,15 +363,21 @@ def merged_profile_by_vin(vin: str):
     model = first_truthy((veh or {}).get("model"), (legacy or {}).get("model"))
     year = (veh or {}).get("year") or (legacy or {}).get("year") or ""
 
+    vehicle_nickname = first_truthy((legacy or {}).get("vehicle_nickname"), (veh or {}).get("nickname"), "")
+    service_history_link = first_truthy(
+        (legacy or {}).get("service_history_link"),
+        (veh or {}).get("service_history_link"),
+        ""
+    )
+
     status = first_truthy((legacy or {}).get("status"), (veh or {}).get("status"), "")
     notes = first_truthy((legacy or {}).get("notes"), (veh or {}).get("notes"), "")
 
-    # legacy primary customer fields
+    # --- Customer fields (legacy primary) ---
     customer_name = first_truthy((legacy or {}).get("customer_name"), "")
     phone_number = first_truthy((legacy or {}).get("phone_number"), "")
     email = first_truthy((legacy or {}).get("email"), "")
 
-    # fallback to latest supabase customer if needed
     latest_customer = None
     if veh and veh.get("id"):
         try:
@@ -386,44 +392,40 @@ def merged_profile_by_vin(vin: str):
     if not phone_number and latest_customer:
         phone_number = first_truthy(latest_customer.get("phone"), "")
 
-    # service history from jobs
+    # --- Service history from jobs ---
     service_history = []
     if veh and veh.get("id"):
         service_history = build_history_from_jobs(veh["id"])
 
     # --- Photos (latest batch only, max 8) ---
-photo_urls = []
-latest_batch_id = ""
-photo_count = 0
-
-try:
-    latest_batch_id = sb_latest_batch_id_for_vin(vin) or ""
-
-    if latest_batch_id:
-        rows = sb_photos_for_vin_batch(vin, latest_batch_id, limit=8)
-        photo_count = len(rows)
-
-        for r in rows:
-            sp = (r.get("storage_path") or "").strip()
-            if not sp:
-                continue
-
-            # ✅ CRITICAL FIX:
-            # storage_path MUST be RELATIVE to the bucket
-            # Supabase adds "vehicle-photos" automatically
-            sp = sp.replace("vehicle-photos/", "").lstrip("/")
-
-            signed = sb_sign_storage_url(sp, expires_in=43200)
-            if signed:
-                photo_urls.append(signed)
-
-except Exception as e:
-    print("PHOTO SIGN ERROR:", e)
+    latest_batch_id = ""
     photo_urls = []
+    photo_count = 0
+
+    try:
+        batch_id = sb_latest_batch_id_for_vin(vin)
+        if batch_id:
+            latest_batch_id = batch_id
+            rows = sb_photos_for_vin_batch(vin, batch_id, limit=8)
+            photo_count = len(rows)
+
+            for r in rows:
+                sp = (r.get("storage_path") or "").strip()
+                if not sp:
+                    continue
+                signed = sb_sign_storage_url(sp, expires_in=43200)
+                if signed:
+                    photo_urls.append(signed)
+
+    except Exception:
+        latest_batch_id = ""
+        photo_urls = []
+        photo_count = 0
 
     return {
         "veh": veh or {},
         "legacy": legacy or {},
+        "latest_customer": latest_customer or {},
         "merged": {
             "vin": vin,
             "make": make,
@@ -431,13 +433,20 @@ except Exception as e:
             "year": year,
             "status": status,
             "notes": notes,
+            "vehicle_nickname": vehicle_nickname,
+            "service_history_link": service_history_link,
+
             "customer_name": customer_name or "—",
             "phone_number": phone_number or "",
             "email": email or "",
+
             "service_history": service_history,
-            "photo_urls": photo_urls,
-        }
+            "photo_count": photo_count,
+            "latest_batch_id": latest_batch_id,
+            "photo_urls": photo_urls,  # ✅ signed URLs for frontend grid
+        },
     }
+
 
 # ============================================================
 # Routes
