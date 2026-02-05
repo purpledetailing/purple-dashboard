@@ -494,7 +494,7 @@ def search():
 
         payload = {
     "customer_id": legacy.get("customer_id"),
-    "customer_name": m.get("customer_name") or "--",
+    "customer_name": m.get("customer_name") or "—",
     "phone_number": m.get("phone_number") or "",
     "email": legacy.get("email") or (m.get("email") or ""),
     "address": legacy.get("address") or "",
@@ -507,13 +507,11 @@ def search():
     "status": m.get("status") or "",
     "notes": m.get("notes") or "",
     "service_history": m.get("service_history") or [],
-
-    # ✅ THIS is the critical fix
-    "photo_urls": photo_urls,
-
+    "photo_urls": m.get("photo_urls") or [],   # ✅ THIS LINE FIXES ERROR
     "access_token": (data.get("veh") or {}).get("access_token"),
     "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
 }
+
 
         return jsonify(payload), 200
 
