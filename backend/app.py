@@ -148,20 +148,20 @@ def sb_photos_for_vin_batch(vin: str, batch_id: str, limit: int = 8):
 
 def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
     """
-    Returns a signed URL for a Supabase Storage object.
-    IMPORTANT: storage_path must be RELATIVE to the bucket.
+    Return a signed URL for a storage object path (vehicle-photos bucket).
+
+    Handles Supabase returning signedURL in different formats:
+      - "/storage/v1/object/sign/..."
+      - "/object/sign/..."
+      - full "https://..."
     """
     if not storage_path:
         return None
 
-    # 🔧 FIX: strip bucket name if it was accidentally stored
-    if storage_path.startswith(f"{PHOTO_BUCKET}/"):
-        storage_path = storage_path[len(f"{PHOTO_BUCKET}/"):]
+    storage_path = str(storage_path).lstrip("/")  # normalize
 
-    storage_path = storage_path.lstrip("/")
-
-    url = f"{SUPABASE_URL}/storage/v1/object/sign/{PHOTO_BUCKET}/{storage_path}"
-
+    # Call the SIGN endpoint
+    url = f"{SUPABASE_URL}/storage/v1/object/sign/vehicle-photos/{storage_path}"
     r = requests.post(
         url,
         headers={
@@ -169,25 +169,32 @@ def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
             "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
             "Content-Type": "application/json",
         },
-        json={"expiresIn": expires_in},
+        json={"expiresIn": int(expires_in)},
         timeout=20,
     )
 
     if r.status_code != 200:
-        print("SIGN ERROR:", r.text)
         return None
 
     data = r.json() or {}
-    signed_path = data.get("signedURL") or data.get("signedUrl")
-
+    signed_path = data.get("signedURL") or data.get("signedUrl") or ""
     if not signed_path:
         return None
 
-    # Supabase sometimes returns a relative signed path
-    if signed_path.startswith("/"):
-        return f"{SUPABASE_URL}{signed_path}"
+    # If Supabase gives a full URL, use it as-is
+    if signed_path.startswith("http"):
+        return signed_path
 
-    return signed_path
+    # If Supabase returns "/object/sign/..." (missing "/storage/v1"), fix it
+    if signed_path.startswith("/object/"):
+        signed_path = "/storage/v1" + signed_path
+
+    # If it doesn't start with "/storage/v1", force it into that namespace
+    if not signed_path.startswith("/storage/v1/"):
+        signed_path = "/storage/v1/" + signed_path.lstrip("/")
+
+    return f"{SUPABASE_URL}{signed_path}"
+
 
 # ============================================================
 # SQLITE (legacy token route fallback)
