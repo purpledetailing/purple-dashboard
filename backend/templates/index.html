@@ -666,48 +666,36 @@
       historyCountLabel.textContent = history.length === 1 ? "1 visit" : `${history.length} visits`;
 
       historyList.innerHTML = history.map((entry) => {
-        const date = escapeHtml(entry?.date || "Date N/A");
-        const type = escapeHtml(entry?.service_type || "—");
-        const notes = String(entry?.service_notes || "").trim();
-        const details = String(entry?.service_description || "").trim(); // ✅ <-- THIS is the new field from backend
-        const next = String(entry?.next_recommended_service || "").trim();
+  const date = entry.date || "Date N/A";
+  const type = entry.service_type || "—";
+  const description = entry.service_description || "";
+  const n = entry.service_notes || "—";
+  const next = entry.next_recommended_service || "—";
 
-        const hasDetails = !!details;
-        const hasNotes = !!notes;
-        const hasNext = !!next;
+  return `
+    <div style="border-radius:10px;border:1px solid rgba(209,213,219,1);padding:8px 10px;margin-bottom:8px;background:#ffffff;">
+      <div style="font-size:0.8rem;color:#6b7280;margin-bottom:2px;">${date}</div>
+      <div style="font-size:0.9rem;color:#111827;font-weight:600;">${type}</div>
 
-        // If no details at all, we still show the card but no expand sections.
-        return `
-          <details class="svc" ${hasDetails || hasNotes || hasNext ? "" : "open"}>
-            <summary>
-              <div class="svc-left">
-                <div class="svc-date">${date}</div>
-                <div class="svc-type">${type}</div>
-              </div>
-              <span class="svc-chip">${hasDetails ? "Details" : (hasNotes ? "Notes" : "View")}</span>
-            </summary>
+      ${description ? `
+        <details style="margin-top:6px;">
+          <summary style="cursor:pointer;font-size:0.8rem;color:#6b7280;">Details</summary>
+          <div style="margin-top:6px;font-size:0.85rem;color:#111827;white-space:pre-line;">
+            ${description}
+          </div>
+        </details>
+      ` : ""}
 
-            <div class="svc-body">
-              ${
-                hasDetails
-                  ? `<div class="row"><strong>Details:</strong> ${escapeHtml(details)}</div>`
-                  : `<div class="row muter"><strong>Details:</strong> —</div>`
-              }
-              ${
-                hasNotes
-                  ? `<div class="row"><strong>Notes:</strong> ${escapeHtml(notes)}</div>`
-                  : ``
-              }
-              ${
-                hasNext
-                  ? `<div class="row"><strong>Next:</strong> ${escapeHtml(next)}</div>`
-                  : ``
-              }
-            </div>
-          </details>
-        `;
-      }).join("");
-    }
+      <div style="margin-top:4px;font-size:0.8rem;color:#111827;">
+        <strong>Notes:</strong> ${n}
+      </div>
+
+      <div style="margin-top:2px;font-size:0.8rem;color:#6b7280;">
+        <strong>Next:</strong> ${next}
+      </div>
+    </div>
+  `;
+}).join("");
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
