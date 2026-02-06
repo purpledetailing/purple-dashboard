@@ -4,6 +4,7 @@ import sqlite3
 import os
 import re
 import requests
+import traceback
 from datetime import datetime
 
 app = Flask(__name__, template_folder="templates", static_folder="../static")
@@ -12,7 +13,7 @@ CORS(app)
 # ============================================================
 # DEBUG: confirm which file is running in production
 # ============================================================
-APP_VERSION = "2026-02-04-supabase-photos-v1"
+APP_VERSION = "2026-02-05-jobs-legacy-descriptions-v1"
 
 @app.route("/version")
 def version():
@@ -35,10 +36,16 @@ if not PUBLIC_BASE_URL:
 # ---------------------------
 # Supabase config
 # ---------------------------
-USE_SUPABASE = str(os.environ.get("USE_SUPABASE", "1")).strip() == "1"
+def env_flag(name: str, default: str = "1") -> bool:
+    v = str(os.environ.get(name, default)).strip().lower()
+    return v in ("1", "true", "yes", "y", "on")
+
+USE_SUPABASE = env_flag("USE_SUPABASE", "1")
 SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
+
 LEGACY_TABLE = os.environ.get("LEGACY_TABLE", "customer_data_legacy").strip()
+JOBS_LEGACY_TABLE = os.environ.get("JOBS_LEGACY_TABLE", "customer_jobs_legacy").strip()
 
 PHOTO_BUCKET = os.environ.get("PHOTO_BUCKET", "vehicle-photos").strip()
 
@@ -149,19 +156,13 @@ def sb_photos_for_vin_batch(vin: str, batch_id: str, limit: int = 8):
 def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
     """
     Return a signed URL for a storage object path (vehicle-photos bucket).
-
-    Handles Supabase returning signedURL in different formats:
-      - "/storage/v1/object/sign/..."
-      - "/object/sign/..."
-      - full "https://..."
     """
     if not storage_path:
         return None
 
-    storage_path = str(storage_path).lstrip("/")  # normalize
+    storage_path = str(storage_path).lstrip("/")
 
-    # Call the SIGN endpoint
-    url = f"{SUPABASE_URL}/storage/v1/object/sign/vehicle-photos/{storage_path}"
+    url = f"{SUPABASE_URL}/storage/v1/object/sign/{PHOTO_BUCKET}/{storage_path}"
     r = requests.post(
         url,
         headers={
@@ -181,20 +182,16 @@ def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
     if not signed_path:
         return None
 
-    # If Supabase gives a full URL, use it as-is
     if signed_path.startswith("http"):
         return signed_path
 
-    # If Supabase returns "/object/sign/..." (missing "/storage/v1"), fix it
     if signed_path.startswith("/object/"):
         signed_path = "/storage/v1" + signed_path
 
-    # If it doesn't start with "/storage/v1", force it into that namespace
     if not signed_path.startswith("/storage/v1/"):
         signed_path = "/storage/v1/" + signed_path.lstrip("/")
 
     return f"{SUPABASE_URL}{signed_path}"
-
 
 # ============================================================
 # SQLITE (legacy token route fallback)
@@ -240,14 +237,14 @@ def get_service_history_for_vin_sqlite(vin):
         cur.execute(
             """
             SELECT
-              COALESCE(date, '')                     AS date,
-              COALESCE(service_type, '')             AS service_type,
-              COALESCE(service_notes, '')            AS service_notes,
+              COALESCE(date, '') AS date,
+              COALESCE(service_type, '') AS service_type,
+              COALESCE(service_notes, '') AS service_notes,
               COALESCE(next_recommended_service, '') AS next_recommended_service,
-              COALESCE(photos_link, '')              AS photos_link,
-              COALESCE(technician, '')               AS technician,
-              COALESCE(price, '')                    AS price,
-              COALESCE(customer_feedback, '')        AS customer_feedback
+              COALESCE(photos_link, '') AS photos_link,
+              COALESCE(technician, '') AS technician,
+              COALESCE(price, '') AS price,
+              COALESCE(customer_feedback, '') AS customer_feedback
             FROM Service_History
             WHERE UPPER(TRIM(vehicle_vin)) = ?
             ORDER BY date DESC
@@ -280,6 +277,7 @@ def sb_legacy_by_vin(vin: str):
     return rows[0] if rows else None
 
 def sb_latest_job_for_vehicle(vehicle_id: str):
+    # (kept only to help fill missing customer fields)
     rows = sb_get("jobs", {
         "select": "id,performed_at,customer_id",
         "vehicle_id": f"eq.{vehicle_id}",
@@ -298,54 +296,32 @@ def sb_customer_by_id(customer_id: str):
     })
     return rows[0] if rows else None
 
-def sb_jobs_by_vehicle(vehicle_id: str, limit: int = 25):
-    rows = sb_get("jobs", {
-        "select": "id,performed_at,notes,total_price_cents,vehicle_id,customer_id",
-        "vehicle_id": f"eq.{vehicle_id}",
-        "order": "performed_at.desc",
+# ============================================================
+# ✅ OPTION B: PULL JOB HISTORY FROM customer_jobs_legacy
+# ============================================================
+def sb_jobs_legacy_by_vin(vin: str, limit: int = 50):
+    vin = normalize_vin(vin)
+    rows = sb_get(JOBS_LEGACY_TABLE, {
+        "select": "id,vin,created_at,service_name,service_description,notes",
+        "vin": f"eq.{vin}",
+        "order": "created_at.desc",
         "limit": str(limit),
     })
-    return rows
+    return rows or []
 
-def sb_job_services(job_id: str):
-    url = f"{SUPABASE_URL}/rest/v1/job_services"
-    params = {
-        "select": "service_id,services(name,category)",
-        "job_id": f"eq.{job_id}",
-    }
-    r = requests.get(url, headers=supabase_headers(), params=params, timeout=20)
-    if r.status_code != 200:
-        return []
-    return r.json() or []
-
-def build_history_from_jobs(vehicle_id: str):
+def build_history_from_jobs_legacy(vin: str):
     out = []
     try:
-        jobs = sb_jobs_by_vehicle(vehicle_id, limit=25)
+        rows = sb_jobs_legacy_by_vin(vin, limit=50)
     except Exception:
         return out
 
-    for j in jobs:
-        service_label = ""
-        try:
-            js = sb_job_services(j.get("id"))
-            names = []
-            for row in js:
-                s = row.get("services") or {}
-                nm = (s.get("name") or "").strip()
-                if nm:
-                    names.append(nm)
-            if names:
-                service_label = names[0]
-                if len(names) > 1:
-                    service_label = f"{names[0]} (+{len(names)-1})"
-        except Exception:
-            service_label = ""
-
+    for r in rows:
         out.append({
-            "date": fmt_date(j.get("performed_at")),
-            "service_type": service_label or "",
-            "service_notes": (j.get("notes") or ""),
+            "date": fmt_date(r.get("created_at")),
+            "service_type": (r.get("service_name") or "").strip(),
+            "service_description": (r.get("service_description") or "").strip(), # ✅ expandable details live here
+            "service_notes": (r.get("notes") or "").strip(),
             "next_recommended_service": "",
             "photos_link": "",
             "technician": "",
@@ -385,6 +361,7 @@ def merged_profile_by_vin(vin: str):
     phone_number = first_truthy((legacy or {}).get("phone_number"), "")
     email = first_truthy((legacy or {}).get("email"), "")
 
+    # fallback: if customer missing in legacy, use last normalized job’s customer (optional)
     latest_customer = None
     if veh and veh.get("id"):
         try:
@@ -399,10 +376,8 @@ def merged_profile_by_vin(vin: str):
     if not phone_number and latest_customer:
         phone_number = first_truthy(latest_customer.get("phone"), "")
 
-    # --- Service history from jobs ---
-    service_history = []
-    if veh and veh.get("id"):
-        service_history = build_history_from_jobs(veh["id"])
+    # ✅ Service history from customer_jobs_legacy (Option B)
+    service_history = build_history_from_jobs_legacy(vin)
 
     # --- Photos (latest batch only, max 8) ---
     latest_batch_id = ""
@@ -447,13 +422,12 @@ def merged_profile_by_vin(vin: str):
             "phone_number": phone_number or "",
             "email": email or "",
 
-            "service_history": service_history,
+            "service_history": service_history, # ✅ now includes service_description per row
             "photo_count": photo_count,
             "latest_batch_id": latest_batch_id,
-            "photo_urls": photo_urls,  # ✅ signed URLs for frontend grid
+            "photo_urls": photo_urls,
         },
     }
-
 
 # ============================================================
 # Routes
@@ -466,6 +440,9 @@ def health():
         "photo_bucket": PHOTO_BUCKET,
         "db_path": DB_PATH,
         "supabase_url": SUPABASE_URL,
+        "legacy_table": LEGACY_TABLE,
+        "jobs_legacy_table": JOBS_LEGACY_TABLE,
+        "use_supabase": USE_SUPABASE,
     })
 
 @app.route("/health/supabase")
@@ -500,25 +477,24 @@ def search():
         m = (data.get("merged") or {})
 
         payload = {
-    "customer_id": legacy.get("customer_id"),
-    "customer_name": m.get("customer_name") or "—",
-    "phone_number": m.get("phone_number") or "",
-    "email": legacy.get("email") or (m.get("email") or ""),
-    "address": legacy.get("address") or "",
-    "zip_code": legacy.get("zip_code") or "",
-    "vehicle_nickname": legacy.get("vehicle_nickname") or "",
-    "vin_number": m.get("vin") or vin,
-    "make": m.get("make") or "",
-    "model": m.get("model") or "",
-    "year": m.get("year") or "",
-    "status": m.get("status") or "",
-    "notes": m.get("notes") or "",
-    "service_history": m.get("service_history") or [],
-    "photo_urls": m.get("photo_urls") or [],   # ✅ THIS LINE FIXES ERROR
-    "access_token": (data.get("veh") or {}).get("access_token"),
-    "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
-}
-
+            "customer_id": legacy.get("customer_id"),
+            "customer_name": m.get("customer_name") or "—",
+            "phone_number": m.get("phone_number") or "",
+            "email": legacy.get("email") or (m.get("email") or ""),
+            "address": legacy.get("address") or "",
+            "zip_code": legacy.get("zip_code") or "",
+            "vehicle_nickname": legacy.get("vehicle_nickname") or "",
+            "vin_number": m.get("vin") or vin,
+            "make": m.get("make") or "",
+            "model": m.get("model") or "",
+            "year": m.get("year") or "",
+            "status": m.get("status") or "",
+            "notes": m.get("notes") or "",
+            "service_history": m.get("service_history") or [], # ✅ now has service_description per entry
+            "photo_urls": m.get("photo_urls") or [],
+            "access_token": (data.get("veh") or {}).get("access_token"),
+            "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
+        }
 
         return jsonify(payload), 200
 
@@ -529,8 +505,8 @@ def search():
 def public_report(value):
     """
     Public:
-      - /vin/<VIN>   (17 chars) -> Supabase merge (vehicles + customer_data_legacy)
-      - /vin/<TOKEN> (not 17)   -> SQLite token (legacy support)
+      - /vin/<VIN> (17 chars) -> Supabase merge + customer_jobs_legacy history
+      - /vin/<TOKEN> (not 17) -> SQLite token (legacy support)
     """
     try:
         value = (value or "").strip()
@@ -540,7 +516,6 @@ def public_report(value):
             vin = normalize_vin(value)
 
             if not supabase_ready():
-                # Return a meaningful message instead of generic 500
                 return render_template("public_report.html", not_found=True, vin=vin), 500
 
             data = merged_profile_by_vin(vin)
@@ -549,7 +524,6 @@ def public_report(value):
 
             m = (data.get("merged") or {})
 
-            # PUBLIC: hide sensitive fields (including email)
             vehicle_for_template = {
                 "vin_number": vin,
                 "make": m.get("make") or "",
@@ -557,10 +531,7 @@ def public_report(value):
                 "year": m.get("year") or "",
             }
 
-            # If you're still using Google Drive embed on the public page:
             embed_url = drive_embed_from_folder(m.get("service_history_link") or "")
-
-            # OPTIONAL: if your public_report.html expects photo_urls, pass it safely
             photo_urls = m.get("photo_urls") or []
 
             return render_template(
@@ -568,9 +539,9 @@ def public_report(value):
                 not_found=False,
                 vin=vin,
                 vehicle=vehicle_for_template,
-                service_history=m.get("service_history") or [],
+                service_history=m.get("service_history") or [], # ✅ contains service_description now
                 embed_url=embed_url,
-                photo_urls=photo_urls,  # safe even if template ignores it
+                photo_urls=photo_urls,
             )
 
         # TOKEN route (legacy)
@@ -597,7 +568,7 @@ def public_report(value):
             vehicle=vehicle,
             service_history=history,
             embed_url=embed_url,
-            photo_urls=[],  # keep consistent
+            photo_urls=[],
         )
 
     except Exception as e:
@@ -605,39 +576,12 @@ def public_report(value):
         print("🔥 ERROR in /vin route:", str(e))
         print(tb)
 
-        # If you append ?debug=1, show the traceback in the browser
         if request.args.get("debug") == "1":
             return f"<pre>{tb}</pre>", 500
 
-        # Normal behavior: generic error page
         return "Internal Server Error", 500
 
-    # TOKEN route (legacy)
-    token = normalize_token(value)
-    vehicle = get_vehicle_by_token_sqlite(token)
-    if not vehicle:
-        return render_template("public_report.html", not_found=True, vin="—"), 404
-
-    vin = normalize_vin(vehicle.get("vin_number"))
-
-    # ALWAYS HIDE on public
-    vehicle["phone_number"] = ""
-    vehicle["address"] = ""
-    vehicle["zip_code"] = ""
-    vehicle["email"] = ""
-
-    history = get_service_history_for_vin_sqlite(vin)
-    embed_url = drive_embed_from_folder(vehicle.get("service_history_link"))
-
-    return render_template(
-        "public_report.html",
-        not_found=False,
-        vin=vin,
-        vehicle=vehicle,
-        service_history=history,
-        embed_url=embed_url,
-    )
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=False)
