@@ -13,7 +13,12 @@ import { useRouter } from "next/navigation";
 type Service = {
   id: string;
   name: string;
-  category: "full_service" | "interior_service" | "exterior_service" | "ceramic_service" | "addon";
+  category:
+    | "full_service"
+    | "interior_service"
+    | "exterior_service"
+    | "ceramic_service"
+    | "addon";
   pricing_type: "none" | "fixed" | "starting" | "range";
   price_cents: number | null;
   price_cents_max: number | null;
@@ -53,13 +58,9 @@ type PendingJob = {
   selected_package_id: string;
   addon_ids: string[];
   total_charged: string;
-
-  // ⚠️ not touching notes behavior
   notes: string;
 
-  // ✅ NEW: store service description (what you called “work done”)
-  work_done: string;
-
+  // NOTE: leaving as-is; NOT adding any new date fields
   performed_at: string;
 };
 
@@ -82,12 +83,13 @@ const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
 
 const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
 
-/**
- * ✅ Package descriptions (NO PRICES)
- * Keys must match your `services.name` exactly.
- */
+/** =========================
+ * Package descriptions (expand/collapse will use this)
+ * - Keys MUST match your service.name values after uppercasing.
+ * ========================= */
+
 const PACKAGE_DETAILS: Record<string, string[]> = {
-  "Purple Rain": [
+  "PURPLE RAIN": [
     "Gentle Exterior Wash",
     "Gentle Microfiber Towel Dry",
     "Interior and Exterior Window Clean",
@@ -99,7 +101,7 @@ const PACKAGE_DETAILS: Record<string, string[]> = {
     "Clean Tires & Rims Face",
     "Tire Shine",
   ],
-  "Purple Thunder": [
+  "PURPLE THUNDER": [
     "Gentle Exterior Wash",
     "Gentle Microfiber Towel Dry",
     "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, All Cracks & Crevices)",
@@ -114,7 +116,7 @@ const PACKAGE_DETAILS: Record<string, string[]> = {
     "Clean Tires & Rims (Face & Barrel)",
     "Tire Shine",
   ],
-  "Purple Hurricane": [
+  "PURPLE HURRICANE": [
     "Gentle Exterior Wash & Decontamination",
     "Gentle Microfiber Towel Dry",
     "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, Headliner, All Cracks & Crevices)",
@@ -129,14 +131,14 @@ const PACKAGE_DETAILS: Record<string, string[]> = {
     "Clean Tires & Rims (Face & Barrel)",
     "Tire Shine",
   ],
-  "Purple Rain Interior": [
+  "PURPLE RAIN INTERIOR": [
     "Interior Window Clean",
     "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, All Cracks & Crevices)",
     "High Pressure Air Blowout (Eliminate Interior Contamination)",
     "Interior Vacuum Including Trunk",
     "Pet Hair Removal",
   ],
-  "Purple Thunder Interior": [
+  "PURPLE THUNDER INTERIOR": [
     "Interior Window Clean",
     "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, All Cracks & Crevices)",
     "Deep Interior Vacuum Including Trunk",
@@ -146,21 +148,21 @@ const PACKAGE_DETAILS: Record<string, string[]> = {
     "Pet Hair Removal",
     "Sand Removal",
   ],
-  "Purple Rain Exterior": [
+  "PURPLE RAIN EXTERIOR": [
     "Gentle Exterior Wash",
     "Gentle Microfiber Towel Dry",
     "Hand Polish Wax",
     "Clean Tires & Rims Face",
     "Tire Shine",
   ],
-  "Purple Thunder Exterior": [
+  "PURPLE THUNDER EXTERIOR": [
     "Gentle Exterior Wash & Decontamination",
     "Gentle Microfiber Towel Dry",
     "Hand Polish Ceramic Wax Up to 3 Month Protection",
     "Clean Tires & Rims (Face & Barrel)",
     "Tire Shine",
   ],
-  "Purple Ceramic": [
+  "PURPLE CERAMIC": [
     "Gentle Exterior Wash & Decontamination",
     "Ceramic Coating Application - Up to 2 Years Of Protection",
     "Interior and Exterior Window Clean",
@@ -170,7 +172,7 @@ const PACKAGE_DETAILS: Record<string, string[]> = {
     "Clean Tires & Rims Face and Barrel",
     "Tire Shine",
   ],
-  "Purple Ceramic Plus": [
+  "PURPLE CERAMIC PLUS": [
     "Gentle Exterior Wash & Decontamination",
     "Ceramic Coating Application - Up to 7 Years Of Protection",
     "Interior and Exterior Window Clean",
@@ -181,6 +183,33 @@ const PACKAGE_DETAILS: Record<string, string[]> = {
     "Tire Shine",
   ],
 };
+
+function buildServiceDescription(serviceName: string, addonNames: string[]) {
+  const key = (serviceName || "").trim().toUpperCase();
+  const baseLines = PACKAGE_DETAILS[key] ?? [];
+
+  const lines: string[] = [];
+  for (const l of baseLines) lines.push(l);
+
+  if (addonNames.length > 0) {
+    lines.push(""); // spacer line
+    lines.push("Add-ons:");
+    for (const a of addonNames) lines.push(`• ${a}`);
+  }
+
+  if (lines.length === 0) return "";
+
+  return lines
+    .map((l) => {
+      const t = (l || "").trim();
+      if (!t) return "";
+      if (t === "Add-ons:") return t;
+      if (t.startsWith("•")) return t;
+      return `- ${t}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
 
 /** =========================
  * Helpers
@@ -300,7 +329,9 @@ function removeFromQueue(id: string) {
 }
 
 function bumpAttempt(id: string) {
-  const q = getQueue().map((x) => (x.id === id ? { ...x, attempt_count: x.attempt_count + 1 } : x));
+  const q = getQueue().map((x) =>
+    x.id === id ? { ...x, attempt_count: x.attempt_count + 1 } : x
+  );
   setQueue(q);
 }
 
@@ -341,7 +372,10 @@ function extractCityState(address: string): { city: string | null; state: string
 /** =========================
  * Photo compression (client-side)
  * ========================= */
-async function compressImageFile(file: File, opts?: { maxDim?: number; quality?: number }): Promise<File> {
+async function compressImageFile(
+  file: File,
+  opts?: { maxDim?: number; quality?: number }
+): Promise<File> {
   const maxDim = opts?.maxDim ?? 1600;
   const quality = opts?.quality ?? 0.82;
 
@@ -384,33 +418,6 @@ async function compressImageFile(file: File, opts?: { maxDim?: number; quality?:
       bitmap.close();
     } catch {}
   }
-}
-
-/** =========================
- * Work Done builder (stored into customer_data_legacy.work_done)
- * - This does NOT auto-make UI expandable; it just stores the text.
- * ========================= */
-function buildWorkDoneText(packageName: string | null, addonNames: string[]) {
-  const name = (packageName || "").trim();
-  const details = name && PACKAGE_DETAILS[name] ? PACKAGE_DETAILS[name] : [];
-
-  const lines: string[] = [];
-
-  // If we have the known package details, store them as bullets.
-  if (details.length) {
-    for (const d of details) lines.push(`- ${d}`);
-  } else if (name) {
-    // fallback: at least store the package name
-    lines.push(`- ${name}`);
-  }
-
-  // Add-ons (names only, since you didn’t provide add-on descriptions)
-  const cleanAddons = addonNames.map((x) => x.trim()).filter(Boolean);
-  if (cleanAddons.length) {
-    lines.push(`- ADD-ONS: ${cleanAddons.join(", ")}`);
-  }
-
-  return lines.join("\n").trim();
 }
 
 /** =========================
@@ -471,9 +478,13 @@ function NewJobInner() {
   const cameraInputRef = useRef<HTMLInputElement | null>(null); // camera capture
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
 
-  const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">("full");
+  const [serviceType, setServiceType] = useState<
+    "full" | "interior" | "exterior" | "ceramic"
+  >("full");
   const [selectedPackageId, setSelectedPackageId] = useState<string>("");
-  const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>({});
+  const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>(
+    {}
+  );
   const [addonQuery, setAddonQuery] = useState("");
   const [addonsOpen, setAddonsOpen] = useState(false);
 
@@ -492,7 +503,9 @@ function NewJobInner() {
 
       const { data, error } = await supabase
         .from("services")
-        .select("id,name,category,pricing_type,price_cents,price_cents_max,price_note")
+        .select(
+          "id,name,category,pricing_type,price_cents,price_cents_max,price_note"
+        )
         .eq("active", true)
         .order("category", { ascending: true })
         .order("sort_order", { ascending: true })
@@ -505,8 +518,14 @@ function NewJobInner() {
   }, []);
 
   const packageCategory = SERVICE_TYPE_TO_CATEGORY[serviceType];
-  const packages = useMemo(() => services.filter((s) => s.category === packageCategory), [services, packageCategory]);
-  const addons = useMemo(() => services.filter((s) => s.category === "addon"), [services]);
+  const packages = useMemo(
+    () => services.filter((s) => s.category === packageCategory),
+    [services, packageCategory]
+  );
+  const addons = useMemo(
+    () => services.filter((s) => s.category === "addon"),
+    [services]
+  );
 
   useEffect(() => {
     if (packages.length === 0) {
@@ -518,7 +537,10 @@ function NewJobInner() {
     }
   }, [packages, selectedPackageId]);
 
-  const selectedAddons = useMemo(() => addons.filter((a) => selectedAddonIds[a.id]), [addons, selectedAddonIds]);
+  const selectedAddons = useMemo(
+    () => addons.filter((a) => selectedAddonIds[a.id]),
+    [addons, selectedAddonIds]
+  );
 
   const filteredAddons = useMemo(() => {
     const q = addonQuery.trim().toLowerCase();
@@ -527,15 +549,24 @@ function NewJobInner() {
   }, [addons, addonQuery]);
 
   const suggestedRangeText = (s: Service) => {
-    if (s.pricing_type === "fixed" && s.price_cents != null) return `$${centsToDollars(s.price_cents)}`;
-    if (s.pricing_type === "starting" && s.price_cents != null) return `from $${centsToDollars(s.price_cents)}`;
-    if (s.pricing_type === "range" && s.price_cents != null && s.price_cents_max != null) {
-      return `$${centsToDollars(s.price_cents)}–$${centsToDollars(s.price_cents_max)}`;
+    if (s.pricing_type === "fixed" && s.price_cents != null)
+      return `$${centsToDollars(s.price_cents)}`;
+    if (s.pricing_type === "starting" && s.price_cents != null)
+      return `from $${centsToDollars(s.price_cents)}`;
+    if (
+      s.pricing_type === "range" &&
+      s.price_cents != null &&
+      s.price_cents_max != null
+    ) {
+      return `$${centsToDollars(s.price_cents)}–$${centsToDollars(
+        s.price_cents_max
+      )}`;
     }
     return "";
   };
 
-  const toggleAddon = (id: string) => setSelectedAddonIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  const toggleAddon = (id: string) =>
+    setSelectedAddonIds((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const needsDecode = (veh: Vehicle | null) => {
     if (!veh) return true;
@@ -580,7 +611,8 @@ function NewJobInner() {
         previewUrl: URL.createObjectURL(file),
       }));
 
-      if (incoming.length > remaining) setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
+      if (incoming.length > remaining)
+        setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
       else setPhotoMsg(null);
 
       return [...prev, ...mapped];
@@ -622,11 +654,15 @@ function NewJobInner() {
       const prepared = await Promise.all(
         selected.slice(0, 8).map(async (p) => {
           const f = p.file;
-
-          const compressed = await compressImageFile(f, { maxDim: 1600, quality: 0.82 });
+          const compressed = await compressImageFile(f, {
+            maxDim: 1600,
+            quality: 0.82,
+          });
 
           if (compressed.size > 18 * 1024 * 1024) {
-            throw new Error("ONE PHOTO IS TOO LARGE (MAX ~18MB) EVEN AFTER COMPRESS.");
+            throw new Error(
+              "ONE PHOTO IS TOO LARGE (MAX ~18MB) EVEN AFTER COMPRESS."
+            );
           }
           return compressed;
         })
@@ -735,9 +771,7 @@ function NewJobInner() {
     vehicle: { year: number | null; make: string; model: string };
     notes?: string;
     status?: string;
-
-    // ✅ NEW: work done text stored in legacy
-    workDone?: string | null;
+    work_done?: string | null;
   }) {
     const v = normalizeVin(params.vin);
 
@@ -751,9 +785,6 @@ function NewJobInner() {
     const address = (params.customerAddress || "").trim() || null;
     const zip_code = normalizeZipToBigint(params.customerZip || "");
 
-    const work_done =
-      typeof params.workDone === "string" && params.workDone.trim().length ? params.workDone.trim() : null;
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
       vin: v,
@@ -764,16 +795,11 @@ function NewJobInner() {
       address: address ? capsTrim(address) : null,
       zip_code,
       status: params.status ?? "active",
-
-      // ✅ leaving notes behavior exactly as-is
       notes: capsTrim(params.notes || "") || null,
-
       make: capsTrim(params.vehicle?.make || "") || null,
       model: capsTrim(params.vehicle?.model || "") || null,
       year: params.vehicle?.year ?? null,
-
-      // ✅ NEW FIELD
-      work_done,
+      work_done: params.work_done ?? null, // NEW FIELD (you added it)
     };
 
     const { data: existing, error: findErr } = await supabase
@@ -786,10 +812,15 @@ function NewJobInner() {
     if (findErr) throw findErr;
 
     if (existing?.id) {
-      const { error: updErr } = await supabase.from("customer_data_legacy").update(payload).eq("id", existing.id);
+      const { error: updErr } = await supabase
+        .from("customer_data_legacy")
+        .update(payload)
+        .eq("id", existing.id);
       if (updErr) throw updErr;
     } else {
-      const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
+      const { error: insErr } = await supabase
+        .from("customer_data_legacy")
+        .insert(payload);
       if (insErr) throw insErr;
     }
   }
@@ -810,12 +841,17 @@ function NewJobInner() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d: any = data;
 
-    if (!customerName.trim() && d.customer_name) setCustomerName(capsTrim(String(d.customer_name)));
-    if (!customerPhone.trim() && d.phone_number) setCustomerPhone(String(d.phone_number));
-    if (!customerEmail.trim() && d.email) setCustomerEmail(toCaps(String(d.email)));
+    if (!customerName.trim() && d.customer_name)
+      setCustomerName(capsTrim(String(d.customer_name)));
+    if (!customerPhone.trim() && d.phone_number)
+      setCustomerPhone(String(d.phone_number));
+    if (!customerEmail.trim() && d.email)
+      setCustomerEmail(toCaps(String(d.email)));
 
-    if (!customerAddress.trim() && d.address) setCustomerAddress(capsTrim(String(d.address)));
-    if (!customerZip.trim() && d.zip_code != null) setCustomerZip(String(d.zip_code));
+    if (!customerAddress.trim() && d.address)
+      setCustomerAddress(capsTrim(String(d.address)));
+    if (!customerZip.trim() && d.zip_code != null)
+      setCustomerZip(String(d.zip_code));
 
     if (!vehMake.trim() && d.make) setVehMake(capsTrim(String(d.make)));
     if (!vehModel.trim() && d.model) setVehModel(capsTrim(String(d.model)));
@@ -825,7 +861,9 @@ function NewJobInner() {
   const autofillCustomerFromVehicle = async (vehicleId: string) => {
     const { data, error } = await supabase
       .from("jobs")
-      .select("id, performed_at, customers:customer_id (id, full_name, phone, phone_norm, address, zip_code)")
+      .select(
+        "id, performed_at, customers:customer_id (id, full_name, phone, phone_norm, address, zip_code)"
+      )
       .eq("vehicle_id", vehicleId)
       .order("performed_at", { ascending: false })
       .limit(1)
@@ -840,8 +878,10 @@ function NewJobInner() {
     if (!customerName.trim()) setCustomerName(capsTrim(cust.full_name ?? ""));
     if (!customerPhone.trim() && cust.phone) setCustomerPhone(String(cust.phone));
 
-    if (!customerAddress.trim() && cust.address) setCustomerAddress(capsTrim(String(cust.address)));
-    if (!customerZip.trim() && cust.zip_code) setCustomerZip(String(cust.zip_code));
+    if (!customerAddress.trim() && cust.address)
+      setCustomerAddress(capsTrim(String(cust.address)));
+    if (!customerZip.trim() && cust.zip_code)
+      setCustomerZip(String(cust.zip_code));
   };
 
   const decodeVinAndUpdateVehicle = async (vehicleId: string, vin17: string) => {
@@ -940,7 +980,11 @@ function NewJobInner() {
       let veh: Vehicle | null = (data as Vehicle) ?? null;
 
       if (!veh) {
-        const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id,vin,year,make,model").single();
+        const createdVeh = await supabase
+          .from("vehicles")
+          .insert({ vin: v })
+          .select("id,vin,year,make,model")
+          .single();
         if (!createdVeh.error && createdVeh.data?.id) {
           veh = createdVeh.data as Vehicle;
         }
@@ -1031,7 +1075,8 @@ function NewJobInner() {
    * ========================= */
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
-    if (!isValidVin(v)) throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
+    if (!isValidVin(v))
+      throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
 
     const yearNum = payload.vehicle_year;
     const makeCaps = capsTrim(payload.vehicle_make || "");
@@ -1041,7 +1086,17 @@ function NewJobInner() {
       throw new Error("YEAR/MAKE/MODEL REQUIRED (AFTER VIN).");
     }
 
-    // ✅ Legacy is source of truth (and where work_done is stored)
+    // ===== Build "work_done" (single string) from selected package + add-ons =====
+    const pkg = services.find((s) => s.id === payload.selected_package_id);
+    const pkgName = pkg?.name ?? "SERVICE";
+
+    const addonNames = payload.addon_ids
+      .map((id) => services.find((s) => s.id === id)?.name)
+      .filter(Boolean) as string[];
+
+    const description = buildServiceDescription(pkgName, addonNames);
+
+    // Legacy is source of truth (single row per VIN)
     await upsertLegacyByVin({
       vin: v,
       customerName: payload.customer_name,
@@ -1050,13 +1105,9 @@ function NewJobInner() {
       customerAddress: payload.customer_address,
       customerZip: payload.customer_zip,
       vehicle: { year: yearNum, make: makeCaps, model: modelCaps },
-
-      // ⚠️ not touching notes
       notes: payload.notes,
       status: "active",
-
-      // ✅ store service description text
-      workDone: payload.work_done,
+      work_done: description || pkgName, // NEW: writes to your legacy column work_done
     });
 
     // Mirror normalized tables best-effort
@@ -1073,12 +1124,19 @@ function NewJobInner() {
       if (!foundVeh.error && foundVeh.data?.id) {
         vehicleId = foundVeh.data.id;
       } else {
-        const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id").single();
+        const createdVeh = await supabase
+          .from("vehicles")
+          .insert({ vin: v })
+          .select("id")
+          .single();
         if (!createdVeh.error && createdVeh.data?.id) vehicleId = createdVeh.data.id;
       }
 
       if (vehicleId) {
-        await supabase.from("vehicles").update({ year: yearNum, make: makeCaps, model: modelCaps }).eq("id", vehicleId);
+        await supabase
+          .from("vehicles")
+          .update({ year: yearNum, make: makeCaps, model: modelCaps })
+          .eq("id", vehicleId);
 
         if (isOnline()) {
           try {
@@ -1155,7 +1213,7 @@ function NewJobInner() {
             customer_id: customerId,
             vehicle_id: vehicleId,
             status: "completed",
-            performed_at: payload.performed_at,
+            performed_at: payload.performed_at, // unchanged
             notes: capsTrim(payload.notes) || null,
             total_price_cents: totalCents,
             currency: "USD",
@@ -1164,13 +1222,15 @@ function NewJobInner() {
           .single();
 
         if (!jobRes.error && jobRes.data?.id) {
-          const serviceRows = [payload.selected_package_id, ...payload.addon_ids].map((sid) => ({
-            job_id: jobRes.data.id,
-            service_id: sid,
-            quantity: 1,
-            final_price_cents: null,
-            price_note: null,
-          }));
+          const serviceRows = [payload.selected_package_id, ...payload.addon_ids].map(
+            (sid) => ({
+              job_id: jobRes.data.id,
+              service_id: sid,
+              quantity: 1,
+              final_price_cents: null,
+              price_note: null,
+            })
+          );
 
           await supabase.from("job_services").insert(serviceRows);
         }
@@ -1260,11 +1320,6 @@ function NewJobInner() {
     const totalCents = dollarsToCents(totalCharged);
     if (totalCents <= 0) return setMsg("TOTAL CHARGED MUST BE > $0.");
 
-    // ✅ Build work_done text from selected package + add-ons
-    const pkg = services.find((s) => s.id === selectedPackageId) || null;
-    const addonNames = selectedAddons.map((a) => a.name);
-    const workDoneText = buildWorkDoneText(pkg?.name ?? null, addonNames);
-
     const payloadBase: Omit<PendingJob, "id" | "created_at" | "attempt_count"> = {
       vin: v,
 
@@ -1286,13 +1341,9 @@ function NewJobInner() {
         .map(([id]) => id),
 
       total_charged: totalCharged,
-
-      // ⚠️ not touching notes logic
       notes: capsTrim(notes),
 
-      // ✅ new field saved to legacy.work_done
-      work_done: workDoneText,
-
+      // unchanged behavior
       performed_at: new Date().toISOString(),
     };
 
@@ -1454,7 +1505,9 @@ function NewJobInner() {
           </SchemaCard>
         ) : (
           <div className="space-y-6">
-            {/* STEP 1: VIN */}
+            {/* =========================
+             * STEP 1: VIN
+             * ========================= */}
             {step === 1 && (
               <SchemaCard title="VEHICLE VIN">
                 <SchemaLabel>VIN</SchemaLabel>
@@ -1549,7 +1602,9 @@ function NewJobInner() {
               </SchemaCard>
             )}
 
-            {/* STEP 2: CUSTOMER */}
+            {/* =========================
+             * STEP 2: CUSTOMER
+             * ========================= */}
             {step === 2 && (
               <SchemaCard title="CUSTOMER">
                 <SchemaLabel>FULL NAME (REQUIRED)</SchemaLabel>
@@ -1614,7 +1669,11 @@ function NewJobInner() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
-                  <button type="button" onClick={() => setStep(1)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
+                  <button
+                    type="button"
+                    onClick={() => setStep(1)}
+                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
+                  >
                     ← BACK
                   </button>
 
@@ -1633,7 +1692,9 @@ function NewJobInner() {
               </SchemaCard>
             )}
 
-            {/* STEP 3: PHOTOS */}
+            {/* =========================
+             * STEP 3: PHOTOS
+             * ========================= */}
             {step === 3 && (
               <SchemaCard title="PHOTOS">
                 <div className="text-[11px] text-slate-300/80">Upload photos tied to this VIN. Max 8.</div>
@@ -1730,7 +1791,9 @@ function NewJobInner() {
                   </div>
                 )}
 
-                <div className="mt-3 text-[11px] text-slate-300/80">{photoMsg ? photoMsg : `Selected: ${photos.length}/8`}</div>
+                <div className="mt-3 text-[11px] text-slate-300/80">
+                  {photoMsg ? photoMsg : `Selected: ${photos.length}/8`}
+                </div>
 
                 <div className="mt-2">
                   <button
@@ -1749,7 +1812,11 @@ function NewJobInner() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
-                  <button type="button" onClick={() => setStep(2)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
+                  <button
+                    type="button"
+                    onClick={() => setStep(2)}
+                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
+                  >
                     ← BACK
                   </button>
 
@@ -1768,7 +1835,9 @@ function NewJobInner() {
               </SchemaCard>
             )}
 
-            {/* STEP 4: SERVICES */}
+            {/* =========================
+             * STEP 4: SERVICES
+             * ========================= */}
             {step === 4 && (
               <SchemaCard title="SERVICES">
                 <SchemaLabel>SERVICE TYPE</SchemaLabel>
@@ -1822,9 +1891,13 @@ function NewJobInner() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm font-extrabold truncate">{a.name}</div>
-                                {a.price_note ? <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div> : null}
+                                {a.price_note ? (
+                                  <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div>
+                                ) : null}
                               </div>
-                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">{suggestedRangeText(a)}</div>
+                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">
+                                {suggestedRangeText(a)}
+                              </div>
                             </div>
                           </button>
                         ))}
@@ -1859,7 +1932,9 @@ function NewJobInner() {
               </SchemaCard>
             )}
 
-            {/* STEP 5: TOTAL */}
+            {/* =========================
+             * STEP 5: TOTAL
+             * ========================= */}
             {step === 5 && (
               <SchemaCard title="TOTAL">
                 <SchemaLabel>TOTAL CHARGED (REQUIRED)</SchemaLabel>
@@ -1885,7 +1960,11 @@ function NewJobInner() {
 
                 <div className="mt-4">
                   <SchemaLabel>NOTES</SchemaLabel>
-                  <SchemaInput value={notes} onChange={(e) => setNotes(toCaps(e.target.value))} placeholder="OPTIONAL NOTES" />
+                  <SchemaInput
+                    value={notes}
+                    onChange={(e) => setNotes(toCaps(e.target.value))}
+                    placeholder="OPTIONAL NOTES"
+                  />
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-2">
@@ -1941,11 +2020,16 @@ function SchemaInput(props: React.InputHTMLAttributes<HTMLInputElement> & { clas
       {...rest}
       className={[
         "h-12 w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 text-base text-white/90 placeholder:text-slate-400/70",
-        "focus:outline-none focus:ring-2 focus:ring-purple-400/30",
+        showsFocusRing(rest) ? "focus:outline-none focus:ring-2 focus:ring-purple-400/30" : "",
         className ?? "",
       ].join(" ")}
     />
   );
+}
+
+// tiny helper: keeps your original focus behavior but avoids TS complaints if needed
+function showsFocusRing(_rest: React.InputHTMLAttributes<HTMLInputElement>) {
+  return true;
 }
 
 function SchemaSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
