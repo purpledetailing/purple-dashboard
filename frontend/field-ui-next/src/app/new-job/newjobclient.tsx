@@ -53,7 +53,13 @@ type PendingJob = {
   selected_package_id: string;
   addon_ids: string[];
   total_charged: string;
+
+  // ⚠️ not touching notes behavior
   notes: string;
+
+  // ✅ NEW: store service description (what you called “work done”)
+  work_done: string;
+
   performed_at: string;
 };
 
@@ -75,6 +81,106 @@ const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
 };
 
 const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
+
+/**
+ * ✅ Package descriptions (NO PRICES)
+ * Keys must match your `services.name` exactly.
+ */
+const PACKAGE_DETAILS: Record<string, string[]> = {
+  "Purple Rain": [
+    "Gentle Exterior Wash",
+    "Gentle Microfiber Towel Dry",
+    "Interior and Exterior Window Clean",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents & Door Jams)",
+    "High Pressure Air Blowout (Eliminate Interior Contamination)",
+    "Pet Hair Removal",
+    "Interior Vacuum Including Trunk",
+    "Hand Polish Wax",
+    "Clean Tires & Rims Face",
+    "Tire Shine",
+  ],
+  "Purple Thunder": [
+    "Gentle Exterior Wash",
+    "Gentle Microfiber Towel Dry",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, All Cracks & Crevices)",
+    "Deep Interior Vacuum Including Trunk",
+    "Bug Removal",
+    "High Pressure Air Blowout (Eliminate Interior Contamination)",
+    "Shampoo Upholstery & Deep Clean Floorboard",
+    "Leather Interior Cleaned & Conditioned",
+    "Pet Hair Removal",
+    "Clay Bar Treatment For Paint Decontamination",
+    "Hand Polish Wax",
+    "Clean Tires & Rims (Face & Barrel)",
+    "Tire Shine",
+  ],
+  "Purple Hurricane": [
+    "Gentle Exterior Wash & Decontamination",
+    "Gentle Microfiber Towel Dry",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, Headliner, All Cracks & Crevices)",
+    "Deep Interior Vacuum Including Trunk",
+    "High Pressure Air Blowout",
+    "Shampoo Upholstery & Deep Clean Floorboard",
+    "Leather Interior Cleaned & Conditioned",
+    "Clay Bar Treatment For Paint Decontamination",
+    "Ceramic Wax (3 to 6 months of Paint Protection)",
+    "Repair Light Paint Scratches",
+    "Engine Bay Cleaning",
+    "Clean Tires & Rims (Face & Barrel)",
+    "Tire Shine",
+  ],
+  "Purple Rain Interior": [
+    "Interior Window Clean",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, All Cracks & Crevices)",
+    "High Pressure Air Blowout (Eliminate Interior Contamination)",
+    "Interior Vacuum Including Trunk",
+    "Pet Hair Removal",
+  ],
+  "Purple Thunder Interior": [
+    "Interior Window Clean",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, All Cracks & Crevices)",
+    "Deep Interior Vacuum Including Trunk",
+    "High Pressure Air Blowout (Eliminate Interior Contamination)",
+    "Shampoo Upholstery & Deep Clean Floorboard",
+    "Leather Interior Cleaned & Conditioned",
+    "Pet Hair Removal",
+    "Sand Removal",
+  ],
+  "Purple Rain Exterior": [
+    "Gentle Exterior Wash",
+    "Gentle Microfiber Towel Dry",
+    "Hand Polish Wax",
+    "Clean Tires & Rims Face",
+    "Tire Shine",
+  ],
+  "Purple Thunder Exterior": [
+    "Gentle Exterior Wash & Decontamination",
+    "Gentle Microfiber Towel Dry",
+    "Hand Polish Ceramic Wax Up to 3 Month Protection",
+    "Clean Tires & Rims (Face & Barrel)",
+    "Tire Shine",
+  ],
+  "Purple Ceramic": [
+    "Gentle Exterior Wash & Decontamination",
+    "Ceramic Coating Application - Up to 2 Years Of Protection",
+    "Interior and Exterior Window Clean",
+    "Interior Wipe Down (Dash, Console, Cup Holders, Vents, Doors)",
+    "High Pressure Air Blowout",
+    "Interior Vacuum",
+    "Clean Tires & Rims Face and Barrel",
+    "Tire Shine",
+  ],
+  "Purple Ceramic Plus": [
+    "Gentle Exterior Wash & Decontamination",
+    "Ceramic Coating Application - Up to 7 Years Of Protection",
+    "Interior and Exterior Window Clean",
+    "Interior Wipe Down (Dash, Console, Cup Holders, Vents, Doors)",
+    "High Pressure Air Blowout",
+    "Interior Vacuum",
+    "Clean Tires & Rims Face and Barrel",
+    "Tire Shine",
+  ],
+};
 
 /** =========================
  * Helpers
@@ -234,16 +340,13 @@ function extractCityState(address: string): { city: string | null; state: string
 
 /** =========================
  * Photo compression (client-side)
- * - reduces upload size + lowers memory pressure on mobile
  * ========================= */
 async function compressImageFile(file: File, opts?: { maxDim?: number; quality?: number }): Promise<File> {
   const maxDim = opts?.maxDim ?? 1600;
   const quality = opts?.quality ?? 0.82;
 
-  // If not an image, return as-is
   if (!file.type?.startsWith("image/")) return file;
 
-  // Use createImageBitmap when available (faster / less memory than Image() in many browsers)
   const bitmap = await createImageBitmap(file);
   try {
     const w = bitmap.width;
@@ -281,6 +384,33 @@ async function compressImageFile(file: File, opts?: { maxDim?: number; quality?:
       bitmap.close();
     } catch {}
   }
+}
+
+/** =========================
+ * Work Done builder (stored into customer_data_legacy.work_done)
+ * - This does NOT auto-make UI expandable; it just stores the text.
+ * ========================= */
+function buildWorkDoneText(packageName: string | null, addonNames: string[]) {
+  const name = (packageName || "").trim();
+  const details = name && PACKAGE_DETAILS[name] ? PACKAGE_DETAILS[name] : [];
+
+  const lines: string[] = [];
+
+  // If we have the known package details, store them as bullets.
+  if (details.length) {
+    for (const d of details) lines.push(`- ${d}`);
+  } else if (name) {
+    // fallback: at least store the package name
+    lines.push(`- ${name}`);
+  }
+
+  // Add-ons (names only, since you didn’t provide add-on descriptions)
+  const cleanAddons = addonNames.map((x) => x.trim()).filter(Boolean);
+  if (cleanAddons.length) {
+    lines.push(`- ADD-ONS: ${cleanAddons.join(", ")}`);
+  }
+
+  return lines.join("\n").trim();
 }
 
 /** =========================
@@ -489,15 +619,12 @@ function NewJobInner() {
 
       setPhotoMsg("PREPARING PHOTOS…");
 
-      // compress before upload to reduce size + avoid mobile memory issues
       const prepared = await Promise.all(
         selected.slice(0, 8).map(async (p) => {
           const f = p.file;
 
-          // If huge originals, compress down; otherwise still compress to JPEG for consistency.
           const compressed = await compressImageFile(f, { maxDim: 1600, quality: 0.82 });
 
-          // Hard cap after compression (still protect server)
           if (compressed.size > 18 * 1024 * 1024) {
             throw new Error("ONE PHOTO IS TOO LARGE (MAX ~18MB) EVEN AFTER COMPRESS.");
           }
@@ -520,7 +647,6 @@ function NewJobInner() {
 
       setPhotoMsg(`UPLOADED ${data.count ?? selected.length} PHOTO(S) ✅`);
 
-      // clear selections after success
       selected.forEach((p) => {
         try {
           URL.revokeObjectURL(p.previewUrl);
@@ -609,6 +735,9 @@ function NewJobInner() {
     vehicle: { year: number | null; make: string; model: string };
     notes?: string;
     status?: string;
+
+    // ✅ NEW: work done text stored in legacy
+    workDone?: string | null;
   }) {
     const v = normalizeVin(params.vin);
 
@@ -622,6 +751,9 @@ function NewJobInner() {
     const address = (params.customerAddress || "").trim() || null;
     const zip_code = normalizeZipToBigint(params.customerZip || "");
 
+    const work_done =
+      typeof params.workDone === "string" && params.workDone.trim().length ? params.workDone.trim() : null;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
       vin: v,
@@ -632,10 +764,16 @@ function NewJobInner() {
       address: address ? capsTrim(address) : null,
       zip_code,
       status: params.status ?? "active",
+
+      // ✅ leaving notes behavior exactly as-is
       notes: capsTrim(params.notes || "") || null,
+
       make: capsTrim(params.vehicle?.make || "") || null,
       model: capsTrim(params.vehicle?.model || "") || null,
       year: params.vehicle?.year ?? null,
+
+      // ✅ NEW FIELD
+      work_done,
     };
 
     const { data: existing, error: findErr } = await supabase
@@ -724,7 +862,6 @@ function NewJobInner() {
         return;
       }
 
-      // trim removed
       const patch = {
         year: decoded.year ?? null,
         make: decoded.make ?? null,
@@ -765,7 +902,6 @@ function NewJobInner() {
     setVinStatus("");
     setVehicle(null);
 
-    // reset vehicle fields
     setVehYearText("");
     setVehMake("");
     setVehModel("");
@@ -905,7 +1041,7 @@ function NewJobInner() {
       throw new Error("YEAR/MAKE/MODEL REQUIRED (AFTER VIN).");
     }
 
-    // Legacy is source of truth
+    // ✅ Legacy is source of truth (and where work_done is stored)
     await upsertLegacyByVin({
       vin: v,
       customerName: payload.customer_name,
@@ -914,15 +1050,25 @@ function NewJobInner() {
       customerAddress: payload.customer_address,
       customerZip: payload.customer_zip,
       vehicle: { year: yearNum, make: makeCaps, model: modelCaps },
+
+      // ⚠️ not touching notes
       notes: payload.notes,
       status: "active",
+
+      // ✅ store service description text
+      workDone: payload.work_done,
     });
 
     // Mirror normalized tables best-effort
     try {
       let vehicleId: string | null = null;
 
-      const foundVeh = await supabase.from("vehicles").select("id,vin,year,make,model").eq("vin", v).limit(1).maybeSingle();
+      const foundVeh = await supabase
+        .from("vehicles")
+        .select("id,vin,year,make,model")
+        .eq("vin", v)
+        .limit(1)
+        .maybeSingle();
 
       if (!foundVeh.error && foundVeh.data?.id) {
         vehicleId = foundVeh.data.id;
@@ -932,7 +1078,6 @@ function NewJobInner() {
       }
 
       if (vehicleId) {
-        // trim removed
         await supabase.from("vehicles").update({ year: yearNum, make: makeCaps, model: modelCaps }).eq("id", vehicleId);
 
         if (isOnline()) {
@@ -1115,6 +1260,11 @@ function NewJobInner() {
     const totalCents = dollarsToCents(totalCharged);
     if (totalCents <= 0) return setMsg("TOTAL CHARGED MUST BE > $0.");
 
+    // ✅ Build work_done text from selected package + add-ons
+    const pkg = services.find((s) => s.id === selectedPackageId) || null;
+    const addonNames = selectedAddons.map((a) => a.name);
+    const workDoneText = buildWorkDoneText(pkg?.name ?? null, addonNames);
+
     const payloadBase: Omit<PendingJob, "id" | "created_at" | "attempt_count"> = {
       vin: v,
 
@@ -1136,7 +1286,13 @@ function NewJobInner() {
         .map(([id]) => id),
 
       total_charged: totalCharged,
+
+      // ⚠️ not touching notes logic
       notes: capsTrim(notes),
+
+      // ✅ new field saved to legacy.work_done
+      work_done: workDoneText,
+
       performed_at: new Date().toISOString(),
     };
 
@@ -1298,9 +1454,7 @@ function NewJobInner() {
           </SchemaCard>
         ) : (
           <div className="space-y-6">
-            {/* =========================
-             * STEP 1: VIN
-             * ========================= */}
+            {/* STEP 1: VIN */}
             {step === 1 && (
               <SchemaCard title="VEHICLE VIN">
                 <SchemaLabel>VIN</SchemaLabel>
@@ -1395,33 +1549,54 @@ function NewJobInner() {
               </SchemaCard>
             )}
 
-            {/* =========================
-             * STEP 2: CUSTOMER
-             * ========================= */}
+            {/* STEP 2: CUSTOMER */}
             {step === 2 && (
               <SchemaCard title="CUSTOMER">
                 <SchemaLabel>FULL NAME (REQUIRED)</SchemaLabel>
-                <SchemaInput value={customerName} onChange={(e) => setCustomerName(toCaps(e.target.value))} placeholder="CUSTOMER NAME" />
+                <SchemaInput
+                  value={customerName}
+                  onChange={(e) => setCustomerName(toCaps(e.target.value))}
+                  placeholder="CUSTOMER NAME"
+                />
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div className="col-span-1">
                     <SchemaLabel>PHONE</SchemaLabel>
-                    <SchemaInput value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="(919) 555-1234" inputMode="tel" />
+                    <SchemaInput
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="(919) 555-1234"
+                      inputMode="tel"
+                    />
                   </div>
                   <div className="col-span-1">
                     <SchemaLabel>EMAIL</SchemaLabel>
-                    <SchemaInput value={customerEmail} onChange={(e) => setCustomerEmail(toCaps(e.target.value))} placeholder="EMAIL@DOMAIN.COM" inputMode="email" />
+                    <SchemaInput
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(toCaps(e.target.value))}
+                      placeholder="EMAIL@DOMAIN.COM"
+                      inputMode="email"
+                    />
                   </div>
                 </div>
 
                 <div className="mt-3">
                   <SchemaLabel>ADDRESS</SchemaLabel>
-                  <SchemaInput value={customerAddress} onChange={(e) => setCustomerAddress(toCaps(e.target.value))} placeholder="123 MAIN ST, ZEBULON, NC" />
+                  <SchemaInput
+                    value={customerAddress}
+                    onChange={(e) => setCustomerAddress(toCaps(e.target.value))}
+                    placeholder="123 MAIN ST, ZEBULON, NC"
+                  />
                 </div>
 
                 <div className="mt-3">
                   <SchemaLabel>ZIP</SchemaLabel>
-                  <SchemaInput value={customerZip} onChange={(e) => setCustomerZip(normalizeZipString(e.target.value))} placeholder="27597" inputMode="numeric" />
+                  <SchemaInput
+                    value={customerZip}
+                    onChange={(e) => setCustomerZip(normalizeZipString(e.target.value))}
+                    placeholder="27597"
+                    inputMode="numeric"
+                  />
                   {zipSuggestions.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {zipSuggestions.map((z) => (
@@ -1439,11 +1614,7 @@ function NewJobInner() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => setStep(1)}
-                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
-                  >
+                  <button type="button" onClick={() => setStep(1)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
                     ← BACK
                   </button>
 
@@ -1462,14 +1633,11 @@ function NewJobInner() {
               </SchemaCard>
             )}
 
-            {/* =========================
-             * STEP 3: PHOTOS
-             * ========================= */}
+            {/* STEP 3: PHOTOS */}
             {step === 3 && (
               <SchemaCard title="PHOTOS">
                 <div className="text-[11px] text-slate-300/80">Upload photos tied to this VIN. Max 8.</div>
 
-                {/* GALLERY / FILE PICKER */}
                 <input
                   ref={photoInputRef}
                   type="file"
@@ -1480,12 +1648,10 @@ function NewJobInner() {
                     const files = e.target.files;
                     if (!files || files.length === 0) return;
                     addIncomingPhotos(Array.from(files));
-                    // allow selecting same files again
                     e.currentTarget.value = "";
                   }}
                 />
 
-                {/* CAMERA CAPTURE */}
                 <input
                   ref={cameraInputRef}
                   type="file"
@@ -1507,7 +1673,7 @@ function NewJobInner() {
                     disabled={!canUploadPhotos || photoBusy}
                     onClick={() => {
                       setPhotoMsg(null);
-                      photoInputRef.current?.click(); // opens gallery/files
+                      photoInputRef.current?.click();
                     }}
                     className="w-full"
                   >
@@ -1519,7 +1685,7 @@ function NewJobInner() {
                     disabled={!canUploadPhotos || photoBusy}
                     onClick={() => {
                       setPhotoMsg(null);
-                      cameraInputRef.current?.click(); // opens camera
+                      cameraInputRef.current?.click();
                     }}
                     className="w-full"
                   >
@@ -1583,11 +1749,7 @@ function NewJobInner() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => setStep(2)}
-                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
-                  >
+                  <button type="button" onClick={() => setStep(2)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
                     ← BACK
                   </button>
 
@@ -1606,9 +1768,7 @@ function NewJobInner() {
               </SchemaCard>
             )}
 
-            {/* =========================
-             * STEP 4: SERVICES
-             * ========================= */}
+            {/* STEP 4: SERVICES */}
             {step === 4 && (
               <SchemaCard title="SERVICES">
                 <SchemaLabel>SERVICE TYPE</SchemaLabel>
@@ -1699,9 +1859,7 @@ function NewJobInner() {
               </SchemaCard>
             )}
 
-            {/* =========================
-             * STEP 5: TOTAL
-             * ========================= */}
+            {/* STEP 5: TOTAL */}
             {step === 5 && (
               <SchemaCard title="TOTAL">
                 <SchemaLabel>TOTAL CHARGED (REQUIRED)</SchemaLabel>
