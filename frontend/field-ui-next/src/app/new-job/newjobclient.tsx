@@ -478,13 +478,11 @@ function NewJobInner() {
   const cameraInputRef = useRef<HTMLInputElement | null>(null); // camera capture
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
 
-  const [serviceType, setServiceType] = useState<
-    "full" | "interior" | "exterior" | "ceramic"
-  >("full");
-  const [selectedPackageId, setSelectedPackageId] = useState<string>("");
-  const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>(
-    {}
+  const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">(
+    "full"
   );
+  const [selectedPackageId, setSelectedPackageId] = useState<string>("");
+  const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>({});
   const [addonQuery, setAddonQuery] = useState("");
   const [addonsOpen, setAddonsOpen] = useState(false);
 
@@ -503,9 +501,7 @@ function NewJobInner() {
 
       const { data, error } = await supabase
         .from("services")
-        .select(
-          "id,name,category,pricing_type,price_cents,price_cents_max,price_note"
-        )
+        .select("id,name,category,pricing_type,price_cents,price_cents_max,price_note")
         .eq("active", true)
         .order("category", { ascending: true })
         .order("sort_order", { ascending: true })
@@ -522,10 +518,7 @@ function NewJobInner() {
     () => services.filter((s) => s.category === packageCategory),
     [services, packageCategory]
   );
-  const addons = useMemo(
-    () => services.filter((s) => s.category === "addon"),
-    [services]
-  );
+  const addons = useMemo(() => services.filter((s) => s.category === "addon"), [services]);
 
   useEffect(() => {
     if (packages.length === 0) {
@@ -549,24 +542,16 @@ function NewJobInner() {
   }, [addons, addonQuery]);
 
   const suggestedRangeText = (s: Service) => {
-    if (s.pricing_type === "fixed" && s.price_cents != null)
-      return `$${centsToDollars(s.price_cents)}`;
+    if (s.pricing_type === "fixed" && s.price_cents != null) return `$${centsToDollars(s.price_cents)}`;
     if (s.pricing_type === "starting" && s.price_cents != null)
       return `from $${centsToDollars(s.price_cents)}`;
-    if (
-      s.pricing_type === "range" &&
-      s.price_cents != null &&
-      s.price_cents_max != null
-    ) {
-      return `$${centsToDollars(s.price_cents)}–$${centsToDollars(
-        s.price_cents_max
-      )}`;
+    if (s.pricing_type === "range" && s.price_cents != null && s.price_cents_max != null) {
+      return `$${centsToDollars(s.price_cents)}–$${centsToDollars(s.price_cents_max)}`;
     }
     return "";
   };
 
-  const toggleAddon = (id: string) =>
-    setSelectedAddonIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  const toggleAddon = (id: string) => setSelectedAddonIds((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const needsDecode = (veh: Vehicle | null) => {
     if (!veh) return true;
@@ -611,8 +596,7 @@ function NewJobInner() {
         previewUrl: URL.createObjectURL(file),
       }));
 
-      if (incoming.length > remaining)
-        setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
+      if (incoming.length > remaining) setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
       else setPhotoMsg(null);
 
       return [...prev, ...mapped];
@@ -660,9 +644,7 @@ function NewJobInner() {
           });
 
           if (compressed.size > 18 * 1024 * 1024) {
-            throw new Error(
-              "ONE PHOTO IS TOO LARGE (MAX ~18MB) EVEN AFTER COMPRESS."
-            );
+            throw new Error("ONE PHOTO IS TOO LARGE (MAX ~18MB) EVEN AFTER COMPRESS.");
           }
           return compressed;
         })
@@ -812,16 +794,42 @@ function NewJobInner() {
     if (findErr) throw findErr;
 
     if (existing?.id) {
-      const { error: updErr } = await supabase
-        .from("customer_data_legacy")
-        .update(payload)
-        .eq("id", existing.id);
+      const { error: updErr } = await supabase.from("customer_data_legacy").update(payload).eq("id", existing.id);
       if (updErr) throw updErr;
     } else {
-      const { error: insErr } = await supabase
-        .from("customer_data_legacy")
-        .insert(payload);
+      const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
       if (insErr) throw insErr;
+    }
+  }
+
+  /** =========================
+   * NEW: Service history writer (customer_jobs_legacy)
+   * - This powers Secure's "Service History"
+   * - IMPORTANT:
+   *   service_name = PACKAGE NAME (ex: "PURPLE THUNDER")
+   *   service_description = expanded bullet list + add-ons
+   * ========================= */
+  async function insertCustomerJobLegacy(params: {
+    vin: string;
+    serviceName: string;
+    serviceDescription: string;
+  }) {
+    const v = normalizeVin(params.vin);
+    if (!isValidVin(v)) return;
+
+    const service_name = capsTrim(params.serviceName || "");
+    const service_description = (params.serviceDescription || "").trim();
+
+    if (!service_name) return;
+
+    const { error } = await supabase.from("customer_jobs_legacy").insert({
+      vin: v,
+      service_name, // ✅ PACKAGE NAME ONLY
+      service_description: service_description || null,
+    });
+
+    if (error) {
+      console.error("insertCustomerJobLegacy failed:", error);
     }
   }
 
@@ -841,17 +849,12 @@ function NewJobInner() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d: any = data;
 
-    if (!customerName.trim() && d.customer_name)
-      setCustomerName(capsTrim(String(d.customer_name)));
-    if (!customerPhone.trim() && d.phone_number)
-      setCustomerPhone(String(d.phone_number));
-    if (!customerEmail.trim() && d.email)
-      setCustomerEmail(toCaps(String(d.email)));
+    if (!customerName.trim() && d.customer_name) setCustomerName(capsTrim(String(d.customer_name)));
+    if (!customerPhone.trim() && d.phone_number) setCustomerPhone(String(d.phone_number));
+    if (!customerEmail.trim() && d.email) setCustomerEmail(toCaps(String(d.email)));
 
-    if (!customerAddress.trim() && d.address)
-      setCustomerAddress(capsTrim(String(d.address)));
-    if (!customerZip.trim() && d.zip_code != null)
-      setCustomerZip(String(d.zip_code));
+    if (!customerAddress.trim() && d.address) setCustomerAddress(capsTrim(String(d.address)));
+    if (!customerZip.trim() && d.zip_code != null) setCustomerZip(String(d.zip_code));
 
     if (!vehMake.trim() && d.make) setVehMake(capsTrim(String(d.make)));
     if (!vehModel.trim() && d.model) setVehModel(capsTrim(String(d.model)));
@@ -861,9 +864,7 @@ function NewJobInner() {
   const autofillCustomerFromVehicle = async (vehicleId: string) => {
     const { data, error } = await supabase
       .from("jobs")
-      .select(
-        "id, performed_at, customers:customer_id (id, full_name, phone, phone_norm, address, zip_code)"
-      )
+      .select("id, performed_at, customers:customer_id (id, full_name, phone, phone_norm, address, zip_code)")
       .eq("vehicle_id", vehicleId)
       .order("performed_at", { ascending: false })
       .limit(1)
@@ -878,10 +879,8 @@ function NewJobInner() {
     if (!customerName.trim()) setCustomerName(capsTrim(cust.full_name ?? ""));
     if (!customerPhone.trim() && cust.phone) setCustomerPhone(String(cust.phone));
 
-    if (!customerAddress.trim() && cust.address)
-      setCustomerAddress(capsTrim(String(cust.address)));
-    if (!customerZip.trim() && cust.zip_code)
-      setCustomerZip(String(cust.zip_code));
+    if (!customerAddress.trim() && cust.address) setCustomerAddress(capsTrim(String(cust.address)));
+    if (!customerZip.trim() && cust.zip_code) setCustomerZip(String(cust.zip_code));
   };
 
   const decodeVinAndUpdateVehicle = async (vehicleId: string, vin17: string) => {
@@ -980,11 +979,7 @@ function NewJobInner() {
       let veh: Vehicle | null = (data as Vehicle) ?? null;
 
       if (!veh) {
-        const createdVeh = await supabase
-          .from("vehicles")
-          .insert({ vin: v })
-          .select("id,vin,year,make,model")
-          .single();
+        const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id,vin,year,make,model").single();
         if (!createdVeh.error && createdVeh.data?.id) {
           veh = createdVeh.data as Vehicle;
         }
@@ -1075,8 +1070,7 @@ function NewJobInner() {
    * ========================= */
   const saveJobToSupabase = async (payload: PendingJob) => {
     const v = normalizeVin(payload.vin);
-    if (!isValidVin(v))
-      throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
+    if (!isValidVin(v)) throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
 
     const yearNum = payload.vehicle_year;
     const makeCaps = capsTrim(payload.vehicle_make || "");
@@ -1086,17 +1080,19 @@ function NewJobInner() {
       throw new Error("YEAR/MAKE/MODEL REQUIRED (AFTER VIN).");
     }
 
-    // ===== Build "work_done" (single string) from selected package + add-ons =====
+    // ===== Build package name and description =====
     const pkg = services.find((s) => s.id === payload.selected_package_id);
-    const pkgName = pkg?.name ?? "SERVICE";
+    const pkgNameRaw = pkg?.name ?? "SERVICE";
+    const pkgName = capsTrim(pkgNameRaw); // normalize: ensures PACKAGE_DETAILS lookup works
 
     const addonNames = payload.addon_ids
       .map((id) => services.find((s) => s.id === id)?.name)
-      .filter(Boolean) as string[];
+      .filter(Boolean)
+      .map((n) => capsTrim(String(n))) as string[];
 
     const description = buildServiceDescription(pkgName, addonNames);
 
-    // Legacy is source of truth (single row per VIN)
+    // 1) Legacy customer record (one row per VIN)
     await upsertLegacyByVin({
       vin: v,
       customerName: payload.customer_name,
@@ -1107,10 +1103,18 @@ function NewJobInner() {
       vehicle: { year: yearNum, make: makeCaps, model: modelCaps },
       notes: payload.notes,
       status: "active",
-      work_done: description || pkgName, // NEW: writes to your legacy column work_done
+      work_done: description || pkgName,
     });
 
-    // Mirror normalized tables best-effort
+    // 2) NEW: Write to customer_jobs_legacy so Secure shows service history for NEW customers
+    //    IMPORTANT: service_name must be the PACKAGE NAME (not the description)
+    await insertCustomerJobLegacy({
+      vin: v,
+      serviceName: pkgName,
+      serviceDescription: description,
+    });
+
+    // 3) Mirror normalized tables best-effort
     try {
       let vehicleId: string | null = null;
 
@@ -1124,19 +1128,12 @@ function NewJobInner() {
       if (!foundVeh.error && foundVeh.data?.id) {
         vehicleId = foundVeh.data.id;
       } else {
-        const createdVeh = await supabase
-          .from("vehicles")
-          .insert({ vin: v })
-          .select("id")
-          .single();
+        const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id").single();
         if (!createdVeh.error && createdVeh.data?.id) vehicleId = createdVeh.data.id;
       }
 
       if (vehicleId) {
-        await supabase
-          .from("vehicles")
-          .update({ year: yearNum, make: makeCaps, model: modelCaps })
-          .eq("id", vehicleId);
+        await supabase.from("vehicles").update({ year: yearNum, make: makeCaps, model: modelCaps }).eq("id", vehicleId);
 
         if (isOnline()) {
           try {
@@ -1213,7 +1210,7 @@ function NewJobInner() {
             customer_id: customerId,
             vehicle_id: vehicleId,
             status: "completed",
-            performed_at: payload.performed_at, // unchanged
+            performed_at: payload.performed_at,
             notes: capsTrim(payload.notes) || null,
             total_price_cents: totalCents,
             currency: "USD",
@@ -1222,15 +1219,13 @@ function NewJobInner() {
           .single();
 
         if (!jobRes.error && jobRes.data?.id) {
-          const serviceRows = [payload.selected_package_id, ...payload.addon_ids].map(
-            (sid) => ({
-              job_id: jobRes.data.id,
-              service_id: sid,
-              quantity: 1,
-              final_price_cents: null,
-              price_note: null,
-            })
-          );
+          const serviceRows = [payload.selected_package_id, ...payload.addon_ids].map((sid) => ({
+            job_id: jobRes.data.id,
+            service_id: sid,
+            quantity: 1,
+            final_price_cents: null,
+            price_note: null,
+          }));
 
           await supabase.from("job_services").insert(serviceRows);
         }
@@ -1408,7 +1403,11 @@ function NewJobInner() {
     return (
       <div
         className={`flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-[12px] font-medium transition
-        ${active ? "bg-purple-600 text-white shadow" : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"}`}
+        ${
+          active
+            ? "bg-purple-600 text-white shadow"
+            : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"
+        }`}
       >
         <span
           className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold
@@ -1593,7 +1592,9 @@ function NewJobInner() {
                     disabled={!canGoStep2()}
                     className={[
                       "text-sm font-semibold transition touch-manipulation",
-                      canGoStep2() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                      canGoStep2()
+                        ? "text-purple-200 hover:text-purple-100"
+                        : "text-slate-500 cursor-not-allowed",
                     ].join(" ")}
                   >
                     CONTINUE →
@@ -1683,7 +1684,9 @@ function NewJobInner() {
                     disabled={!canGoStep3()}
                     className={[
                       "text-sm font-semibold transition",
-                      canGoStep3() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                      canGoStep3()
+                        ? "text-purple-200 hover:text-purple-100"
+                        : "text-slate-500 cursor-not-allowed",
                     ].join(" ")}
                   >
                     CONTINUE →
@@ -1791,9 +1794,7 @@ function NewJobInner() {
                   </div>
                 )}
 
-                <div className="mt-3 text-[11px] text-slate-300/80">
-                  {photoMsg ? photoMsg : `Selected: ${photos.length}/8`}
-                </div>
+                <div className="mt-3 text-[11px] text-slate-300/80">{photoMsg ? photoMsg : `Selected: ${photos.length}/8`}</div>
 
                 <div className="mt-2">
                   <button
@@ -1873,7 +1874,11 @@ function NewJobInner() {
 
                   {addonsOpen && (
                     <div className="mt-3">
-                      <SchemaInput value={addonQuery} onChange={(e) => setAddonQuery(e.target.value)} placeholder="Search add-ons…" />
+                      <SchemaInput
+                        value={addonQuery}
+                        onChange={(e) => setAddonQuery(e.target.value)}
+                        placeholder="Search add-ons…"
+                      />
 
                       <div className="mt-3 space-y-2">
                         {filteredAddons.map((a) => (
@@ -1891,13 +1896,9 @@ function NewJobInner() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm font-extrabold truncate">{a.name}</div>
-                                {a.price_note ? (
-                                  <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div>
-                                ) : null}
+                                {a.price_note ? <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div> : null}
                               </div>
-                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">
-                                {suggestedRangeText(a)}
-                              </div>
+                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">{suggestedRangeText(a)}</div>
                             </div>
                           </button>
                         ))}
@@ -1960,11 +1961,7 @@ function NewJobInner() {
 
                 <div className="mt-4">
                   <SchemaLabel>NOTES</SchemaLabel>
-                  <SchemaInput
-                    value={notes}
-                    onChange={(e) => setNotes(toCaps(e.target.value))}
-                    placeholder="OPTIONAL NOTES"
-                  />
+                  <SchemaInput value={notes} onChange={(e) => setNotes(toCaps(e.target.value))} placeholder="OPTIONAL NOTES" />
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-2">
