@@ -1103,7 +1103,7 @@ function NewJobInner() {
       vehicle: { year: yearNum, make: makeCaps, model: modelCaps },
       notes: payload.notes,
       status: "active",
-      work_done: description || pkgName,
+      work_done: description ? `${pkgName}\n${description}` : pkgName, 
     });
 
     // 2) NEW: Write to customer_jobs_legacy so Secure shows service history for NEW customers
