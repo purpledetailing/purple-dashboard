@@ -13,7 +13,7 @@ CORS(app)
 # ============================================================
 # DEBUG: confirm which file is running in production
 # ============================================================
-APP_VERSION = "2026-02-05-jobs-legacy-descriptions-v2"
+APP_VERSION = "2026-02-05-jobs-legacy-descriptions-v1"
 
 @app.route("/version")
 def version():
@@ -102,20 +102,6 @@ def first_truthy(*vals):
             return s
     return ""
 
-def scrub_empty_history_rows(history_rows):
-    """
-    Remove rows that have no meaningful service_type/description/notes.
-    Prevents blank cards in UI.
-    """
-    out = []
-    for r in history_rows or []:
-        st = (r.get("service_type") or "").strip()
-        sd = (r.get("service_description") or "").strip()
-        sn = (r.get("service_notes") or "").strip()
-        if st or sd or sn:
-            out.append(r)
-    return out
-
 # ---------------------------
 # Supabase REST helpers
 # ---------------------------
@@ -169,7 +155,7 @@ def sb_photos_for_vin_batch(vin: str, batch_id: str, limit: int = 8):
 
 def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
     """
-    Return a signed URL for a storage object path (PHOTO_BUCKET bucket).
+    Return a signed URL for a storage object path (vehicle-photos bucket).
     """
     if not storage_path:
         return None
@@ -334,9 +320,7 @@ def build_history_from_jobs_legacy(vin: str):
         out.append({
             "date": fmt_date(r.get("created_at")),
             "service_type": (r.get("service_name") or "").strip(),
-            # ✅ This is what the frontend should show under "Details" when expanded
-            "service_description": (r.get("service_description") or "").strip(),
-            # ✅ Optional legacy notes (can show as "Notes" if you want)
+            "service_description": (r.get("service_description") or "").strip(), # ✅ expandable details live here
             "service_notes": (r.get("notes") or "").strip(),
             "next_recommended_service": "",
             "photos_link": "",
@@ -344,7 +328,7 @@ def build_history_from_jobs_legacy(vin: str):
             "price": "",
             "customer_feedback": "",
         })
-    return scrub_empty_history_rows(out)
+    return out
 
 # ============================================================
 # ✅ THIS IS THE FUNCTION YOUR ROUTE MUST CALL
@@ -438,8 +422,7 @@ def merged_profile_by_vin(vin: str):
             "phone_number": phone_number or "",
             "email": email or "",
 
-            # ✅ Each entry now includes: date, service_type, service_description, service_notes
-            "service_history": service_history,
+            "service_history": service_history, # ✅ now includes service_description per row
             "photo_count": photo_count,
             "latest_batch_id": latest_batch_id,
             "photo_urls": photo_urls,
@@ -507,8 +490,7 @@ def search():
             "year": m.get("year") or "",
             "status": m.get("status") or "",
             "notes": m.get("notes") or "",
-            # ✅ now includes service_description per entry
-            "service_history": m.get("service_history") or [],
+            "service_history": m.get("service_history") or [], # ✅ now has service_description per entry
             "photo_urls": m.get("photo_urls") or [],
             "access_token": (data.get("veh") or {}).get("access_token"),
             "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
@@ -557,8 +539,7 @@ def public_report(value):
                 not_found=False,
                 vin=vin,
                 vehicle=vehicle_for_template,
-                # ✅ contains service_description now
-                service_history=m.get("service_history") or [],
+                service_history=m.get("service_history") or [], # ✅ contains service_description now
                 embed_url=embed_url,
                 photo_urls=photo_urls,
             )
@@ -599,6 +580,7 @@ def public_report(value):
             return f"<pre>{tb}</pre>", 500
 
         return "Internal Server Error", 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
