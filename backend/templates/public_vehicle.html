@@ -220,7 +220,7 @@
     }
 
     .service-item {
-      padding: 8px 10px;
+      padding: 10px 10px;
       border-radius: 10px;
       border: 1px solid var(--border-subtle);
       background: #f9fafb;
@@ -230,7 +230,8 @@
       display: flex;
       justify-content: space-between;
       gap: 8px;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
+      align-items: baseline;
     }
 
     .service-date {
@@ -238,26 +239,76 @@
       color: var(--text-muted);
     }
 
-    .service-type {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--purple);
+    /* UPDATED: primary service name */
+    .service-name {
+      font-size: 0.9rem;
+      font-weight: 800;
+      color: var(--text-main);
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }
 
-    .service-notes,
-    .service-next {
-      font-size: 0.8rem;
-      color: var(--text-main);
+    /* Keep type as subtle tag (optional) */
+    .service-type {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--purple);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      opacity: 0.95;
     }
 
-    .service-next span.label {
+    /* NEW: details collapsible */
+    .service-details {
+      margin-top: 6px;
+      border-radius: 10px;
+      border: 1px solid var(--border-subtle);
+      background: #ffffff;
+      overflow: hidden;
+    }
+
+    .service-details summary {
+      list-style: none;
+      cursor: pointer;
+      user-select: none;
+      padding: 8px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
       color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .service-details summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .service-details summary .pill {
+      font-size: 0.72rem;
+      padding: 4px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      background: #ffffff;
+      color: var(--text-main);
+      font-weight: 800;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      letter-spacing: 0.12em;
-      font-size: 0.7rem;
-      margin-right: 4px;
+    }
+
+    .service-desc {
+      padding: 10px 12px 12px;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 0.86rem;
+      color: var(--text-main);
+      white-space: pre-line; /* IMPORTANT: preserves \n bullets from DB */
+      line-height: 1.35rem;
+    }
+
+    .empty-message {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      padding: 8px 0;
     }
 
     /* Gallery */
@@ -302,12 +353,6 @@
 
     .link-button:hover {
       filter: brightness(1.05);
-    }
-
-    .empty-message {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      padding: 8px 0;
     }
 
     /* Not found */
@@ -401,21 +446,33 @@
                       <div class="service-date">
                         {{ entry.date or 'Date N/A' }}
                       </div>
-                      <div class="service-type">
-                        {{ entry.service_type or 'SERVICE' }}
+
+                      <!-- UPDATED: show Package/Service Name first -->
+                      <div class="service-name">
+                        {{ entry.service_name or entry.service_type or 'SERVICE' }}
                       </div>
                     </div>
-                    {% if entry.service_notes %}
-                      <div class="service-notes">
-                        {{ entry.service_notes }}
+
+                    <!-- OPTIONAL: if you still want to show type as a small tag, keep this.
+                         If not, delete this entire block. -->
+                    {% if entry.service_type and entry.service_type != entry.service_name %}
+                      <div class="service-type" style="margin-bottom:6px;">
+                        {{ entry.service_type }}
                       </div>
                     {% endif %}
-                    {% if entry.next_recommended_service %}
-                      <div class="service-next">
-                        <span class="label">Next:</span>
-                        {{ entry.next_recommended_service }}
-                      </div>
+
+                    <!-- NEW: Details (description) -->
+                    {% if entry.service_description %}
+                      <details class="service-details">
+                        <summary>
+                          <span class="pill">Details</span>
+                          <span>Tap to expand</span>
+                        </summary>
+                        <div class="service-desc">{{ entry.service_description }}</div>
+                      </details>
                     {% endif %}
+
+                    <!-- REMOVED: Notes + Next (per your request) -->
                   </article>
                 {% endfor %}
               </div>
@@ -465,4 +522,4 @@
     {% endif %}
   </div>
 </body>
-</html>
+</html> 
