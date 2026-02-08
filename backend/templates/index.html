@@ -2,675 +2,97 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Purple Dashboard - VIN Search</title>
+  <title>Purple Vehicle</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root {
-      --purple-main: #5b1fa6;
-      --purple-dark: #3b0764;
-      --text-main: #0f172a;
-      --text-muted: #6b7280;
-      --bg-main: #f9fafb;
-      --card-bg: #ffffff;
-      --border-soft: #e5e7eb;
-      --border-strong: #d1d5db;
-    }
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    body {
-      min-height: 100vh;
-      background: var(--bg-main);
-      color: var(--text-main);
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      padding: 40px 16px;
-    }
-    .container {
-      width: 100%;
-      max-width: 1000px;
-    }
-    .header {
-      margin-bottom: 24px;
-      text-align: center;
-    }
-    .logo-text {
-      font-size: 2.4rem;
-      font-weight: 800;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: #000000;
-    }
-    .logo-text span {
-      color: var(--purple-main);
-    }
-    .subheading {
-      font-size: 0.95rem;
-      color: var(--text-muted);
-      opacity: 0.95;
-    }
-    .card {
-      background: var(--card-bg);
-      border-radius: 18px;
-      border: 1px solid var(--border-soft);
-      padding: 20px 20px 24px;
-      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
-    }
-    .card-header {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      margin-bottom: 16px;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .card-title {
-      font-size: 1.3rem;
-      font-weight: 600;
-    }
-    .card-tag {
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      border: 1px solid var(--border-soft);
-      color: var(--text-muted);
-      background: #f9fafb;
-    }
-    .search-row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
-    }
-    .search-row label {
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.16em;
-      color: var(--text-muted);
-      margin-bottom: 4px;
-      display: block;
-    }
-    .search-input-wrapper {
-      flex: 1 1 220px;
-    }
-    .search-input {
-      width: 100%;
-      padding: 10px 12px;
-      border-radius: 999px;
-      background: #ffffff;
-      border: 1px solid var(--border-soft);
-      color: var(--text-main);
-      font-size: 0.95rem;
-      outline: none;
-      transition: border 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-    }
-    .search-input::placeholder {
-      color: #9ca3af;
-    }
-    .search-input:focus {
-      border-color: var(--purple-main);
-      box-shadow: 0 0 0 1px rgba(91, 31, 166, 0.25);
-      background: #ffffff;
-    }
-    .search-button {
-      padding: 10px 18px;
-      border-radius: 999px;
-      border: none;
-      background: linear-gradient(135deg, #000000, var(--purple-main));
-      color: #ffffff;
-      font-weight: 600;
-      font-size: 0.95rem;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
-      transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.12s ease;
-      white-space: nowrap;
-    }
-    .search-button:hover {
-      filter: brightness(1.05);
-      transform: translateY(-1px);
-      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.3);
-    }
-    .search-button:active {
-      transform: translateY(0);
-      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.2);
-    }
-    .search-button span.icon {
-      font-size: 1.1rem;
-      line-height: 1;
-    }
-    .hint {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      margin-bottom: 4px;
-    }
-    .divider {
-      height: 1px;
-      width: 100%;
-      background: linear-gradient(90deg, transparent, var(--border-soft), transparent);
-      margin: 14px 0;
-    }
-    .status {
-      font-size: 0.85rem;
-      margin-bottom: 6px;
-      min-height: 1.2em;
-    }
-    .status.error { color: #b91c1c; }
-    .status.ok { color: #15803d; }
-
-    .results {
-      display: grid;
-      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr);
-      gap: 18px;
-      margin-top: 4px;
-    }
-    @media (max-width: 800px) {
-      .results { grid-template-columns: minmax(0, 1fr); }
-    }
-    .panel {
-      background: #ffffff;
-      border-radius: 14px;
-      border: 1px solid var(--border-soft);
-      padding: 14px 14px 16px;
-    }
-    .panel-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      margin-bottom: 8px;
-      gap: 8px;
-    }
-    .panel-title {
-      font-size: 0.95rem;
-      text-transform: uppercase;
-      letter-spacing: 0.18em;
-      color: var(--text-muted);
-    }
-    .small-tag {
-      font-size: 0.7rem;
-      padding: 2px 7px;
-      border-radius: 999px;
-      background: #f9fafb;
-      color: var(--text-muted);
-      border: 1px solid var(--border-soft);
-    }
-    .info-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.3fr);
-      gap: 10px 18px;
-      margin-top: 4px;
-    }
-    @media (max-width: 700px) {
-      .info-grid { grid-template-columns: minmax(0, 1fr); }
-    }
-    .info-item { font-size: 0.85rem; }
-    .info-label {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: var(--text-muted);
-      margin-bottom: 2px;
-    }
-    .info-value {
-      color: var(--text-main);
-      font-weight: 500;
-      word-break: break-word;
-    }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.75rem;
-      border-radius: 999px;
-      padding: 2px 8px;
-    }
-    .badge.vip { background: #fefce8; color: #854d0e; border: 1px solid #facc15; }
-    .badge.one-time { background: #eff6ff; color: #1e40af; border: 1px solid #60a5fa; }
-    .badge.active { background: #ecfdf3; color: #166534; border: 1px solid #34d399; }
-
-    .vin-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 3px 10px;
-      border-radius: 999px;
-      background: #f9fafb;
-      border: 1px dashed var(--border-soft);
-      font-size: 0.8rem;
-      color: var(--text-main);
-      margin-top: 4px;
-    }
-    .vin-pill small {
-      text-transform: uppercase;
-      letter-spacing: 0.16em;
-      color: var(--text-muted);
-      font-size: 0.68rem;
-    }
-
-    details.notes {
-      margin-top: 10px;
-      border-radius: 12px;
-      background: #f9fafb;
-      border: 1px dashed var(--border-soft);
-      padding: 8px 10px;
-      font-size: 0.85rem;
-    }
-    details.notes summary {
-      cursor: pointer;
-      list-style: none;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      color: var(--text-main);
-    }
-    details.notes summary::marker { display: none; }
-    details.notes summary span.label {
-      text-transform: uppercase;
-      letter-spacing: 0.16em;
-      font-size: 0.72rem;
-      color: var(--text-muted);
-    }
-    details.notes p { margin-top: 6px; color: var(--text-main); }
-
-    .muted { color: var(--text-muted); font-size: 0.8rem; }
-
-    .section-label {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.18em;
-      color: var(--text-muted);
-      margin-top: 14px;
-      margin-bottom: 6px;
-    }
-    .share-box {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 4px;
-    }
-    .share-input {
-      flex: 1;
-      padding: 8px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--border-soft);
-      background: #f9fafb;
-      font-size: 0.8rem;
-      color: var(--text-main);
-      outline: none;
-    }
-    .share-input:focus {
-      border-color: var(--purple-main);
-      box-shadow: 0 0 0 1px rgba(91, 31, 166, 0.2);
-      background: #ffffff;
-    }
-    .share-button {
-      border-radius: 999px;
-      border: none;
-      padding: 7px 12px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      background: #000000;
-      color: #ffffff;
-      cursor: pointer;
-    }
-    .share-button:hover { background: var(--purple-main); }
-    .share-hint { font-size: 0.75rem; color: var(--text-muted); }
+    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; padding: 16px; background: #f9fafb; color: #0f172a; }
+    .card { max-width: 850px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 16px; }
+    h1 { margin: 0 0 6px; font-size: 18px; }
+    .muted { color: #6b7280; font-size: 13px; margin-bottom: 12px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
+    .box { border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
+    .label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 3px; }
+    .value { font-size: 14px; font-weight: 600; }
+    .photos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .photos img { width: 100%; height: 180px; object-fit: cover; border-radius: 12px; border: 1px solid #e5e7eb; }
+    details { margin-top: 10px; }
+    summary { cursor: pointer; font-weight: 700; }
+    .svc { border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px; margin-top: 10px; }
+    .svc .date { color: #6b7280; font-size: 12px; margin-bottom: 2px; }
+    .svc .type { font-weight: 800; margin-bottom: 6px; }
+    .svc .notes { margin-top: 6px; font-size: 13px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header class="header">
-      <div class="logo-text"><span>Purple</span> Dashboard</div>
-      <p class="subheading">Internal vehicle profile & service gallery — powered by Purple Detailing</p>
-    </header>
+  <div class="card">
+    <h1>Vehicle Profile</h1>
+    <div class="muted">Read-only customer view</div>
 
-    <main class="card">
-      <div class="card-header">
-        <div class="left">
-          <div class="card-title">VIN Lookup</div>
-          <div class="hint">Enter a full 17-character VIN from your client list.</div>
-        </div>
-        <div class="card-tag">Internal Use Only</div>
+    <div class="row">
+      <div class="box">
+        <div class="label">Customer</div>
+        <div class="value">{{ payload.customer_name }}</div>
       </div>
+      <div class="box">
+        <div class="label">VIN</div>
+        <div class="value">{{ payload.vin_number }}</div>
+      </div>
+      <div class="box">
+        <div class="label">Make / Model / Year</div>
+        <div class="value">{{ payload.make }} · {{ payload.model }} · {{ payload.year }}</div>
+      </div>
+      <div class="box">
+        <div class="label">Status</div>
+        <div class="value">{{ payload.status or "—" }}</div>
+      </div>
+    </div>
 
-      <form id="vinForm">
-        <div class="search-row">
-          <div class="search-input-wrapper">
-            <label for="vinInput">VIN Number</label>
-            <input type="text" id="vinInput" class="search-input" placeholder="e.g. 4JGFB4FB9RB121790" maxlength="17" />
-          </div>
-          <div style="display:flex;align-items:flex-end;">
-            <button type="submit" class="search-button">
-              <span class="icon">🔍</span><span>Search</span>
-            </button>
-          </div>
-        </div>
-      </form>
+    {% if payload.notes %}
+      <details>
+        <summary>Notes</summary>
+        <div style="margin-top:6px; white-space:pre-line;">{{ payload.notes }}</div>
+      </details>
+    {% endif %}
 
-      <div class="status" id="statusMessage"></div>
-      <div class="divider"></div>
+    <details open>
+      <summary>Service History ({{ payload.service_history|length }})</summary>
+      {% if payload.service_history and payload.service_history|length > 0 %}
+        {% for s in payload.service_history %}
+          <div class="svc">
+            <div class="date">{{ s.date }}</div>
+            <div class="type">{{ s.service_type }}</div>
 
-      <section id="resultsSection" style="display:none;">
-        <div class="results">
-          <!-- Left: Customer & vehicle -->
-          <div class="panel" id="infoPanel">
-            <div class="panel-header">
-              <div class="panel-title">Customer & Vehicle</div>
-              <div id="statusBadge"></div>
-            </div>
-
-            <div class="info-grid">
-              <div class="info-item">
-                <div class="info-label">Customer</div>
-                <div class="info-value" id="customerName"></div>
-              </div>
-              <div class="info-item">
-                <div class="info-label">Phone</div>
-                <div class="info-value" id="phoneNumber"></div>
-              </div>
-              <div class="info-item">
-                <div class="info-label">Address</div>
-                <div class="info-value" id="address"></div>
-              </div>
-              <div class="info-item">
-                <div class="info-label">Zip</div>
-                <div class="info-value" id="zipCode"></div>
-              </div>
-              <div class="info-item">
-                <div class="info-label">Email</div>
-                <div class="info-value" id="emailAddress"></div>
-              </div>
-              <div class="info-item">
-                <div class="info-label">Make / Model / Year</div>
-                <div class="info-value" id="mmYear"></div>
-              </div>
-            </div>
-
-            <div style="margin-top:10px;">
-              <div class="vin-pill">
-                <div>
-                  <small>VIN</small><br />
-                  <span id="vinNumber"></span>
-                </div>
-              </div>
-            </div>
-
-            <details class="notes" id="notesBlock" style="display:none;">
-              <summary>
-                <span class="label">Notes</span>
-                <span style="font-size:0.75rem;color:#6b7280;">Tap to expand</span>
-              </summary>
-              <p id="notesText"></p>
-            </details>
-
-            <details class="notes" id="historyBlock" style="display:none;">
-              <summary>
-                <span class="label">Service History</span>
-                <span id="historyCountLabel" style="font-size:0.75rem;color:#6b7280;"></span>
-              </summary>
-              <div id="historyList" style="margin-top:8px;"></div>
-            </details>
-
-            <div class="section-label">Customer Portal Link</div>
-            <div class="share-box">
-              <input id="shareLink" class="share-input" type="text" readonly value="" />
-              <button type="button" id="copyShareBtn" class="share-button">Copy</button>
-            </div>
-            <div id="shareHint" class="share-hint">
-              This link shows a read-only version of this vehicle for the customer.
-            </div>
-          </div>
-
-          <!-- Right: Photos -->
-          <div class="panel">
-            <div class="panel-header">
-              <div class="panel-title">Service Gallery</div>
-              <span class="small-tag">Photo Grid</span>
-            </div>
-            <div id="photoGrid" style="display:none;"></div>
-            <div id="noPhotosMsg" class="muted" style="display:none;">No photos uploaded yet for this VIN.</div>
-          </div>
-        </div>
-      </section>
-    </main>
-  </div>
-
-  <script>
-    // Optional: set to "https://secure.purpledetailing.com" if you want to force it.
-    const PUBLIC_BASE_URL = "";
-
-    const form = document.getElementById("vinForm");
-    const vinInput = document.getElementById("vinInput");
-    const statusMessage = document.getElementById("statusMessage");
-    const resultsSection = document.getElementById("resultsSection");
-
-    const customerNameEl = document.getElementById("customerName");
-    const phoneNumberEl = document.getElementById("phoneNumber");
-    const addressEl = document.getElementById("address");
-    const zipCodeEl = document.getElementById("zipCode");
-    const emailAddressEl = document.getElementById("emailAddress");
-    const mmYearEl = document.getElementById("mmYear");
-    const vinNumberEl = document.getElementById("vinNumber");
-    const statusBadgeEl = document.getElementById("statusBadge");
-
-    const notesBlock = document.getElementById("notesBlock");
-    const notesText = document.getElementById("notesText");
-
-    const historyBlock = document.getElementById("historyBlock");
-    const historyList = document.getElementById("historyList");
-    const historyCountLabel = document.getElementById("historyCountLabel");
-
-    const shareLinkEl = document.getElementById("shareLink");
-    const copyShareBtn = document.getElementById("copyShareBtn");
-    const shareHintEl = document.getElementById("shareHint");
-
-    const photoGrid = document.getElementById("photoGrid");
-    const noPhotosMsg = document.getElementById("noPhotosMsg");
-
-    function escapeHtml(str) {
-      return String(str ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
-
-    function setStatus(message, type = "") {
-      statusMessage.textContent = message || "";
-      statusMessage.className = "status";
-      if (type) statusMessage.classList.add(type);
-    }
-
-    function makeStatusBadge(status) {
-      if (!status) return "";
-      const normalized = String(status).trim().toUpperCase();
-      let badgeClass = "badge";
-      if (normalized === "VIP") badgeClass += " vip";
-      else if (normalized === "ONE-TIME" || normalized === "ONE TIME") badgeClass += " one-time";
-      else if (normalized === "ACTIVE") badgeClass += " active";
-      return `<span class="${badgeClass}">${escapeHtml(normalized)}</span>`;
-    }
-
-    function getPublicBaseUrl() {
-      return (PUBLIC_BASE_URL || window.location.origin).replace(/\/$/, "");
-    }
-
-    async function copyToClipboard(text) {
-      try {
-        if (navigator.clipboard && window.isSecureContext) {
-          await navigator.clipboard.writeText(text);
-          return true;
-        }
-      } catch (e) {}
-
-      const temp = document.createElement("textarea");
-      temp.value = text;
-      temp.style.position = "fixed";
-      temp.style.left = "-9999px";
-      document.body.appendChild(temp);
-      temp.focus();
-      temp.select();
-
-      let ok = false;
-      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
-      document.body.removeChild(temp);
-      return ok;
-    }
-
-    function renderPhotos(payload) {
-      const photos = Array.isArray(payload?.photo_urls) ? payload.photo_urls : [];
-      if (photos.length > 0) {
-        photoGrid.style.display = "grid";
-        photoGrid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
-        photoGrid.style.gap = "10px";
-        photoGrid.innerHTML = photos.map((u) => {
-          const safe = escapeHtml(u);
-          return `
-            <a href="${safe}" target="_blank" rel="noopener noreferrer"
-              style="display:block;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;background:#0f172a;">
-              <img src="${safe}" loading="lazy"
-                style="width:100%;height:180px;object-fit:cover;display:block;" />
-            </a>
-          `;
-        }).join("");
-        noPhotosMsg.style.display = "none";
-      } else {
-        photoGrid.style.display = "none";
-        photoGrid.innerHTML = "";
-        noPhotosMsg.style.display = "block";
-      }
-    }
-
-    // ✅ Correct + closed, and uses the backend keys:
-    // date, service_type, service_description, service_notes, next_recommended_service
-    function renderServiceHistory(history) {
-      if (!Array.isArray(history) || history.length === 0) {
-        historyBlock.style.display = "none";
-        historyList.innerHTML = "";
-        return;
-      }
-
-      historyBlock.style.display = "block";
-      historyBlock.open = false;
-      historyCountLabel.textContent = history.length === 1 ? "1 visit" : `${history.length} visits`;
-
-      historyList.innerHTML = history.map((entry) => {
-        const date = escapeHtml(entry?.date || "Date N/A");
-        const type = escapeHtml(entry?.service_type || "—");
-        const descRaw = (entry?.service_description ?? "").toString();
-        const desc = escapeHtml(descRaw);
-        const notes = escapeHtml(entry?.service_notes || "—");
-        const next = escapeHtml(entry?.next_recommended_service || "—");
-
-        const hasDesc = descRaw.trim().length > 0;
-
-        return `
-          <div style="border-radius:10px;border:1px solid rgba(209,213,219,1);padding:8px 10px;margin-bottom:8px;background:#ffffff;">
-            <div style="font-size:0.8rem;color:#6b7280;margin-bottom:2px;">${date}</div>
-            <div style="font-size:0.9rem;color:#111827;font-weight:600;">${type}</div>
-
-            ${hasDesc ? `
-              <details style="margin-top:6px;">
-                <summary style="cursor:pointer;font-size:0.8rem;color:#6b7280;">Details</summary>
-                <div style="margin-top:6px;font-size:0.85rem;color:#111827;white-space:pre-line;">
-                  ${desc}
-                </div>
+            {% if s.service_description %}
+              <details>
+                <summary>Details</summary>
+                <div style="margin-top:6px; white-space:pre-line;">{{ s.service_description }}</div>
               </details>
-            ` : ""}
+            {% endif %}
 
-            <div style="margin-top:6px;font-size:0.8rem;color:#111827;">
-              <strong>Notes:</strong> ${notes}
-            </div>
-            <div style="margin-top:2px;font-size:0.8rem;color:#6b7280;">
-              <strong>Next:</strong> ${next}
-            </div>
+            <div class="notes"><strong>Notes:</strong> {{ s.service_notes }}</div>
+            <div class="notes" style="color:#6b7280;"><strong>Next:</strong> {{ s.next_recommended_service }}</div>
           </div>
-        `;
-      }).join("");
-    }
+        {% endfor %}
+      {% else %}
+        <div class="muted" style="margin-top:10px;">No service history available.</div>
+      {% endif %}
+    </details>
 
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-
-      const vin = vinInput.value.trim().toUpperCase();
-      if (!vin || vin.length !== 17) {
-        setStatus("Please enter a full 17-character VIN.", "error");
-        resultsSection.style.display = "none";
-        return;
-      }
-
-      setStatus("Searching...", "ok");
-      resultsSection.style.display = "none";
-
-      try {
-        const resp = await fetch(`/search?vin=${encodeURIComponent(vin)}`);
-        let payload = null;
-
-        try { payload = await resp.json(); } catch { payload = null; }
-
-        if (!resp.ok) {
-          const msg = (payload && payload.error) || "Something went wrong while searching.";
-          setStatus(msg, "error");
-          resultsSection.style.display = "none";
-          shareLinkEl.value = "";
-          return;
-        }
-
-        renderPhotos(payload);
-
-        customerNameEl.textContent = payload.customer_name || "—";
-        phoneNumberEl.textContent = payload.phone_number || "—";
-        addressEl.textContent = payload.address || "—";
-        zipCodeEl.textContent = payload.zip_code || "—";
-
-        const email = (payload.email || "").trim();
-        const fallbackOldVehicle = (payload.vehicle_nickname || "").trim();
-        emailAddressEl.textContent = email || fallbackOldVehicle || "—";
-
-        mmYearEl.textContent = `${payload.make || "—"} · ${payload.model || "—"} · ${payload.year || "—"}`;
-        vinNumberEl.textContent = payload.vin_number || vin;
-        statusBadgeEl.innerHTML = makeStatusBadge(payload.status);
-
-        const notes = (payload.notes || "").trim();
-        if (notes) {
-          notesText.textContent = notes;
-          notesBlock.style.display = "block";
-          notesBlock.open = false;
-        } else {
-          notesBlock.style.display = "none";
-        }
-
-        const history = Array.isArray(payload.service_history) ? payload.service_history : [];
-        renderServiceHistory(history);
-
-        const publicUrl = `${getPublicBaseUrl()}/vin/${vin}`;
-        shareLinkEl.value = publicUrl;
-        shareHintEl.textContent = "Copy this link to share a read-only vehicle page with your customer.";
-
-        resultsSection.style.display = "block";
-        setStatus("Vehicle found and loaded.", "ok");
-      } catch (err) {
-        console.error(err);
-        setStatus("Unexpected error talking to the server. Check if the backend is running.", "error");
-        resultsSection.style.display = "none";
-        shareLinkEl.value = "";
-      }
-    });
-
-    copyShareBtn.addEventListener("click", async () => {
-      if (!shareLinkEl.value) return;
-      const ok = await copyToClipboard(shareLinkEl.value);
-      shareHintEl.textContent = ok ? "Copied to clipboard." : "Select and copy the link manually.";
-    });
-  </script>
+    <details open style="margin-top:14px;">
+      <summary>Photos ({{ payload.photo_urls|length }})</summary>
+      {% if payload.photo_urls and payload.photo_urls|length > 0 %}
+        <div class="photos" style="margin-top:10px;">
+          {% for u in payload.photo_urls %}
+            <a href="{{ u }}" target="_blank" rel="noopener noreferrer">
+              <img src="{{ u }}" loading="lazy" />
+            </a>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="muted" style="margin-top:10px;">No photos uploaded yet.</div>
+      {% endif %}
+    </details>
+  </div>
 </body>
 </html> 
