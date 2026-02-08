@@ -288,15 +288,6 @@
                 <div class="service-item">
                   <div class="service-date">{{ entry.date }}</div>
                   <div class="service-type">{{ entry.service_type }}</div>
-                  {% if entry.service_notes %}
-                    <div class="service-notes">{{ entry.service_notes }}</div>
-                  {% endif %}
-                  {% if entry.next_recommended_service %}
-                    <div class="service-next">
-                      <strong>Next:</strong> {{ entry.next_recommended_service }}
-                    </div>
-                  {% endif %}
-                </div>
               {% endfor %}
             {% else %}
               <p style="font-size:0.85rem;color:var(--text-muted);">
