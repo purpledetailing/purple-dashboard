@@ -163,12 +163,9 @@
       margin-bottom: 6px;
       min-height: 1.2em;
     }
-    .status.error {
-      color: #b91c1c;
-    }
-    .status.ok {
-      color: #15803d;
-    }
+    .status.error { color: #b91c1c; }
+    .status.ok { color: #15803d; }
+
     .results {
       display: grid;
       grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr);
@@ -176,9 +173,7 @@
       margin-top: 4px;
     }
     @media (max-width: 800px) {
-      .results {
-        grid-template-columns: minmax(0, 1fr);
-      }
+      .results { grid-template-columns: minmax(0, 1fr); }
     }
     .panel {
       background: #ffffff;
@@ -214,13 +209,9 @@
       margin-top: 4px;
     }
     @media (max-width: 700px) {
-      .info-grid {
-        grid-template-columns: minmax(0, 1fr);
-      }
+      .info-grid { grid-template-columns: minmax(0, 1fr); }
     }
-    .info-item {
-      font-size: 0.85rem;
-    }
+    .info-item { font-size: 0.85rem; }
     .info-label {
       font-size: 0.75rem;
       text-transform: uppercase;
@@ -241,21 +232,10 @@
       border-radius: 999px;
       padding: 2px 8px;
     }
-    .badge.vip {
-      background: #fefce8;
-      color: #854d0e;
-      border: 1px solid #facc15;
-    }
-    .badge.one-time {
-      background: #eff6ff;
-      color: #1e40af;
-      border: 1px solid #60a5fa;
-    }
-    .badge.active {
-      background: #ecfdf3;
-      color: #166534;
-      border: 1px solid #34d399;
-    }
+    .badge.vip { background: #fefce8; color: #854d0e; border: 1px solid #facc15; }
+    .badge.one-time { background: #eff6ff; color: #1e40af; border: 1px solid #60a5fa; }
+    .badge.active { background: #ecfdf3; color: #166534; border: 1px solid #34d399; }
+
     .vin-pill {
       display: inline-flex;
       align-items: center;
@@ -274,6 +254,7 @@
       color: var(--text-muted);
       font-size: 0.68rem;
     }
+
     details.notes {
       margin-top: 10px;
       border-radius: 12px;
@@ -290,23 +271,17 @@
       justify-content: space-between;
       color: var(--text-main);
     }
-    details.notes summary::marker {
-      display: none;
-    }
+    details.notes summary::marker { display: none; }
     details.notes summary span.label {
       text-transform: uppercase;
       letter-spacing: 0.16em;
       font-size: 0.72rem;
       color: var(--text-muted);
     }
-    details.notes p {
-      margin-top: 6px;
-      color: var(--text-main);
-    }
-    .muted {
-      color: var(--text-muted);
-      font-size: 0.8rem;
-    }
+    details.notes p { margin-top: 6px; color: var(--text-main); }
+
+    .muted { color: var(--text-muted); font-size: 0.8rem; }
+
     .section-label {
       font-size: 0.75rem;
       text-transform: uppercase;
@@ -346,15 +321,10 @@
       color: #ffffff;
       cursor: pointer;
     }
-    .share-button:hover {
-      background: var(--purple-main);
-    }
-    .share-hint {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
+    .share-button:hover { background: var(--purple-main); }
+    .share-hint { font-size: 0.75rem; color: var(--text-muted); }
 
-    /* ✅ NEW: expandable details for each service record */
+    /* ✅ expandable job card */
     details.svc {
       margin-top: 6px;
       border-radius: 10px;
@@ -400,28 +370,20 @@
       margin-top: 8px;
       font-size: 0.82rem;
       color: #111827;
-      white-space: pre-line;
+      white-space: pre-line; /* preserve line breaks */
     }
-    .svc-body .row {
-      margin-top: 6px;
-      color: #111827;
-    }
-    .svc-body .row strong {
-      color: #111827;
-    }
-    .svc-body .muter {
-      color: #6b7280;
-    }
+    .svc-body .row { margin-top: 6px; }
+    .svc-body .muter { color: #6b7280; }
   </style>
 </head>
+
 <body>
   <div class="container">
     <header class="header">
       <div class="logo-text"><span>Purple</span> Dashboard</div>
-      <p class="subheading">
-        Internal vehicle profile & service gallery — powered by Purple Detailing
-      </p>
+      <p class="subheading">Internal vehicle profile & service gallery — powered by Purple Detailing</p>
     </header>
+
     <main class="card">
       <div class="card-header">
         <div class="left">
@@ -430,36 +392,35 @@
         </div>
         <div class="card-tag">Internal Use Only</div>
       </div>
+
       <form id="vinForm">
         <div class="search-row">
           <div class="search-input-wrapper">
             <label for="vinInput">VIN Number</label>
-            <input
-              type="text"
-              id="vinInput"
-              class="search-input"
-              placeholder="e.g. 4JGFB4FB9RB121790"
-              maxlength="17"
-            />
+            <input type="text" id="vinInput" class="search-input"
+              placeholder="e.g. 4JGFB4FB9RB121790" maxlength="17" />
           </div>
           <div style="display:flex;align-items:flex-end;">
             <button type="submit" class="search-button">
-              <span class="icon">🔍</span>
-              <span>Search</span>
+              <span class="icon">🔍</span><span>Search</span>
             </button>
           </div>
         </div>
       </form>
+
       <div class="status" id="statusMessage"></div>
       <div class="divider"></div>
+
       <section id="resultsSection" style="display:none;">
         <div class="results">
-          <!-- Left: Customer & vehicle -->
+
+          <!-- Left -->
           <div class="panel" id="infoPanel">
             <div class="panel-header">
               <div class="panel-title">Customer & Vehicle</div>
               <div id="statusBadge"></div>
             </div>
+
             <div class="info-grid">
               <div class="info-item">
                 <div class="info-label">Customer</div>
@@ -486,6 +447,7 @@
                 <div class="info-value" id="mmYear"></div>
               </div>
             </div>
+
             <div style="margin-top:10px;">
               <div class="vin-pill">
                 <div>
@@ -521,7 +483,7 @@
             </div>
           </div>
 
-          <!-- Right: Photos -->
+          <!-- Right -->
           <div class="panel">
             <div class="panel-header">
               <div class="panel-title">Service Gallery</div>
@@ -532,6 +494,7 @@
               No photos uploaded yet for this VIN.
             </div>
           </div>
+
         </div>
       </section>
     </main>
@@ -610,11 +573,8 @@
       temp.select();
 
       let ok = false;
-      try {
-        ok = document.execCommand("copy");
-      } catch (e) {
-        ok = false;
-      }
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+
       document.body.removeChild(temp);
       return ok;
     }
@@ -625,18 +585,16 @@
         photoGrid.style.display = "grid";
         photoGrid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
         photoGrid.style.gap = "10px";
-        photoGrid.innerHTML = photos
-          .map((u) => {
-            const safe = escapeHtml(u);
-            return `
-              <a href="${safe}" target="_blank" rel="noopener noreferrer"
-                style="display:block;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;background:#0f172a;">
-                <img src="${safe}" loading="lazy"
-                  style="width:100%;height:180px;object-fit:cover;display:block;" />
-              </a>
-            `;
-          })
-          .join("");
+        photoGrid.innerHTML = photos.map((u) => {
+          const safe = escapeHtml(u);
+          return `
+            <a href="${safe}" target="_blank" rel="noopener noreferrer"
+              style="display:block;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;background:#0f172a;">
+              <img src="${safe}" loading="lazy"
+                style="width:100%;height:180px;object-fit:cover;display:block;" />
+            </a>
+          `;
+        }).join("");
         noPhotosMsg.style.display = "none";
       } else {
         photoGrid.style.display = "none";
@@ -645,7 +603,7 @@
       }
     }
 
-    // ✅ FIXED: Properly closed function + safe HTML escaping for injected fields
+    // ✅ FIXED: no missing braces + safe escaping + uses service_description for the “job description”
     function renderServiceHistory(history) {
       if (!Array.isArray(history) || history.length === 0) {
         historyBlock.style.display = "none";
@@ -658,49 +616,48 @@
       historyCountLabel.textContent =
         history.length === 1 ? "1 visit" : `${history.length} visits`;
 
-      historyList.innerHTML = history
-        .map((entry) => {
-          const date = escapeHtml(entry?.date || "Date N/A");
-          const type = escapeHtml(entry?.service_type || "—");
-          const description = (entry?.service_description || "").toString();
-          const notes = escapeHtml(entry?.service_notes || "—");
-          const next = escapeHtml(entry?.next_recommended_service || "—");
+      historyList.innerHTML = history.map((entry) => {
+        const date = escapeHtml(entry?.date || "Date N/A");
+        const type = escapeHtml(entry?.service_type || "—");
 
-          const hasDetails = description.trim().length > 0;
-          const detailsSafe = escapeHtml(description);
+        const rawDesc = (entry?.service_description ?? "").toString();
+        const desc = escapeHtml(rawDesc);
 
-          return `
-            <div style="border-radius:10px;border:1px solid rgba(209,213,219,1);padding:8px 10px;margin-bottom:8px;background:#ffffff;">
-              <div style="font-size:0.8rem;color:#6b7280;margin-bottom:2px;">${date}</div>
-              <div style="font-size:0.9rem;color:#111827;font-weight:600;">${type}</div>
+        const notes = escapeHtml(entry?.service_notes || "—");
+        const next = escapeHtml(entry?.next_recommended_service || "—");
 
-              ${
-                hasDetails
-                  ? `
-                    <details class="svc">
-                      <summary>
-                        <div class="svc-left">
-                          <div class="svc-chip">Details</div>
-                        </div>
-                        <div class="svc-chip">Tap to expand</div>
-                      </summary>
-                      <div class="svc-body">${detailsSafe}</div>
-                    </details>
-                  `
-                  : ""
-              }
+        const hasDesc = rawDesc.trim().length > 0;
 
-              <div style="margin-top:4px;font-size:0.8rem;color:#111827;">
-                <strong>Notes:</strong> ${notes}
+        return `
+          <details class="svc">
+            <summary>
+              <div class="svc-left">
+                <div class="svc-date">${date}</div>
+                <div class="svc-type">${type}</div>
               </div>
-              <div style="margin-top:2px;font-size:0.8rem;color:#6b7280;">
-                <strong>Next:</strong> ${next}
+              <div class="svc-chip">Tap to expand</div>
+            </summary>
+
+            <div class="svc-body">
+              ${hasDesc ? `
+                <div class="row">
+                  <strong>Description:</strong>
+                  <div class="muter" style="margin-top:4px;">${desc}</div>
+                </div>
+              ` : ""}
+
+              <div class="row">
+                <strong>Notes:</strong> <span class="muter">${notes}</span>
+              </div>
+
+              <div class="row">
+                <strong>Next:</strong> <span class="muter">${next}</span>
               </div>
             </div>
-          `;
-        })
-        .join("");
-    } // ✅ THIS BRACE WAS MISSING IN YOUR VERSION
+          </details>
+        `;
+      }).join("");
+    }
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -714,16 +671,13 @@
 
       setStatus("Searching...", "ok");
       resultsSection.style.display = "none";
+      shareHintEl.textContent = "Searching…";
 
       try {
         const resp = await fetch(`/search?vin=${encodeURIComponent(vin)}`);
 
         let payload = null;
-        try {
-          payload = await resp.json();
-        } catch {
-          payload = null;
-        }
+        try { payload = await resp.json(); } catch { payload = null; }
 
         if (!resp.ok) {
           const msg = (payload && payload.error) || "Something went wrong while searching.";
@@ -733,10 +687,8 @@
           return;
         }
 
-        // Photos
         renderPhotos(payload);
 
-        // Populate main info
         customerNameEl.textContent = payload.customer_name || "—";
         phoneNumberEl.textContent = payload.phone_number || "—";
         addressEl.textContent = payload.address || "—";
@@ -751,7 +703,6 @@
 
         statusBadgeEl.innerHTML = makeStatusBadge(payload.status);
 
-        // Notes dropdown
         const notes = (payload.notes || "").trim();
         if (notes) {
           notesText.textContent = notes;
@@ -759,13 +710,12 @@
           notesBlock.open = false;
         } else {
           notesBlock.style.display = "none";
+          notesText.textContent = "";
         }
 
-        // ✅ Service history
         const history = Array.isArray(payload.service_history) ? payload.service_history : [];
         renderServiceHistory(history);
 
-        // Customer portal link
         const publicUrl = `${getPublicBaseUrl()}/vin/${vin}`;
         shareLinkEl.value = publicUrl;
         shareHintEl.textContent = "Copy this link to share a read-only vehicle page with your customer.";
@@ -788,4 +738,3 @@
   </script>
 </body>
 </html>
-```0
