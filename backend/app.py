@@ -2,229 +2,253 @@ import os
 import traceback
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_from_directory
-from supabase import create_client
+from flask import Flask, jsonify, request, Response
+from flask_cors import CORS
 
-app = Flask(__name__)
+from supabase import create_client, Client
+
 
 # -----------------------------
-# Supabase config
+# Config
 # -----------------------------
 SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or ""
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY") or ""
-SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY") or ""
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY") or ""
 
-# Prefer service role if present (server-side)
-SUPABASE_KEY = SUPABASE_SERVICE_KEY or SUPABASE_ANON_KEY
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    # Do not crash import-time in prod; allow app to boot and show debug errors.
+    print("⚠️ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-  print("⚠️ Missing SUPABASE_URL or SUPABASE key. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (recommended).")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# Table names (your chosen flow)
-T_CUSTOMER_DATA = "customer_data_legacy"
-T_CUSTOMER_JOBS = "customer_jobs_legacy"
-T_PHOTOS = "vehicle_photos"
+app = Flask(__name__)
+CORS(app)
 
 
 # -----------------------------
 # Helpers
 # -----------------------------
-def normalize_vin(raw: str) -> str:
-  return (raw or "").strip().upper().replace(" ", "")
+def normalize_vin(v: str) -> str:
+    return (v or "").strip().upper()
 
 def is_valid_vin(v: str) -> bool:
-  # keep it simple; don't block your test VINs if you're using non-standard ones
-  return len(v) == 17
+    # Basic VIN validation (no I/O/Q)
+    import re
+    return bool(re.match(r"^[A-HJ-NPR-Z0-9]{17}$", v or ""))
 
-def safe_get(d: dict, key: str, default=""):
-  try:
-    return d.get(key, default)
-  except Exception:
+def pick_first(row: dict, keys: list, default="—"):
+    for k in keys:
+        if k in row and row[k] not in (None, ""):
+            return row[k]
     return default
 
-def fmt_date(ts):
-  if not ts:
-    return ""
-  try:
-    # Supabase returns ISO strings
-    dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-    return dt.strftime("%-m/%-d/%Y")
-  except Exception:
+def safe_date(val):
+    if not val:
+        return ""
+    # Supabase may return ISO strings
     try:
-      # fallback: just trim
-      return str(ts)[:10]
+        if isinstance(val, str):
+            # keep only date part if timestamp
+            return val.split("T")[0]
+        if isinstance(val, datetime):
+            return val.date().isoformat()
     except Exception:
-      return ""
+        pass
+    return str(val)
 
-def pick_first_present(row: dict, keys: list, default=""):
-  for k in keys:
-    val = safe_get(row, k, None)
-    if val is not None and str(val).strip() != "":
-      return val
-  return default
-
-
-# -----------------------------
-# Core: build payload for VIN
-# -----------------------------
-def build_vehicle_payload(vin: str) -> dict:
-  # 1) Customer data (legacy)
-  cust = None
-  cust_rows = (
-    supabase.table(T_CUSTOMER_DATA)
-    .select("*")
-    .eq("vin", vin)
-    .limit(1)
-    .execute()
-  )
-  if cust_rows and getattr(cust_rows, "data", None):
-    cust = cust_rows.data[0]
-
-  if not cust:
-    # No customer row found, still return photos/history empty rather than hard fail
+def make_history_entry_from_job(job_row: dict) -> dict:
     return {
-      "vin_number": vin,
-      "customer_name": "—",
-      "phone_number": "—",
-      "address": "—",
-      "zip_code": "—",
-      "email": "—",
-      "make": "—",
-      "model": "—",
-      "year": "—",
-      "status": "",
-      "notes": "",
-      "service_history": [],
-      "photo_urls": [],
+        "date": safe_date(pick_first(job_row, ["date", "service_date", "created_at"], "")),
+        "service_type": pick_first(job_row, ["service_name", "service_type", "job_type", "package_name", "work_done"], "—"),
+        "service_description": pick_first(job_row, ["service_description", "description", "details"], ""),
+        "service_notes": pick_first(job_row, ["notes", "service_notes"], "—"),
+        "next_recommended_service": pick_first(job_row, ["next_recommended_service", "next_service", "next"], "—"),
+        "source": "customer_jobs_legacy",
     }
 
-  # 2) Photos
-  photo_urls = []
-  try:
-    photos_resp = (
-      supabase.table(T_PHOTOS)
-      .select("*")
-      .eq("vin", vin)
-      .order("created_at", desc=True)
-      .limit(50)
-      .execute()
-    )
-    photos = photos_resp.data if photos_resp and getattr(photos_resp, "data", None) else []
-    for p in photos:
-      # support several possible column names
-      url = pick_first_present(p, ["public_url", "photo_url", "url", "signed_url"], default="")
-      if url:
-        photo_urls.append(url)
-  except Exception:
-    # Don't let photos break the whole search
-    photo_urls = []
-
-  # 3) Service history (NEW primary: customer_jobs_legacy)
-  service_history = []
-  jobs = []
-  try:
-    jobs_resp = (
-      supabase.table(T_CUSTOMER_JOBS)
-      .select("*")
-      .eq("vin", vin)
-      .order("created_at", desc=True)
-      .limit(25)
-      .execute()
-    )
-    jobs = jobs_resp.data if jobs_resp and getattr(jobs_resp, "data", None) else []
-  except Exception:
-    jobs = []
-
-  if jobs:
-    for j in jobs:
-      created_at = pick_first_present(j, ["created_at", "date", "service_date"], default="")
-      service_name = pick_first_present(j, ["service_name", "service_type", "job_name", "type"], default="—")
-      service_desc = pick_first_present(j, ["service_description", "description", "work_done", "details"], default="")
-      notes = pick_first_present(j, ["notes", "service_notes", "note"], default="—")
-      nxt = pick_first_present(j, ["next_recommended_service", "next", "next_service"], default="—")
-
-      service_history.append({
-        "date": fmt_date(created_at) or "Date N/A",
-        "service_type": service_name or "—",
-        "service_description": service_desc or "",
-        "service_notes": notes or "—",
-        "next_recommended_service": nxt or "—",
-      })
-  else:
-    # 4) Fallback: customer_data_legacy.work_done (Intel writes here)
-    work_done = pick_first_present(cust, ["work_done", "job_description", "description"], default="")
-    if str(work_done).strip():
-      service_history.append({
-        "date": "Legacy",
-        "service_type": "Work Done",
-        "service_description": str(work_done),
-        "service_notes": "—",
-        "next_recommended_service": "—",
-      })
-
-  # 5) Map customer fields (support multiple schema variants)
-  payload = {
-    "vin_number": pick_first_present(cust, ["vin", "vin_number"], default=vin),
-    "customer_name": pick_first_present(cust, ["customer_name", "name", "full_name"], default="—"),
-    "phone_number": pick_first_present(cust, ["phone_number", "phone", "mobile"], default="—"),
-    "address": pick_first_present(cust, ["address", "city_state", "location"], default="—"),
-    "zip_code": pick_first_present(cust, ["zip_code", "zip", "postal_code"], default="—"),
-    "email": pick_first_present(cust, ["email", "email_address"], default="—"),
-    "make": pick_first_present(cust, ["make"], default="—"),
-    "model": pick_first_present(cust, ["model"], default="—"),
-    "year": pick_first_present(cust, ["year"], default="—"),
-    "status": pick_first_present(cust, ["status"], default=""),
-    "notes": pick_first_present(cust, ["notes"], default=""),
-    "vehicle_nickname": pick_first_present(cust, ["vehicle_nickname"], default=""),
-    "service_history": service_history,
-    "photo_urls": photo_urls,
-  }
-
-  return payload
+def make_history_entry_from_customer_legacy(row: dict) -> dict:
+    # customer_data_legacy has: vin, created_at, work_done (from your screenshot), maybe notes
+    return {
+        "date": safe_date(pick_first(row, ["service_date", "date", "created_at"], "")),
+        "service_type": pick_first(row, ["work_done", "service_name", "service_type"], "—"),
+        "service_description": pick_first(row, ["service_description", "description"], ""),
+        "service_notes": pick_first(row, ["notes", "service_notes"], "—"),
+        "next_recommended_service": pick_first(row, ["next_recommended_service", "next_service", "next"], "—"),
+        "source": "customer_data_legacy",
+    }
 
 
 # -----------------------------
-# Routes
+# Serve the dashboard at /
 # -----------------------------
-@app.get("/health")
-def health():
-  return jsonify({"ok": True})
-
-@app.get("/search")
-def search():
-  """
-  Used by secure dashboard HTML:
-    GET /search?vin=...
-  Returns JSON payload.
-  """
-  try:
-    vin = normalize_vin(request.args.get("vin", ""))
-    if not vin or not is_valid_vin(vin):
-      return jsonify({"error": "Please provide a full 17-character VIN."}), 400
-
-    payload = build_vehicle_payload(vin)
-    return jsonify(payload), 200
-
-  except Exception as e:
-    tb = traceback.format_exc()
-    print("🔥 ERROR in /search:", str(e))
-    print(tb)
-    # Return JSON so the UI shows a real message instead of generic failure
-    if request.args.get("debug") == "1":
-      return jsonify({"error": str(e), "trace": tb}), 500
-    return jsonify({"error": "Server error while searching. Check backend logs."}), 500
-
-
-# If you're serving the dashboard as a static HTML file from the same flask app:
 @app.get("/")
 def home():
-  # If you keep your HTML in the same folder as app.py as index.html
-  # change this to wherever your file lives.
-  return send_from_directory(".", "index.html")
+    # Serve local file if present; otherwise show a helpful message.
+    # Put index.html in the same folder as app.py.
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(here, "index.html")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return Response(f.read(), mimetype="text/html")
+        return Response(
+            "<h1>Purple Dashboard</h1><p>index.html not found next to app.py</p>",
+            mimetype="text/html",
+        )
+    except Exception as e:
+        tb = traceback.format_exc()
+        print("🔥 ERROR in / route:", str(e))
+        print(tb)
+        if request.args.get("debug") == "1":
+            return Response(f"<pre>{tb}</pre>", mimetype="text/html", status=500)
+        return Response("Internal Server Error", mimetype="text/html", status=500)
+
+
+# -----------------------------
+# API: VIN Search
+# -----------------------------
+@app.get("/search")
+def search():
+    try:
+        vin = normalize_vin(request.args.get("vin", ""))
+        if not is_valid_vin(vin):
+            return jsonify({"error": "Please provide a valid 17-character VIN."}), 400
+
+        # ---------------------------------------
+        # 1) Customer record: customer_data_legacy
+        # ---------------------------------------
+        # We pull the most recent row for the VIN
+        cust_resp = (
+            supabase.table("customer_data_legacy")
+            .select("*")
+            .eq("vin", vin)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        cust_rows = cust_resp.data or []
+        customer = cust_rows[0] if cust_rows else {}
+
+        if not customer:
+            # If you also have a newer "customers" table, you can add another fallback here.
+            return jsonify({"error": "VIN not found."}), 404
+
+        # Map customer fields (use multiple possible column names safely)
+        payload = {
+            "vin_number": vin,
+            "customer_name": pick_first(customer, ["customer_name", "name", "full_name"], "—"),
+            "phone_number": pick_first(customer, ["phone_number", "phone", "mobile"], "—"),
+            "address": pick_first(customer, ["address", "street_address", "addr"], "—"),
+            "zip_code": pick_first(customer, ["zip_code", "zip", "postal_code"], "—"),
+            "email": pick_first(customer, ["email", "email_address"], ""),
+            "vehicle_nickname": pick_first(customer, ["vehicle_nickname", "vehicle_name"], ""),
+            "make": pick_first(customer, ["make"], "—"),
+            "model": pick_first(customer, ["model"], "—"),
+            "year": pick_first(customer, ["year"], "—"),
+            "status": pick_first(customer, ["status"], ""),
+            "notes": pick_first(customer, ["notes", "customer_notes"], ""),
+            "photo_urls": [],
+            "service_history": [],
+        }
+
+        # ---------------------------------------
+        # 2) Photos: try common tables/columns
+        # ---------------------------------------
+        photo_urls = []
+
+        # Try: vehicle_photos table (common)
+        try:
+            pr = (
+                supabase.table("vehicle_photos")
+                .select("*")
+                .eq("vin", vin)
+                .order("created_at", desc=True)
+                .limit(100)
+                .execute()
+            )
+            for r in (pr.data or []):
+                # try common fields
+                u = pick_first(r, ["photo_url", "url", "public_url", "signed_url"], "")
+                if u and u != "—":
+                    photo_urls.append(u)
+        except Exception:
+            pass
+
+        # Try: legacy_photos / public_vehicle_photos (if you had it)
+        if not photo_urls:
+            for tbl in ["public_vehicle_photos", "legacy_photos"]:
+                try:
+                    pr2 = (
+                        supabase.table(tbl)
+                        .select("*")
+                        .eq("vin", vin)
+                        .order("created_at", desc=True)
+                        .limit(100)
+                        .execute()
+                    )
+                    for r in (pr2.data or []):
+                        u = pick_first(r, ["photo_url", "url", "public_url", "signed_url"], "")
+                        if u and u != "—":
+                            photo_urls.append(u)
+                except Exception:
+                    continue
+
+        payload["photo_urls"] = photo_urls
+
+        # ---------------------------------------
+        # 3) Service History: customer_jobs_legacy (PRIMARY)
+        # ---------------------------------------
+        jobs_history = []
+        try:
+            jobs_resp = (
+                supabase.table("customer_jobs_legacy")
+                .select("*")
+                .eq("vin", vin)
+                .order("created_at", desc=True)
+                .limit(50)
+                .execute()
+            )
+            for job in (jobs_resp.data or []):
+                jobs_history.append(make_history_entry_from_job(job))
+        except Exception as e:
+            # Don't fail the whole search if this table isn't present
+            print("⚠️ Could not read customer_jobs_legacy:", str(e))
+
+        # ---------------------------------------
+        # 4) Fallback: customer_data_legacy.work_done (if no jobs found)
+        # ---------------------------------------
+        if not jobs_history:
+            try:
+                legacy_rows_resp = (
+                    supabase.table("customer_data_legacy")
+                    .select("*")
+                    .eq("vin", vin)
+                    .order("created_at", desc=True)
+                    .limit(50)
+                    .execute()
+                )
+                legacy_rows = legacy_rows_resp.data or []
+                for r in legacy_rows:
+                    work_done = pick_first(r, ["work_done"], "")
+                    if work_done and work_done != "—":
+                        jobs_history.append(make_history_entry_from_customer_legacy(r))
+            except Exception as e:
+                print("⚠️ Could not build fallback history from customer_data_legacy:", str(e))
+
+        payload["service_history"] = jobs_history
+
+        return jsonify(payload), 200
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        print("🔥 ERROR in /search route:", str(e))
+        print(tb)
+
+        if request.args.get("debug") == "1":
+            return Response(f"<pre>{tb}</pre>", mimetype="text/html", status=500)
+
+        return jsonify({"error": "Internal Server Error"}), 500
 
 
 if __name__ == "__main__":
-  port = int(os.environ.get("PORT", "5000"))
-  app.run(host="0.0.0.0", port=port, debug=False) 
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=False) 
