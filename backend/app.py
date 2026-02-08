@@ -93,6 +93,34 @@ def fmt_date(iso_str: str) -> str:
     except Exception:
         return str(iso_str)
 
+from datetime import datetime, date
+
+def _safe_str(v):
+    return "" if v is None else str(v)
+
+def _date_to_str(v):
+    """
+    Accepts date, datetime, or ISO-like strings and returns a friendly date string.
+    Falls back to raw string if it can't parse.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, datetime):
+        return v.date().isoformat()
+
+    s = str(v).strip()
+    if not s:
+        return ""
+    # Try to parse common ISO formats: 2026-02-06T02:40:44.607Z, etc.
+    try:
+        s2 = s.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s2)
+        return dt.date().isoformat()
+    except Exception:
+        return s 
+
 def first_truthy(*vals):
     for v in vals:
         if v is None:
@@ -476,48 +504,171 @@ def health_supabase():
 def home():
     return render_template("index.html")
 
-@app.route("/search", methods=["GET"])
-def search():
-    vin = normalize_vin(request.args.get("vin"))
-    if len(vin) != 17:
-        return jsonify({"error": "VIN must be 17 characters."}), 400
+from flask import request, jsonify
 
-    if not supabase_ready():
-        return jsonify({"error": "Supabase not configured on server."}), 500
+@app.get("/search")
+def search():
+    vin_raw = request.args.get("vin", "")
+    vin = normalizeVin(vin_raw)
+
+    if not vin or not isValidVin(vin):
+        return jsonify({"error": "Invalid VIN. Please enter a full 17-character VIN."}), 400
 
     try:
-        data = merged_profile_by_vin(vin)
-        if not data:
-            return jsonify({"error": "Vin not found."}), 404
+        # -----------------------------
+        # 1) CUSTOMER (legacy table)
+        # -----------------------------
+        cust_resp = (
+            supabase
+            .table("customer_data_legacy")
+            .select("*")
+            .eq("vin", vin)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
 
-        legacy = data.get("legacy") or {}
-        m = (data.get("merged") or {})
+        customer_row = cust_resp.data[0] if cust_resp.data else None
+        if not customer_row:
+            return jsonify({"error": "VIN not found."}), 404
 
+        # -----------------------------
+        # 2) PHOTOS (your existing logic may differ)
+        # -----------------------------
+        photo_urls = []
+        try:
+            photos_resp = (
+                supabase
+                .table("vehicle_photos")
+                .select("photo_url")
+                .eq("vin", vin)
+                .order("created_at", desc=True)
+                .execute()
+            )
+            if photos_resp.data:
+                photo_urls = [p.get("photo_url") for p in photos_resp.data if p.get("photo_url")]
+        except Exception:
+            # Don't fail search if photos query fails
+            photo_urls = []
+
+        # -----------------------------
+        # 3) JOBS (new legacy jobs table)
+        # -----------------------------
+        jobs_resp = (
+            supabase
+            .table("customer_jobs_legacy")
+            .select("*")
+            .eq("vin", vin)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        jobs_rows = jobs_resp.data or []
+
+        service_history = []
+
+        # Map customer_jobs_legacy rows into what the frontend expects
+        for r in jobs_rows:
+            # Support multiple possible column names (in case yours differ)
+            created_at = r.get("created_at") or r.get("date_of_service") or r.get("service_date")
+            service_name = (
+                r.get("service_name")
+                or r.get("service_type")
+                or r.get("job_name")
+                or r.get("job_type")
+                or "—"
+            )
+            service_description = (
+                r.get("service_description")
+                or r.get("description")
+                or r.get("work_done")
+                or ""
+            )
+            service_notes = (
+                r.get("notes")
+                or r.get("service_notes")
+                or ""
+            )
+            next_service = (
+                r.get("next_recommended_service")
+                or r.get("next_service")
+                or r.get("next")
+                or ""
+            )
+
+            service_history.append({
+                "date": _date_to_str(created_at),
+                "service_type": _safe_str(service_name),
+                "service_description": _safe_str(service_description),
+                "service_notes": _safe_str(service_notes),
+                "next_recommended_service": _safe_str(next_service),
+            })
+
+        # -----------------------------
+        # 4) FALLBACK: Intel legacy "work_done" on customer_data_legacy
+        # -----------------------------
+        legacy_work_done = _safe_str(customer_row.get("work_done")).strip()
+
+        # Only add fallback if it exists AND we don't already have a job description
+        # (prevents duplicates if you later start writing work_done into jobs table too)
+        if legacy_work_done:
+            already_has_desc = any(
+                (_safe_str(h.get("service_description")).strip() == legacy_work_done)
+                for h in service_history
+            )
+
+            if not already_has_desc:
+                fallback_date = (
+                    customer_row.get("date_of_service")
+                    or customer_row.get("service_date")
+                    or customer_row.get("created_at")
+                )
+
+                fallback_title = (
+                    customer_row.get("service_name")
+                    or customer_row.get("job_name")
+                    or customer_row.get("service_type")
+                    or "Legacy Job"
+                )
+
+                service_history.append({
+                    "date": _date_to_str(fallback_date),
+                    "service_type": _safe_str(fallback_title),
+                    "service_description": legacy_work_done,  # THIS is the "Details" body in your UI
+                    "service_notes": _safe_str(customer_row.get("notes")),
+                    "next_recommended_service": _safe_str(
+                        customer_row.get("next_recommended_service")
+                        or customer_row.get("next_service")
+                        or customer_row.get("next")
+                    ),
+                })
+
+        # -----------------------------
+        # 5) Return payload (match what frontend expects)
+        # -----------------------------
         payload = {
-            "customer_id": legacy.get("customer_id"),
-            "customer_name": m.get("customer_name") or "—",
-            "phone_number": m.get("phone_number") or "",
-            "email": legacy.get("email") or (m.get("email") or ""),
-            "address": legacy.get("address") or "",
-            "zip_code": legacy.get("zip_code") or "",
-            "vehicle_nickname": legacy.get("vehicle_nickname") or "",
-            "vin_number": m.get("vin") or vin,
-            "make": m.get("make") or "",
-            "model": m.get("model") or "",
-            "year": m.get("year") or "",
-            "status": m.get("status") or "",
-            "notes": m.get("notes") or "",
-            # ✅ now includes service_description per entry
-            "service_history": m.get("service_history") or [],
-            "photo_urls": m.get("photo_urls") or [],
-            "access_token": (data.get("veh") or {}).get("access_token"),
-            "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
+            "vin_number": vin,
+            "customer_name": customer_row.get("customer_name") or customer_row.get("name") or "—",
+            "phone_number": customer_row.get("phone_number") or customer_row.get("phone") or "—",
+            "address": customer_row.get("address") or "—",
+            "zip_code": customer_row.get("zip_code") or customer_row.get("zip") or "—",
+            "email": customer_row.get("email") or "",
+            "vehicle_nickname": customer_row.get("vehicle_nickname") or "",
+            "make": customer_row.get("make") or "—",
+            "model": customer_row.get("model") or "—",
+            "year": customer_row.get("year") or "—",
+            "status": customer_row.get("status") or "",
+            "notes": customer_row.get("notes") or "",
+            "photo_urls": photo_urls,
+            "service_history": service_history,
         }
 
         return jsonify(payload), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        tb = traceback.format_exc()
+        print("🔥 ERROR in /search route:", str(e))
+        print(tb)
+        return jsonify({"error": "Internal Server Error"}), 500 
 
 @app.route("/vin/<value>")
 def public_report(value):
