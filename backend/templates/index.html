@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Purple Dashboard - VIN Search</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <style>
     :root {
       --purple-main: #5b1fa6;
@@ -255,6 +256,8 @@
       font-size: 0.68rem;
     }
 
+    /* ✅ Keep notes styles in CSS in case you re-enable later,
+       but we will NOT render Notes block in HTML/JS now. */
     details.notes {
       margin-top: 10px;
       border-radius: 12px;
@@ -280,8 +283,86 @@
     }
     details.notes p { margin-top: 6px; color: var(--text-main); }
 
-    .muted { color: var(--text-muted); font-size: 0.8rem; }
+    /* ✅ Service History “See more details” UI */
+    .history-items {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    details.service-entry {
+      border-radius: 10px;
+      border: 1px solid rgba(209, 213, 219, 1);
+      background: #ffffff;
+      padding: 8px 10px;
+    }
+    details.service-entry > summary {
+      cursor: pointer;
+      list-style: none;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: start;
+    }
+    details.service-entry > summary::marker { display: none; }
+    details.service-entry > summary::-webkit-details-marker { display: none; }
 
+    .svc-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .svc-date {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .svc-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--purple-main);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .svc-preview {
+      font-size: 0.82rem;
+      color: var(--text-main);
+      opacity: 0.9;
+      line-height: 1.25rem;
+      margin-top: 4px;
+      word-break: break-word;
+    }
+    .svc-pill {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      border: 1px solid var(--border-soft);
+      background: #f9fafb;
+      border-radius: 999px;
+      padding: 4px 10px;
+      white-space: nowrap;
+      height: fit-content;
+      margin-top: 2px;
+    }
+    .svc-body {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-soft);
+    }
+    .svc-body-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .svc-body-text {
+      font-size: 0.85rem;
+      line-height: 1.35rem;
+      color: var(--text-main);
+      white-space: pre-wrap; /* preserves line breaks */
+    }
+
+    .muted { color: var(--text-muted); font-size: 0.8rem; }
     .section-label {
       font-size: 0.75rem;
       text-transform: uppercase;
@@ -325,6 +406,7 @@
     .share-hint { font-size: 0.75rem; color: var(--text-muted); }
   </style>
 </head>
+
 <body>
   <div class="container">
     <header class="header">
@@ -403,20 +485,16 @@
               </div>
             </div>
 
-            <details class="notes" id="notesBlock" style="display:none;">
-              <summary>
-                <span class="label">Notes</span>
-                <span style="font-size:0.75rem;color:#6b7280;">Tap to expand</span>
-              </summary>
-              <p id="notesText"></p>
-            </details>
+            <!-- ✅ Notes removed per request (do not render notes) -->
+            <!-- <details class="notes" id="notesBlock" style="display:none;"> ... </details> -->
 
+            <!-- ✅ Service History with tap-to-expand each entry -->
             <details class="notes" id="historyBlock" style="display:none;">
               <summary>
                 <span class="label">Service History</span>
                 <span id="historyCountLabel" style="font-size:0.75rem;color:#6b7280;"></span>
               </summary>
-              <div id="historyList" style="margin-top:8px;"></div>
+              <div id="historyList" class="history-items"></div>
             </details>
 
             <div class="section-label">Customer Portal Link</div>
@@ -461,8 +539,7 @@
     const vinNumberEl = document.getElementById("vinNumber");
     const statusBadgeEl = document.getElementById("statusBadge");
 
-    const notesBlock = document.getElementById("notesBlock");
-    const notesText = document.getElementById("notesText");
+    // ✅ Notes removed (no DOM refs for notes)
 
     const historyBlock = document.getElementById("historyBlock");
     const historyList = document.getElementById("historyList");
@@ -511,7 +588,6 @@
           return true;
         }
       } catch (e) {}
-
       const temp = document.createElement("textarea");
       temp.value = text;
       temp.style.position = "fixed";
@@ -519,7 +595,6 @@
       document.body.appendChild(temp);
       temp.focus();
       temp.select();
-
       let ok = false;
       try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
       document.body.removeChild(temp);
@@ -550,8 +625,39 @@
       }
     }
 
-    // ✅ Correct + closed, and uses the backend keys:
-    // date, service_type, service_description, service_notes, next_recommended_service
+    function normalizeDateForDisplay(entry) {
+      // Prefer "date", fall back to created_at date portion if present
+      const d = (entry?.date ?? "").toString().trim();
+      if (d) return d;
+
+      const ca = (entry?.created_at ?? "").toString().trim();
+      if (ca && ca.length >= 10) return ca.slice(0, 10);
+
+      return "Date N/A";
+    }
+
+    function serviceName(entry) {
+      // supports either service_type or service_name
+      return (entry?.service_type ?? entry?.service_name ?? "SERVICE").toString();
+    }
+
+    function serviceDescription(entry) {
+      // supports either service_description or service_notes (legacy)
+      return (entry?.service_description ?? entry?.service_notes ?? "").toString();
+    }
+
+    function buildPreview(text, maxLen = 90) {
+      const t = (text ?? "").toString().trim();
+      if (!t) return "";
+      if (t.length <= maxLen) return t;
+      return t.slice(0, maxLen) + "…";
+    }
+
+    // ✅ Service History: each entry has its own "Tap to expand" details
+    // Uses backend keys (supports both variants):
+    // - date OR created_at
+    // - service_type OR service_name
+    // - service_description OR service_notes
     function renderServiceHistory(history) {
       if (!Array.isArray(history) || history.length === 0) {
         historyBlock.style.display = "none";
@@ -564,35 +670,53 @@
       historyCountLabel.textContent = history.length === 1 ? "1 visit" : `${history.length} visits`;
 
       historyList.innerHTML = history.map((entry) => {
-        const date = escapeHtml(entry?.date || "Date N/A");
-        const type = escapeHtml(entry?.service_type || "—");
-        const descRaw = (entry?.service_description ?? "").toString();
-        const desc = escapeHtml(descRaw);
+        const dateText = escapeHtml(normalizeDateForDisplay(entry));
+        const nameText = escapeHtml(serviceName(entry));
+        const descRaw = serviceDescription(entry);
+        const descSafe = escapeHtml(descRaw);
+        const preview = escapeHtml(buildPreview(descRaw, 90));
 
+        // If there's no description, render a simple box without expand
         const hasDesc = descRaw.trim().length > 0;
 
-        return `
-          <div style="border-radius:10px;border:1px solid rgba(209,213,219,1);padding:8px 10px;margin-bottom:8px;background:#ffffff;">
-            <div style="font-size:0.8rem;color:#6b7280;margin-bottom:2px;">${date}</div>
-            <div style="font-size:0.9rem;color:#111827;font-weight:600;">${type}</div>
+        if (!hasDesc) {
+          return `
+            <div style="border-radius:10px;border:1px solid rgba(209,213,219,1);padding:8px 10px;background:#ffffff;">
+              <div class="svc-top">
+                <div class="svc-date">${dateText}</div>
+                <div class="svc-name">${nameText}</div>
+              </div>
+              <div class="svc-preview">Tap to view details</div>
+            </div>
+          `;
+        }
 
-            ${hasDesc ? `
-              <details style="margin-top:6px;">
-                <summary style="cursor:pointer;font-size:0.8rem;color:#6b7280;">Details</summary>
-                <div style="margin-top:6px;font-size:0.85rem;color:#111827;white-space:pre-line;">
-                  ${desc}
+        return `
+          <details class="service-entry">
+            <summary>
+              <div>
+                <div class="svc-top">
+                  <div class="svc-date">${dateText}</div>
+                  <div class="svc-name">${nameText}</div>
                 </div>
-              </details>
-            ` : ""}
-          </div>
+                <div class="svc-preview">${preview}</div>
+              </div>
+              <div class="svc-pill">Tap to expand</div>
+            </summary>
+
+            <div class="svc-body">
+              <div class="svc-body-title">Details</div>
+              <div class="svc-body-text">${descSafe}</div>
+            </div>
+          </details>
         `;
       }).join("");
     }
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-
       const vin = vinInput.value.trim().toUpperCase();
+
       if (!vin || vin.length !== 17) {
         setStatus("Please enter a full 17-character VIN.", "error");
         resultsSection.style.display = "none";
@@ -605,7 +729,6 @@
       try {
         const resp = await fetch(`/search?vin=${encodeURIComponent(vin)}`);
         let payload = null;
-
         try { payload = await resp.json(); } catch { payload = null; }
 
         if (!resp.ok) {
@@ -629,16 +752,10 @@
 
         mmYearEl.textContent = `${payload.make || "—"} · ${payload.model || "—"} · ${payload.year || "—"}`;
         vinNumberEl.textContent = payload.vin_number || vin;
+
         statusBadgeEl.innerHTML = makeStatusBadge(payload.status);
 
-        const notes = (payload.notes || "").trim();
-        if (notes) {
-          notesText.textContent = notes;
-          notesBlock.style.display = "block";
-          notesBlock.open = false;
-        } else {
-          notesBlock.style.display = "none";
-        }
+        // ✅ Notes intentionally removed (do nothing with payload.notes)
 
         const history = Array.isArray(payload.service_history) ? payload.service_history : [];
         renderServiceHistory(history);
@@ -664,4 +781,4 @@
     });
   </script>
 </body>
-</html> 
+</html>
