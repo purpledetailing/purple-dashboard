@@ -20,6 +20,7 @@
       --border-subtle: #e5e7eb;
       --text-main: #111827;
       --text-muted: #6b7280;
+      --badge-bg: #0f172a;
     }
 
     * {
@@ -52,11 +53,18 @@
       flex-wrap: wrap;
     }
 
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
     .brand-title {
       font-size: 2rem;
       font-weight: 800;
       letter-spacing: 0.12em;
       text-transform: uppercase;
+      color: #111827;
     }
 
     .brand-subtitle {
@@ -91,21 +99,29 @@
       background: var(--bg-card);
       border-radius: 18px;
       border: 1px solid var(--border-subtle);
-      padding: 20px 22px 24px;
+      padding: 20px 20px 22px;
       box-shadow: 0 12px 25px rgba(15, 23, 42, 0.04);
     }
 
     .card-header {
       display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 18px;
       flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .vehicle-main {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
     }
 
     .vehicle-title {
-      font-size: 1.35rem;
+      font-size: 1.3rem;
       font-weight: 600;
+      color: var(--text-main);
     }
 
     .vehicle-meta {
@@ -118,12 +134,19 @@
       align-items: center;
       gap: 6px;
       border-radius: 999px;
-      padding: 4px 12px;
+      padding: 4px 10px;
       background: #111827;
-      color: #ffffff;
-      font-size: 0.7rem;
-      letter-spacing: 0.14em;
+      color: #f9fafb;
+      font-size: 0.75rem;
       text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .badge span.dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: #22c55e;
     }
 
     .grid {
@@ -134,122 +157,228 @@
 
     @media (max-width: 800px) {
       .grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
       }
     }
 
     .panel {
       border-radius: 14px;
       border: 1px solid var(--border-subtle);
-      padding: 14px 16px 16px;
+      padding: 14px 14px 16px;
     }
 
-    .panel-title {
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.18em;
-      color: var(--text-muted);
-      margin-bottom: 10px;
-    }
-
-    .info-item {
-      margin-bottom: 10px;
-    }
-
-    .info-label {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: var(--text-muted);
-    }
-
-    .info-value {
-      font-size: 0.95rem;
-      font-weight: 500;
-      word-break: break-word;
-    }
-
-    .service-item {
-      padding: 8px 10px;
-      border-radius: 10px;
-      border: 1px solid var(--border-subtle);
-      background: #f9fafb;
-      margin-bottom: 10px;
-    }
-
-    .service-date {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .service-type {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--purple);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-
-    }
-
-    .gallery-footer {
-      margin-top: 10px;
+    .panel-header {
       display: flex;
       justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      align-items: center;
-    }
-
-    .link-button {
-      background: var(--purple);
-      color: white;
-      text-decoration: none;
-      padding: 6px 14px;
-      border-radius: 999px;
-      font-size: 0.75rem;
-      display: inline-flex;
-      align-items: center;
+      align-items: baseline;
+      margin-bottom: 10px;
       gap: 8px;
     }
 
-    .not-found {
-      background: #fef2f2;
-      border: 1px solid #fecaca;
-      color: #991b1b;
+    .panel-title {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-muted);
+    }
+
+    .panel-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .info-list {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+      font-size: 0.9rem;
+    }
+
+    .info-item-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    .info-item-value {
+      font-size: 0.95rem;
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    /* Service history list */
+
+    .service-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .service-item {
+      padding: 10px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+      background: #f9fafb;
+    }
+
+    .service-row-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .service-date {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      padding-top: 2px;
+    }
+
+    .service-type {
+      font-size: 0.9rem;
+      font-weight: 800;
+      color: var(--purple);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      text-align: right;
+      flex: 1;
+    }
+
+    .service-preview {
+      margin-top: 6px;
+      font-size: 0.85rem;
+      color: var(--text-main);
+      opacity: 0.9;
+      line-height: 1.35;
+    }
+
+    .service-details {
+      margin-top: 8px;
+      border-radius: 10px;
+      border: 1px dashed var(--border-subtle);
+      background: #ffffff;
+      padding: 8px 10px;
+    }
+
+    .service-details summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    .service-details summary::marker { display: none; }
+
+    .service-details .tap {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .service-details .detail-body {
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: var(--text-main);
+      white-space: pre-line;
+      line-height: 1.4;
+    }
+
+    /* Gallery */
+
+    .gallery-frame {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      background: #f3f4f6;
+      height: 320px;
+    }
+
+    .gallery-frame iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .gallery-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .link-button {
+      font-size: 0.8rem;
+      text-decoration: none;
+      color: #ffffff;
+      background: var(--purple);
+      padding: 5px 11px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: none;
+    }
+
+    .link-button:hover {
+      filter: brightness(1.05);
+    }
+
+    .empty-message {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      padding: 8px 0;
+    }
+
+    .not-found-card {
+      margin-top: 16px;
+      padding: 16px 18px;
       border-radius: 14px;
-      padding: 18px;
+      border: 1px solid var(--border-subtle);
+      background: #fef2f2;
+      color: #991b1b;
       font-size: 0.9rem;
     }
   </style>
 </head>
-
 <body>
   <div class="page">
     <header>
-      <div>
+      <div class="brand">
         <div class="brand-title">Purple Dashboard</div>
         <div class="brand-subtitle">
           Vehicle service snapshot by <span>Purple Detailing</span>
         </div>
       </div>
+
       <div class="vin-tag">
-        VIN <strong>{{ vin }}</strong>
+        VIN
+        <strong>{{ vin }}</strong>
       </div>
     </header>
 
     {% if not_found %}
       <div class="card">
-        <div class="not-found">
-          We couldn’t find a vehicle record for this VIN.
+        <div class="not-found-card">
+          We couldn’t find a vehicle record for this VIN in the Purple Dashboard.
           If you believe this is an error, please contact Purple Detailing.
         </div>
       </div>
     {% else %}
       <main class="card">
         <div class="card-header">
-          <div>
+          <div class="vehicle-main">
             <div class="vehicle-title">
               {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}
             </div>
@@ -257,71 +386,111 @@
               Maintained by Purple Detailing
             </div>
           </div>
-          <div class="badge">Purple Report</div>
+          <div class="badge">
+            <span class="dot"></span>
+            Purple Report
+          </div>
         </div>
 
         <section class="grid">
+          <!-- Left: quick info + history -->
           <section class="panel">
-            <div class="panel-title">Vehicle Overview</div>
-
-            <div class="info-item">
-              <div class="info-label">VIN</div>
-              <div class="info-value">{{ vehicle.vin_number }}</div>
+            <div class="panel-header">
+              <div class="panel-title">Vehicle Overview</div>
             </div>
-
-            <div class="info-item">
-              <div class="info-label">Make / Model / Year</div>
-              <div class="info-value">
-                {{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}
+            <div class="info-list" style="margin-bottom: 12px;">
+              <div>
+                <div class="info-item-label">VIN</div>
+                <div class="info-item-value">{{ vehicle.vin_number }}</div>
+              </div>
+              <div>
+                <div class="info-item-label">Make / Model / Year</div>
+                <div class="info-item-value">
+                  {{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}
+                </div>
               </div>
             </div>
 
-            <div class="panel-title" style="margin-top:14px;">Service History</div>
+            <div class="panel-header" style="margin-top: 8px;">
+              <div class="panel-title">Service History</div>
+              <div class="panel-sub">
+                {% if service_history and service_history|length > 0 %}
+                  {{ service_history|length }} visit{{ service_history|length > 1 and 's' or '' }}
+                {% else %}
+                  No recorded visits yet
+                {% endif %}
+              </div>
+            </div>
 
-            {% if service_history %}
-              {% for entry in service_history %}
-                <div class="service-item">
-                  <div class="service-date">{{ entry.date }}</div>
-                  <div class="service-type">{{ entry.service_type }}</div>
-              {% endfor %}
+            {% if service_history and service_history|length > 0 %}
+              <div class="service-list">
+                {% for entry in service_history %}
+                  <article class="service-item">
+                    <div class="service-row-top">
+                      <div class="service-date">
+                        {{ entry.date or 'Date N/A' }}
+                      </div>
+                      <div class="service-type">
+                        {{ entry.service_type or (entry.service_name or 'SERVICE') }}
+                      </div>
+                    </div>
+
+                    {# Preview line (first ~120 chars) #}
+                    {% set desc = entry.service_description or entry.service_desc or '' %}
+                    {% if desc %}
+                      <div class="service-preview">
+                        {{ desc[:120] }}{% if desc|length > 120 %}…{% endif %}
+                      </div>
+
+                      <details class="service-details">
+                        <summary>
+                          <span>Details</span>
+                          <span class="tap">Tap to expand</span>
+                        </summary>
+                        <div class="detail-body">{{ desc }}</div>
+                      </details>
+                    {% endif %}
+                  </article>
+                {% endfor %}
+              </div>
             {% else %}
-              <p style="font-size:0.85rem;color:var(--text-muted);">
-                No service records available yet.
+              <p class="empty-message">
+                Once this vehicle is detailed, its visit history will appear here.
               </p>
             {% endif %}
           </section>
 
+          <!-- Right: gallery -->
           <section class="panel">
-            <div class="panel-title">Service Gallery</div>
+            <div class="panel-header">
+              <div class="panel-title">Service Gallery</div>
+              <div class="panel-sub">Before & After Photos</div>
+            </div>
 
-            {% if photo_urls and (photo_urls|length > 0) %}
-              <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
-                {% for u in photo_urls %}
-                  <a href="{{ u }}" target="_blank" rel="noopener noreferrer"
-                     style="display:block;border-radius:12px;overflow:hidden;border:1px solid var(--border-subtle);background:#0f172a;">
-                    <img src="{{ u }}"
-                         style="width:100%;height:180px;object-fit:cover;display:block;"
-                         loading="lazy" />
-                  </a>
-                {% endfor %}
+            {% if embed_url %}
+              <div class="gallery-frame">
+                <iframe
+                  src="{{ embed_url }}"
+                  loading="lazy"
+                  referrerpolicy="no-referrer-when-downgrade"
+                ></iframe>
               </div>
-
               <div class="gallery-footer">
-                <span>Photos uploaded for this visit (max 8)</span>
-
-                {% if vehicle.service_history_link %}
-                  <a href="{{ vehicle.service_history_link }}"
-                     target="_blank"
-                     class="link-button">
-                    Open Full Gallery ↗
-                  </a>
-                {% else %}
-                  <span>Service photos stored securely</span>
-                {% endif %}
+                <span>
+                  Photos are stored securely in Google Drive and linked to this vehicle.
+                </span>
+                <a
+                  href="{{ vehicle.service_history_link }}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="link-button"
+                >
+                  Open full folder ↗
+                </a>
               </div>
             {% else %}
-              <p style="font-size:0.85rem;color:var(--text-muted);">
-                No photos uploaded yet.
+              <p class="empty-message">
+                No photo gallery is linked yet for this vehicle.
               </p>
             {% endif %}
           </section>
@@ -330,4 +499,4 @@
     {% endif %}
   </div>
 </body>
-</html>
+</html> 
