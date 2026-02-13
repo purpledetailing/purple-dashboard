@@ -346,7 +346,7 @@ def sb_jobs_legacy_by_vin(vin: str, limit: int = 50):
     rows = sb_get(JOBS_LEGACY_TABLE, {
         "select": "id,vin,created_at,service_date,service_name,service_description,notes",
         "vin": f"eq.{vin}",
-        "order": "service_date.desc,created_at.desc",
+        "order": "service_date.desc.nullslast,created_at.desc",
         "limit": str(limit),
     })
     return rows or []
