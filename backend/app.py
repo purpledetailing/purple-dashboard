@@ -13,7 +13,7 @@ CORS(app)
 # ============================================================
 # DEBUG: confirm which file is running in production
 # ============================================================
-APP_VERSION = "2026-02-05-jobs-legacy-descriptions-v1"
+APP_VERSION = "2026-02-05-jobs-legacy-descriptions-v2"
 
 @app.route("/version")
 def version():
@@ -93,6 +93,34 @@ def fmt_date(iso_str: str) -> str:
     except Exception:
         return str(iso_str)
 
+from datetime import datetime, date
+
+def _safe_str(v):
+    return "" if v is None else str(v)
+
+def _date_to_str(v):
+    """
+    Accepts date, datetime, or ISO-like strings and returns a friendly date string.
+    Falls back to raw string if it can't parse.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, datetime):
+        return v.date().isoformat()
+
+    s = str(v).strip()
+    if not s:
+        return ""
+    # Try to parse common ISO formats: 2026-02-06T02:40:44.607Z, etc.
+    try:
+        s2 = s.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s2)
+        return dt.date().isoformat()
+    except Exception:
+        return s 
+
 def first_truthy(*vals):
     for v in vals:
         if v is None:
@@ -101,6 +129,20 @@ def first_truthy(*vals):
         if s:
             return s
     return ""
+
+def scrub_empty_history_rows(history_rows):
+    """
+    Remove rows that have no meaningful service_type/description/notes.
+    Prevents blank cards in UI.
+    """
+    out = []
+    for r in history_rows or []:
+        st = (r.get("service_type") or "").strip()
+        sd = (r.get("service_description") or "").strip()
+        sn = (r.get("service_notes") or "").strip()
+        if st or sd or sn:
+            out.append(r)
+    return out
 
 # ---------------------------
 # Supabase REST helpers
@@ -155,7 +197,7 @@ def sb_photos_for_vin_batch(vin: str, batch_id: str, limit: int = 8):
 
 def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
     """
-    Return a signed URL for a storage object path (vehicle-photos bucket).
+    Return a signed URL for a storage object path (PHOTO_BUCKET bucket).
     """
     if not storage_path:
         return None
@@ -304,7 +346,7 @@ def sb_jobs_legacy_by_vin(vin: str, limit: int = 50):
     rows = sb_get(JOBS_LEGACY_TABLE, {
         "select": "id,vin,created_at,service_name,service_description,notes",
         "vin": f"eq.{vin}",
-        "order": "created_at.desc",
+        "order": "service_date.desc,created_at.desc",
         "limit": str(limit),
     })
     return rows or []
@@ -320,7 +362,9 @@ def build_history_from_jobs_legacy(vin: str):
         out.append({
             "date": fmt_date(r.get("created_at")),
             "service_type": (r.get("service_name") or "").strip(),
-            "service_description": (r.get("service_description") or "").strip(), # ✅ expandable details live here
+            # ✅ This is what the frontend should show under "Details" when expanded
+            "service_description": (r.get("service_description") or "").strip(),
+            # ✅ Optional legacy notes (can show as "Notes" if you want)
             "service_notes": (r.get("notes") or "").strip(),
             "next_recommended_service": "",
             "photos_link": "",
@@ -328,7 +372,7 @@ def build_history_from_jobs_legacy(vin: str):
             "price": "",
             "customer_feedback": "",
         })
-    return out
+    return scrub_empty_history_rows(out)
 
 # ============================================================
 # ✅ THIS IS THE FUNCTION YOUR ROUTE MUST CALL
@@ -422,7 +466,8 @@ def merged_profile_by_vin(vin: str):
             "phone_number": phone_number or "",
             "email": email or "",
 
-            "service_history": service_history, # ✅ now includes service_description per row
+            # ✅ Each entry now includes: date, service_type, service_description, service_notes
+            "service_history": service_history,
             "photo_count": photo_count,
             "latest_batch_id": latest_batch_id,
             "photo_urls": photo_urls,
@@ -490,7 +535,8 @@ def search():
             "year": m.get("year") or "",
             "status": m.get("status") or "",
             "notes": m.get("notes") or "",
-            "service_history": m.get("service_history") or [], # ✅ now has service_description per entry
+            # ✅ now includes service_description per entry
+            "service_history": m.get("service_history") or [],
             "photo_urls": m.get("photo_urls") or [],
             "access_token": (data.get("veh") or {}).get("access_token"),
             "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
@@ -539,7 +585,8 @@ def public_report(value):
                 not_found=False,
                 vin=vin,
                 vehicle=vehicle_for_template,
-                service_history=m.get("service_history") or [], # ✅ contains service_description now
+                # ✅ contains service_description now
+                service_history=m.get("service_history") or [],
                 embed_url=embed_url,
                 photo_urls=photo_urls,
             )
@@ -580,7 +627,6 @@ def public_report(value):
             return f"<pre>{tb}</pre>", 500
 
         return "Internal Server Error", 500
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
