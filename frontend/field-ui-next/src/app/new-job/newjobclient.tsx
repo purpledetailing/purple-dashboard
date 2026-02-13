@@ -800,30 +800,35 @@ function NewJobInner() {
    * - Supports service_date for backfill
    * ========================= */
   async function insertCustomerJobLegacy(params: {
-    vin: string;
-    serviceName: string;
-    serviceDescription: string;
-    serviceDate: string | null;
-  }) {
-    const v = normalizeVin(params.vin);
-    if (!isValidVin(v)) return;
+  vin: string;
+  serviceName: string;
+  serviceDescription: string;
+  serviceDate: string; // "YYYY-MM-DD"
+}) {
+  const v = normalizeVin(params.vin);
+  if (!isValidVin(v)) return;
 
-    const service_name = capsTrim(params.serviceName || "");
-    const service_description = (params.serviceDescription || "").trim();
-    const service_date = params.serviceDate ? normalizeServiceDateInput(params.serviceDate) : "";
+  const service_name = capsTrim(params.serviceName || "");
+  const service_description = (params.serviceDescription || "").trim();
+  const service_date = (params.serviceDate || "").trim(); // must be YYYY-MM-DD
 
-    if (!service_name) return;
+  if (!service_name || !service_date) return;
 
-    const insertPayload: any = {
-      vin: v,
-      service_name,
-      service_description: service_description || null,
-      service_date: service_date || null,
-    };
+  // requires the unique index above
+  const { error } = await supabase
+    .from("customer_jobs_legacy")
+    .upsert(
+      {
+        vin: v,
+        service_name,
+        service_description: service_description || null,
+        service_date,
+      },
+      { onConflict: "vin,service_date,service_name", ignoreDuplicates: true }
+    );
 
-    const { error } = await supabase.from("customer_jobs_legacy").insert(insertPayload);
-    if (error) console.error("insertCustomerJobLegacy failed:", error);
-  }
+  if (error) console.error("insertCustomerJobLegacy failed:", error);
+}
 
   async function autofillCustomerFromLegacy(vin17: string) {
     const v = normalizeVin(vin17);
