@@ -360,7 +360,7 @@ def build_history_from_jobs_legacy(vin: str):
 
     for r in rows:
         out.append({
-            "date": fmt_date(r.get("created_at")),
+            "date": fmt_date((r.get("service_date") or r.get("created_at"))),
             "service_type": (r.get("service_name") or "").strip(),
             # ✅ This is what the frontend should show under "Details" when expanded
             "service_description": (r.get("service_description") or "").strip(),
