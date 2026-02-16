@@ -165,115 +165,109 @@
       word-break: break-word;
     }
 
-    /* --- Service History Header Row --- */
-    .service-header {
+    /* ---------- Service History Header (clickable) ---------- */
+    .service-history-header {
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
       gap: 10px;
       margin-top: 14px;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
+    }
+
+    .service-history-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      user-select: none;
+      cursor: pointer;
+    }
+
+    .service-history-toggle:hover { color: #374151; }
+
+    .toggle-icon {
+      width: 18px;
+      height: 18px;
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      line-height: 1;
+      color: #111827;
+      background: #fff;
+      flex: 0 0 auto;
     }
 
     .service-count {
-      font-size: 0.78rem;
+      font-size: 0.85rem;
       color: var(--text-muted);
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
       white-space: nowrap;
+      text-transform: none;
+      letter-spacing: 0;
     }
 
-    .service-count .pill {
-      width: 22px;
-      height: 22px;
-      border-radius: 6px;
-      border: 1px solid var(--border-subtle);
-      display: grid;
-      place-items: center;
-      background: #fff;
-      color: var(--text-main);
-      font-weight: 700;
-      line-height: 1;
-      font-size: 0.9rem;
+    /* ---------- Service List + Rows ---------- */
+    .service-list {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
 
-    /* --- Service Item --- */
-    .service-item {
-      padding: 10px 12px;
-      border-radius: 12px;
+    .service-row {
       border: 1px solid var(--border-subtle);
       background: #f9fafb;
-      margin-bottom: 10px;
-      cursor: pointer;
-      transition: background 120ms ease, border-color 120ms ease;
+      border-radius: 12px;
+      padding: 10px 12px;
     }
 
-    .service-item:hover {
-      background: #ffffff;
-      border-color: #d1d5db;
-    }
-
-    .service-top {
-      display: flex;
+    .service-row-top {
+      display: grid;
+      grid-template-columns: 1fr auto;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-
-    .service-left {
-      min-width: 0;
+      gap: 10px;
     }
 
     .service-date {
-      font-size: 0.75rem;
+      font-size: 0.78rem;
       color: var(--text-muted);
       margin-bottom: 4px;
     }
 
-    /* keep the service name strong but not huge */
-    .service-type {
+    .service-name {
       font-size: 0.95rem;
       font-weight: 700;
       color: var(--purple);
-      letter-spacing: 0.06em;
       text-transform: uppercase;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 100%;
+      letter-spacing: 0.08em;
     }
 
-    /* small right-side action (NOT huge) */
-    .details-cta {
+    .row-details-toggle {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--border-subtle);
-      background: #fff;
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      white-space: nowrap;
-      flex-shrink: 0;
+      gap: 10px;
+      cursor: pointer;
       user-select: none;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding: 6px 8px;
+      border-radius: 10px;
     }
 
-    .details-cta .pm {
-      width: 18px;
-      height: 18px;
-      border-radius: 6px;
-      border: 1px solid var(--border-subtle);
-      display: grid;
-      place-items: center;
-      font-weight: 800;
-      color: var(--text-main);
-      background: #fff;
-      line-height: 1;
+    .row-details-toggle:hover {
+      background: #eef2ff;
+      color: #374151;
     }
+
+    .details-label { white-space: nowrap; }
 
     .service-details {
       display: none;
@@ -282,28 +276,21 @@
       border-top: 1px dashed var(--border-subtle);
     }
 
-    .service-item.is-open .service-details {
-      display: block;
+    .service-details ul {
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
     }
 
-    .service-item.is-open .details-cta {
-      color: var(--text-main);
+    .service-details li {
+      color: #111827;
+      font-size: 0.9rem;
     }
 
-    .service-item.is-open .details-cta .pm {
-      content: "-";
-    }
+    /* simple helper class for show/hide */
+    .hidden { display: none !important; }
 
-    .svc-list {
-      margin-left: 18px;
-      color: var(--text-main);
-      font-size: 0.92rem;
-      line-height: 1.35;
-    }
-
-    .svc-list li { margin: 6px 0; }
-
-    /* Gallery */
+    /* Gallery footer */
     .gallery-footer {
       margin-top: 10px;
       display: flex;
@@ -374,6 +361,7 @@
         </div>
 
         <section class="grid">
+          <!-- LEFT: OVERVIEW + SERVICE HISTORY -->
           <section class="panel">
             <div class="panel-title">Vehicle Overview</div>
 
@@ -389,44 +377,54 @@
               </div>
             </div>
 
-            <div class="service-header">
+            <!-- SERVICE HISTORY HEADER ROW -->
+            <div class="service-history-header">
               <div class="panel-title" style="margin:0;">Service History</div>
-              <div class="service-count">
-                <span class="pill" id="svcMasterPm">−</span>
-                <span>{{ service_history|length }} service records</span>
+
+              {% set record_count = service_history|length if service_history else 0 %}
+              <div class="service-history-toggle"
+                   id="serviceHistoryToggle"
+                   role="button"
+                   tabindex="0"
+                   aria-controls="serviceHistoryList"
+                   aria-expanded="false">
+                <span class="toggle-icon" id="serviceHistoryIcon">+</span>
+                <span class="service-count">{{ record_count }} service records</span>
               </div>
             </div>
 
             {% if service_history %}
-              <div id="serviceHistoryWrap">
+              <div class="service-list hidden" id="serviceHistoryList">
                 {% for entry in service_history %}
-                  <div class="service-item {% if loop.first %}is-open{% endif %}" data-idx="{{ loop.index0 }}">
-                    <div class="service-top">
-                      <div class="service-left">
+                  <div class="service-row" data-row>
+                    <div class="service-row-top">
+                      <div>
                         <div class="service-date">{{ entry.date }}</div>
-                        <div class="service-type">{{ entry.service_type }}</div>
+                        <div class="service-name">{{ entry.service_type }}</div>
                       </div>
 
-                      <div class="details-cta" aria-label="Toggle details">
-                        <span class="pm">{% if loop.first %}−{% else %}+{% endif %}</span>
-                        <span>Details</span>
+                      <div class="row-details-toggle" data-details-toggle role="button" tabindex="0" aria-expanded="false">
+                        <span class="toggle-icon" data-row-icon>+</span>
+                        <span class="details-label">Details</span>
                       </div>
                     </div>
 
-                    <div class="service-details">
-                      {% if entry.service_description %}
-                        <ul class="svc-list">
-                          {% for line in entry.service_description.split('\n') %}
-                            {% set t = line.strip() %}
-                            {% if t %}
-                              <li>{{ t.lstrip('-•').strip() }}</li>
-                            {% endif %}
+                    <!-- details content -->
+                    <div class="service-details" data-details>
+                      {% if entry.items %}
+                        <ul>
+                          {% for item in entry.items %}
+                            <li>{{ item }}</li>
                           {% endfor %}
                         </ul>
+                      {% elif entry.details %}
+                        <ul>
+                          <li>{{ entry.details }}</li>
+                        </ul>
                       {% else %}
-                        <div style="font-size:0.85rem;color:var(--text-muted);">
-                          No details recorded for this visit.
-                        </div>
+                        <ul>
+                          <li>No line items available.</li>
+                        </ul>
                       {% endif %}
                     </div>
                   </div>
@@ -439,6 +437,7 @@
             {% endif %}
           </section>
 
+          <!-- RIGHT: GALLERY -->
           <section class="panel">
             <div class="panel-title">Service Gallery</div>
 
@@ -479,38 +478,84 @@
   </div>
 
   <script>
+    // ---- Expand/Collapse ALL service records via the header toggle ----
     (function () {
-      const wrap = document.getElementById("serviceHistoryWrap");
-      const masterPm = document.getElementById("svcMasterPm");
-      if (!wrap) return;
+      const toggle = document.getElementById("serviceHistoryToggle");
+      const list = document.getElementById("serviceHistoryList");
+      const icon = document.getElementById("serviceHistoryIcon");
 
-      function closeAll() {
-        wrap.querySelectorAll(".service-item.is-open").forEach(el => {
-          el.classList.remove("is-open");
-          const pm = el.querySelector(".details-cta .pm");
-          if (pm) pm.textContent = "+";
+      if (toggle && list && icon) {
+        const setExpanded = (expanded) => {
+          toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+          icon.textContent = expanded ? "–" : "+";
+          list.classList.toggle("hidden", !expanded);
+
+          // when collapsing ALL, also collapse individual details
+          if (!expanded) {
+            document.querySelectorAll("[data-details]").forEach(el => el.style.display = "none");
+            document.querySelectorAll("[data-details-toggle]").forEach(btn => btn.setAttribute("aria-expanded", "false"));
+            document.querySelectorAll("[data-row-icon]").forEach(i => i.textContent = "+");
+          }
+        };
+
+        // start collapsed (matches your screenshot)
+        setExpanded(false);
+
+        const onToggle = () => {
+          const isExpanded = toggle.getAttribute("aria-expanded") === "true";
+          setExpanded(!isExpanded);
+        };
+
+        toggle.addEventListener("click", onToggle);
+        toggle.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
         });
       }
+    })();
 
-      function openOne(item) {
-        item.classList.add("is-open");
-        const pm = item.querySelector(".details-cta .pm");
-        if (pm) pm.textContent = "−";
-      }
+    // ---- Per-row DETAILS: only one row open at a time (stair-step) ----
+    (function () {
+      const rows = document.querySelectorAll("[data-row]");
 
-      // One-at-a-time accordion behavior
-      wrap.addEventListener("click", (e) => {
-        const item = e.target.closest(".service-item");
-        if (!item) return;
+      rows.forEach((row) => {
+        const btn = row.querySelector("[data-details-toggle]");
+        const details = row.querySelector("[data-details]");
+        const icon = row.querySelector("[data-row-icon]");
 
-        const isOpen = item.classList.contains("is-open");
-        closeAll();
+        if (!btn || !details || !icon) return;
 
-        if (!isOpen) openOne(item);
+        const closeRow = () => {
+          details.style.display = "none";
+          btn.setAttribute("aria-expanded", "false");
+          icon.textContent = "+";
+        };
 
-        // master indicator: if anything open, show − else +
-        const anyOpen = !!wrap.querySelector(".service-item.is-open");
-        if (masterPm) masterPm.textContent = anyOpen ? "−" : "+";
+        const openRow = () => {
+          // close all others first
+          document.querySelectorAll("[data-details]").forEach(el => el.style.display = "none");
+          document.querySelectorAll("[data-details-toggle]").forEach(b => b.setAttribute("aria-expanded", "false"));
+          document.querySelectorAll("[data-row-icon]").forEach(i => i.textContent = "+");
+
+          details.style.display = "block";
+          btn.setAttribute("aria-expanded", "true");
+          icon.textContent = "–";
+        };
+
+        const onClick = () => {
+          const isOpen = btn.getAttribute("aria-expanded") === "true";
+          isOpen ? closeRow() : openRow();
+        };
+
+        btn.addEventListener("click", onClick);
+        btn.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        });
       });
     })();
   </script>
