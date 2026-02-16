@@ -21,7 +21,6 @@
       --text-main:#111827;
       --text-muted:#6b7280;
     }
-
     *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
     body{min-height:100vh;background:var(--bg-page);color:var(--text-main);display:flex;justify-content:center;padding:32px 16px;}
     .page{width:100%;max-width:1000px;}
@@ -48,62 +47,86 @@
     .info-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.14em;color:var(--text-muted);}
     .info-value{font-size:.95rem;font-weight:500;word-break:break-word;}
 
-    /* ===== Service History (match screenshot) ===== */
+    /* ===== Service History: stair-step accordion ===== */
     .service-history-header{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      margin-top:14px;
-      gap:10px;
+      display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;
     }
 
-    .visits-toggle{
-      border:none;
-      background:transparent;
-      color:var(--text-muted);
-      font-size:.8rem;
-      cursor:pointer;
-      padding:2px 8px;
-      border-radius:999px;
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      user-select:none;
-      white-space:nowrap;
+    .records-toggle{
+      border:none;background:transparent;color:var(--text-muted);
+      cursor:pointer;padding:4px 10px;border-radius:999px;
+      display:inline-flex;align-items:center;gap:8px;
+      font-size:.85rem;user-select:none;white-space:nowrap;
     }
-    .visits-toggle:hover{background:var(--purple-soft);color:var(--purple);}
-    .visits-toggle .caret{
-      display:inline-block;
-      transform:rotate(-90deg);
-      transition:transform .18s ease;
-      line-height:1;
+    .records-toggle:hover{background:var(--purple-soft);color:var(--purple);}
+    .records-toggle .pm{
+      width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;
+      border:1px solid var(--border-subtle);border-radius:6px;
+      font-weight:800;line-height:1;background:#fff;color:inherit;
     }
-    .visits-toggle[aria-expanded="true"] .caret{transform:rotate(0deg);}
 
     .service-history-content{display:none;margin-top:10px;}
     .service-history-content.is-open{display:block;}
 
-    .service-row{
+    /* Each visit row (collapsed summary) */
+    .visit{
       border:1px solid var(--border-subtle);
       background:#f9fafb;
       border-radius:12px;
-      padding:12px 12px;
-      margin-bottom:12px;
+      overflow:hidden;
+      margin-bottom:10px;
+    }
 
+    .visit-summary{
       display:grid;
-      grid-template-columns:minmax(0,1fr) 180px;  /* right side big label */
-      gap:14px;
-      align-items:start;
+      grid-template-columns:minmax(0,1fr) 150px;
+      gap:10px;
+      align-items:center;
+      padding:10px 12px;
+      cursor:pointer;
     }
-
     @media (max-width:520px){
-      .service-row{grid-template-columns:1fr;}
-      .service-right{justify-content:flex-start;}
+      .visit-summary{grid-template-columns:1fr;}
     }
 
-    .service-date{font-size:.85rem;color:var(--text-muted);margin-bottom:6px;}
-    .service-lines{font-size:.92rem;color:var(--text-main);}
-    .service-lines ul{margin:0;padding-left:16px;}
+    .visit-left{min-width:0;}
+    .visit-date{font-size:.82rem;color:var(--text-muted);margin-bottom:2px;}
+    .visit-type{
+      font-size:.95rem;
+      font-weight:700;
+      color:var(--purple);
+      text-transform:uppercase;
+      letter-spacing:.06em;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width:100%;
+    }
+
+    .visit-right{
+      display:flex;justify-content:flex-end;
+      font-size:.95rem;
+      font-weight:700;
+      color:#111827;
+      text-transform:uppercase;
+      letter-spacing:.06em;
+      opacity:.85; /* smaller/softer than before */
+      text-align:right;
+      line-height:1.1;
+    }
+    @media (max-width:520px){
+      .visit-right{justify-content:flex-start;text-align:left;}
+    }
+
+    .visit-details{
+      display:none;
+      padding:0 12px 12px 12px;
+    }
+    .visit.is-open .visit-details{display:block;}
+    .visit.is-open .visit-summary{background:#ffffff;}
+
+    .service-lines{font-size:.92rem;color:var(--text-main);padding-top:10px;}
+    .service-lines ul{margin:0;padding-left:18px;}
     .service-lines li{margin:2px 0;}
 
     .service-more{
@@ -112,29 +135,11 @@
       color:var(--text-muted);
     }
 
-    .service-right{
-      display:flex;
-      justify-content:flex-end;
-      padding-top:2px;
-    }
-    .service-name-big{
-      font-size:1.35rem;
-      font-weight:800;
-      letter-spacing:.06em;
-      color:#111827;
-      text-transform:uppercase;
-      text-align:right;
-      line-height:1.05;
-    }
-    @media (max-width:520px){
-      .service-name-big{text-align:left;}
-    }
+    .not-found{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:14px;padding:18px;font-size:.9rem;}
 
     /* Gallery */
     .gallery-footer{margin-top:10px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:.75rem;color:var(--text-muted);align-items:center;}
     .link-button{background:var(--purple);color:white;text-decoration:none;padding:6px 14px;border-radius:999px;font-size:.75rem;display:inline-flex;align-items:center;gap:8px;}
-
-    .not-found{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:14px;padding:18px;font-size:.9rem;}
   </style>
 </head>
 
@@ -179,22 +184,21 @@
               <div class="info-value">{{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}</div>
             </div>
 
-            {% set visit_count = service_history|length if service_history else 0 %}
+            {% set record_count = service_history|length if service_history else 0 %}
 
             <div class="service-history-header">
               <div class="panel-title" style="margin:0;">Service History</div>
 
               <button
                 type="button"
-                id="serviceHistoryToggle"
-                class="visits-toggle"
+                id="recordsToggle"
+                class="records-toggle"
                 aria-expanded="false"
                 aria-controls="serviceHistoryContent"
-                {% if visit_count == 0 %}disabled style="cursor:default;opacity:.6;"{% endif %}
-                title="Click to show/hide service history"
+                {% if record_count == 0 %}disabled style="cursor:default;opacity:.6;"{% endif %}
               >
-                <span class="caret">▾</span>
-                <span>{{ visit_count }} visits</span>
+                <span class="pm" id="recordsPM">+</span>
+                <span>{{ record_count }} service records</span>
               </button>
             </div>
 
@@ -206,14 +210,19 @@
                   {% if not desc %}{% set desc = (entry.description if entry.description is defined else '') %}{% endif %}
                   {% if not desc %}{% set desc = (entry.notes if entry.notes is defined else '') %}{% endif %}
 
-                  {# normalize lines #}
                   {% set raw = (desc|string).replace('\r\n','\n') %}
                   {% set lines = raw.split('\n') %}
 
-                  <div class="service-row">
-                    <div class="service-left">
-                      <div class="service-date">{{ entry.date }}</div>
+                  <div class="visit" data-visit>
+                    <div class="visit-summary" role="button" tabindex="0" aria-expanded="false">
+                      <div class="visit-left">
+                        <div class="visit-date">{{ entry.date }}</div>
+                        <div class="visit-type">{{ entry.service_type }}</div>
+                      </div>
+                      <div class="visit-right">{{ entry.service_type }}</div>
+                    </div>
 
+                    <div class="visit-details">
                       <div class="service-lines">
                         {% if desc %}
                           <ul>
@@ -229,12 +238,7 @@
                           <div style="color:var(--text-muted);font-size:.9rem;">No details recorded.</div>
                         {% endif %}
                       </div>
-
                       <div class="service-more">Click To See More Details</div>
-                    </div>
-
-                    <div class="service-right">
-                      <div class="service-name-big">{{ entry.service_type }}</div>
                     </div>
                   </div>
                 {% endfor %}
@@ -258,7 +262,7 @@
               </div>
 
               <div class="gallery-footer">
-                <span>Photos uploaded for this visit (max 8)</span>
+                <span>Uploaded Photo Record</span>
 
                 {% if vehicle.service_history_link %}
                   <a href="{{ vehicle.service_history_link }}" target="_blank" class="link-button">
@@ -279,16 +283,64 @@
 
   <script>
     (function () {
-      const toggle = document.getElementById("serviceHistoryToggle");
-      const content = document.getElementById("serviceHistoryContent");
-      if (!toggle || !content) return;
-      if (toggle.disabled) return;
+      const recordsToggle = document.getElementById("recordsToggle");
+      const pm = document.getElementById("recordsPM");
+      const list = document.getElementById("serviceHistoryContent");
+      if (!recordsToggle || !pm || !list || recordsToggle.disabled) return;
 
-      // collapsed by default
-      toggle.addEventListener("click", () => {
-        const isOpen = content.classList.toggle("is-open");
-        toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      // list collapsed by default
+      function setListOpen(open){
+        list.classList.toggle("is-open", open);
+        recordsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+        pm.textContent = open ? "−" : "+";
+        if (!open){
+          // close all visits when collapsing list
+          document.querySelectorAll("[data-visit]").forEach(v => {
+            v.classList.remove("is-open");
+            const sum = v.querySelector(".visit-summary");
+            if (sum) sum.setAttribute("aria-expanded","false");
+          });
+        }
+      }
+
+      recordsToggle.addEventListener("click", () => {
+        const open = !list.classList.contains("is-open");
+        setListOpen(open);
       });
+
+      // Visit accordion: only one open at a time
+      function openVisit(targetVisit){
+        document.querySelectorAll("[data-visit]").forEach(v => {
+          const sum = v.querySelector(".visit-summary");
+          const isTarget = (v === targetVisit);
+          v.classList.toggle("is-open", isTarget);
+          if (sum) sum.setAttribute("aria-expanded", isTarget ? "true" : "false");
+        });
+      }
+
+      document.querySelectorAll("[data-visit] .visit-summary").forEach(sum => {
+        sum.addEventListener("click", () => {
+          const visit = sum.closest("[data-visit]");
+          if (!visit) return;
+          const isOpen = visit.classList.contains("is-open");
+          if (isOpen){
+            visit.classList.remove("is-open");
+            sum.setAttribute("aria-expanded","false");
+          } else {
+            openVisit(visit);
+          }
+        });
+
+        sum.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            sum.click();
+          }
+        });
+      });
+
+      // start with list collapsed
+      setListOpen(false);
     })();
   </script>
 </body>
