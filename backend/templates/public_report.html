@@ -68,7 +68,7 @@
     .service-history-content{display:none;margin-top:10px;}
     .service-history-content.is-open{display:block;}
 
-    /* Each visit row (collapsed summary) */
+    /* Each visit row */
     .visit{
       border:1px solid var(--border-subtle);
       background:#f9fafb;
@@ -79,7 +79,7 @@
 
     .visit-summary{
       display:grid;
-      grid-template-columns:minmax(0,1fr) 150px;
+      grid-template-columns:minmax(0,1fr) 220px;
       gap:10px;
       align-items:center;
       padding:10px 12px;
@@ -103,20 +103,31 @@
       max-width:100%;
     }
 
+    /* Right column becomes "+ Click To See Details" */
     .visit-right{
-      display:flex;justify-content:flex-end;
-      font-size:.95rem;
+      display:flex;
+      justify-content:flex-end;
+      align-items:center;
+      gap:8px;
+      color:var(--text-main);
+      font-size:.85rem;
       font-weight:700;
-      color:#111827;
-      text-transform:uppercase;
       letter-spacing:.06em;
-      opacity:.85; /* smaller/softer than before */
-      text-align:right;
-      line-height:1.1;
+      text-transform:uppercase;
+      opacity:.85;
+      user-select:none;
+      white-space:nowrap;
     }
-    @media (max-width:520px){
-      .visit-right{justify-content:flex-start;text-align:left;}
+    .visit-right .plusbox{
+      width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;
+      border:1px solid var(--border-subtle);
+      border-radius:6px;
+      background:#fff;
+      font-weight:900;
+      line-height:1;
     }
+    .visit:hover .visit-right{opacity:1;}
+    .visit.is-open .visit-right{color:var(--purple);}
 
     .visit-details{
       display:none;
@@ -128,12 +139,6 @@
     .service-lines{font-size:.92rem;color:var(--text-main);padding-top:10px;}
     .service-lines ul{margin:0;padding-left:18px;}
     .service-lines li{margin:2px 0;}
-
-    .service-more{
-      margin-top:10px;
-      font-size:.85rem;
-      color:var(--text-muted);
-    }
 
     .not-found{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:14px;padding:18px;font-size:.9rem;}
 
@@ -205,7 +210,6 @@
             <div id="serviceHistoryContent" class="service-history-content">
               {% if service_history %}
                 {% for entry in service_history %}
-                  {# pick description field (works with your existing backend) #}
                   {% set desc = (entry.service_description if entry.service_description is defined else '') %}
                   {% if not desc %}{% set desc = (entry.description if entry.description is defined else '') %}{% endif %}
                   {% if not desc %}{% set desc = (entry.notes if entry.notes is defined else '') %}{% endif %}
@@ -219,7 +223,11 @@
                         <div class="visit-date">{{ entry.date }}</div>
                         <div class="visit-type">{{ entry.service_type }}</div>
                       </div>
-                      <div class="visit-right">{{ entry.service_type }}</div>
+
+                      <div class="visit-right" aria-hidden="true">
+                        <span class="plusbox" data-plus>+</span>
+                        <span data-cta>Click To See Details</span>
+                      </div>
                     </div>
 
                     <div class="visit-details">
@@ -238,7 +246,7 @@
                           <div style="color:var(--text-muted);font-size:.9rem;">No details recorded.</div>
                         {% endif %}
                       </div>
-                      <div class="service-more">Click To See More Details</div>
+                      {# Removed the old "Click To See More Details" line #}
                     </div>
                   </div>
                 {% endfor %}
@@ -262,7 +270,7 @@
               </div>
 
               <div class="gallery-footer">
-                <span>Uploaded Photo Record</span>
+                <span>Photos uploaded for this visit (max 8)</span>
 
                 {% if vehicle.service_history_link %}
                   <a href="{{ vehicle.service_history_link }}" target="_blank" class="link-button">
@@ -288,33 +296,40 @@
       const list = document.getElementById("serviceHistoryContent");
       if (!recordsToggle || !pm || !list || recordsToggle.disabled) return;
 
-      // list collapsed by default
       function setListOpen(open){
         list.classList.toggle("is-open", open);
         recordsToggle.setAttribute("aria-expanded", open ? "true" : "false");
         pm.textContent = open ? "−" : "+";
         if (!open){
-          // close all visits when collapsing list
           document.querySelectorAll("[data-visit]").forEach(v => {
             v.classList.remove("is-open");
             const sum = v.querySelector(".visit-summary");
             if (sum) sum.setAttribute("aria-expanded","false");
+            const plus = v.querySelector("[data-plus]");
+            const cta = v.querySelector("[data-cta]");
+            if (plus) plus.textContent = "+";
+            if (cta) cta.textContent = "Click To See Details";
           });
         }
       }
 
       recordsToggle.addEventListener("click", () => {
-        const open = !list.classList.contains("is-open");
-        setListOpen(open);
+        setListOpen(!list.classList.contains("is-open"));
       });
 
-      // Visit accordion: only one open at a time
-      function openVisit(targetVisit){
+      function setVisitOpen(visit, open){
+        const sum = visit.querySelector(".visit-summary");
+        const plus = visit.querySelector("[data-plus]");
+        const cta = visit.querySelector("[data-cta]");
+        visit.classList.toggle("is-open", open);
+        if (sum) sum.setAttribute("aria-expanded", open ? "true" : "false");
+        if (plus) plus.textContent = open ? "−" : "+";
+        if (cta) cta.textContent = open ? "Click To Hide Details" : "Click To See Details";
+      }
+
+      function openOnly(target){
         document.querySelectorAll("[data-visit]").forEach(v => {
-          const sum = v.querySelector(".visit-summary");
-          const isTarget = (v === targetVisit);
-          v.classList.toggle("is-open", isTarget);
-          if (sum) sum.setAttribute("aria-expanded", isTarget ? "true" : "false");
+          setVisitOpen(v, v === target);
         });
       }
 
@@ -324,10 +339,9 @@
           if (!visit) return;
           const isOpen = visit.classList.contains("is-open");
           if (isOpen){
-            visit.classList.remove("is-open");
-            sum.setAttribute("aria-expanded","false");
+            setVisitOpen(visit, false);
           } else {
-            openVisit(visit);
+            openOnly(visit);
           }
         });
 
@@ -339,7 +353,6 @@
         });
       });
 
-      // start with list collapsed
       setListOpen(false);
     })();
   </script>
