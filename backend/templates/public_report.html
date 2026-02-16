@@ -133,9 +133,7 @@
     }
 
     @media (max-width: 800px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
+      .grid { grid-template-columns: 1fr; }
     }
 
     .panel {
@@ -152,9 +150,7 @@
       margin-bottom: 10px;
     }
 
-    .info-item {
-      margin-bottom: 10px;
-    }
+    .info-item { margin-bottom: 10px; }
 
     .info-label {
       font-size: 0.7rem;
@@ -170,7 +166,7 @@
     }
 
     .service-item {
-      padding: 8px 10px;
+      padding: 10px 12px;
       border-radius: 10px;
       border: 1px solid var(--border-subtle);
       background: #f9fafb;
@@ -180,17 +176,35 @@
     .service-date {
       font-size: 0.75rem;
       color: var(--text-muted);
+      margin-bottom: 2px;
     }
 
     .service-type {
       font-size: 0.8rem;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--purple);
       text-transform: uppercase;
       letter-spacing: 0.08em;
+      margin-bottom: 6px;
     }
 
-    /* ====== Collapsible Service History (NEW) ====== */
+    /* description preview bullets */
+    .service-desc {
+      font-size: 0.85rem;
+      color: var(--text-main);
+      margin-top: 2px;
+    }
+
+    .service-desc ul {
+      margin: 0;
+      padding-left: 16px;
+    }
+
+    .service-desc li {
+      margin: 2px 0;
+    }
+
+    /* ====== Collapsible Service History ====== */
     .service-history-header {
       display: flex;
       align-items: center;
@@ -238,7 +252,7 @@
     .service-history-content.is-open {
       display: block;
     }
-    /* ====== End Collapsible Service History (NEW) ====== */
+    /* ====== End Collapsible ====== */
 
     .gallery-footer {
       margin-top: 10px;
@@ -325,7 +339,6 @@
               </div>
             </div>
 
-            <!-- ====== Service History (Collapsible like index) ====== -->
             {% set visit_count = service_history|length if service_history else 0 %}
 
             <div class="service-history-header">
@@ -351,6 +364,40 @@
                   <div class="service-item">
                     <div class="service-date">{{ entry.date }}</div>
                     <div class="service-type">{{ entry.service_type }}</div>
+
+                    {# Prefer description if present, otherwise notes if you use that #}
+                    {% set desc = (entry.service_description if entry.service_description is defined else '') %}
+                    {% if not desc %}
+                      {% set desc = (entry.description if entry.description is defined else '') %}
+                    {% endif %}
+                    {% if not desc %}
+                      {% set desc = (entry.notes if entry.notes is defined else '') %}
+                    {% endif %}
+
+                    {% if desc %}
+                      <div class="service-desc">
+                        {# If it already contains line breaks or dash bullets, render as bullets #}
+                        {% set lines = desc.replace('\r\n','\n').split('\n') %}
+                        {% if lines|length > 1 %}
+                          <ul>
+                            {% for line in lines %}
+                              {% set t = line.strip() %}
+                              {% if t %}
+                                {% if t.startswith('-') %}
+                                  {% set t = t[1:].strip() %}
+                                {% endif %}
+                                {% if t %}
+                                  <li>{{ t }}</li>
+                                {% endif %}
+                              {% endif %}
+                            {% endfor %}
+                          </ul>
+                        {% else %}
+                          {# single line: show as plain text #}
+                          <div>{{ desc }}</div>
+                        {% endif %}
+                      </div>
+                    {% endif %}
                   </div>
                 {% endfor %}
               {% else %}
@@ -359,7 +406,6 @@
                 </p>
               {% endif %}
             </div>
-            <!-- ====== End Service History ====== -->
           </section>
 
           <section class="panel">
@@ -401,7 +447,6 @@
     {% endif %}
   </div>
 
-  <!-- ====== Collapsible Service History Script (NEW) ====== -->
   <script>
     (function () {
       const toggle = document.getElementById("serviceHistoryToggle");
@@ -409,13 +454,12 @@
       if (!toggle || !content) return;
       if (toggle.disabled) return;
 
-      // collapsed by default (matches your request)
+      // collapsed by default
       toggle.addEventListener("click", () => {
         const isOpen = content.classList.toggle("is-open");
         toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
       });
     })();
   </script>
-  <!-- ====== End Script ====== -->
 </body>
-</html>
+</html> 
