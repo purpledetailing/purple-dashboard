@@ -12,279 +12,129 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <style>
-    :root {
-      --purple: #6d28d9;
-      --purple-soft: #ede9fe;
-      --bg-page: #f9fafb;
-      --bg-card: #ffffff;
-      --border-subtle: #e5e7eb;
-      --text-main: #111827;
-      --text-muted: #6b7280;
+    :root{
+      --purple:#6d28d9;
+      --purple-soft:#ede9fe;
+      --bg-page:#f9fafb;
+      --bg-card:#ffffff;
+      --border-subtle:#e5e7eb;
+      --text-main:#111827;
+      --text-muted:#6b7280;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+    body{min-height:100vh;background:var(--bg-page);color:var(--text-main);display:flex;justify-content:center;padding:32px 16px;}
+    .page{width:100%;max-width:1000px;}
+
+    header{margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;}
+    .brand-title{font-size:2rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;}
+    .brand-subtitle{font-size:.85rem;color:var(--text-muted);}
+    .brand-subtitle span{color:var(--purple);font-weight:600;}
+    .vin-tag{font-size:.75rem;padding:6px 10px;border-radius:999px;border:1px solid var(--border-subtle);background:#fff;color:var(--text-muted);display:inline-flex;gap:6px;align-items:center;white-space:nowrap;}
+    .vin-tag strong{color:var(--text-main);font-weight:600;}
+
+    .card{background:var(--bg-card);border-radius:18px;border:1px solid var(--border-subtle);padding:20px 22px 24px;box-shadow:0 12px 25px rgba(15,23,42,.04);}
+    .card-header{display:flex;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap;}
+    .vehicle-title{font-size:1.35rem;font-weight:600;}
+    .vehicle-meta{font-size:.9rem;color:var(--text-muted);}
+    .badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 12px;background:#111827;color:#fff;font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;}
+
+    .grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.4fr);gap:18px;}
+    @media (max-width:800px){.grid{grid-template-columns:1fr;}}
+
+    .panel{border-radius:14px;border:1px solid var(--border-subtle);padding:14px 16px 16px;}
+    .panel-title{font-size:.8rem;text-transform:uppercase;letter-spacing:.18em;color:var(--text-muted);margin-bottom:10px;}
+    .info-item{margin-bottom:10px;}
+    .info-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.14em;color:var(--text-muted);}
+    .info-value{font-size:.95rem;font-weight:500;word-break:break-word;}
+
+    /* ===== Service History (match screenshot) ===== */
+    .service-history-header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      margin-top:14px;
+      gap:10px;
     }
 
-    body {
-      min-height: 100vh;
-      background: var(--bg-page);
-      color: var(--text-main);
-      display: flex;
-      justify-content: center;
-      padding: 32px 16px;
+    .visits-toggle{
+      border:none;
+      background:transparent;
+      color:var(--text-muted);
+      font-size:.8rem;
+      cursor:pointer;
+      padding:2px 8px;
+      border-radius:999px;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      user-select:none;
+      white-space:nowrap;
+    }
+    .visits-toggle:hover{background:var(--purple-soft);color:var(--purple);}
+    .visits-toggle .caret{
+      display:inline-block;
+      transform:rotate(-90deg);
+      transition:transform .18s ease;
+      line-height:1;
+    }
+    .visits-toggle[aria-expanded="true"] .caret{transform:rotate(0deg);}
+
+    .service-history-content{display:none;margin-top:10px;}
+    .service-history-content.is-open{display:block;}
+
+    .service-row{
+      border:1px solid var(--border-subtle);
+      background:#f9fafb;
+      border-radius:12px;
+      padding:12px 12px;
+      margin-bottom:12px;
+
+      display:grid;
+      grid-template-columns:minmax(0,1fr) 180px;  /* right side big label */
+      gap:14px;
+      align-items:start;
     }
 
-    .page {
-      width: 100%;
-      max-width: 1000px;
+    @media (max-width:520px){
+      .service-row{grid-template-columns:1fr;}
+      .service-right{justify-content:flex-start;}
     }
 
-    header {
-      margin-bottom: 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      gap: 12px;
-      flex-wrap: wrap;
+    .service-date{font-size:.85rem;color:var(--text-muted);margin-bottom:6px;}
+    .service-lines{font-size:.92rem;color:var(--text-main);}
+    .service-lines ul{margin:0;padding-left:16px;}
+    .service-lines li{margin:2px 0;}
+
+    .service-more{
+      margin-top:10px;
+      font-size:.85rem;
+      color:var(--text-muted);
     }
 
-    .brand-title {
-      font-size: 2rem;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
+    .service-right{
+      display:flex;
+      justify-content:flex-end;
+      padding-top:2px;
+    }
+    .service-name-big{
+      font-size:1.35rem;
+      font-weight:800;
+      letter-spacing:.06em;
+      color:#111827;
+      text-transform:uppercase;
+      text-align:right;
+      line-height:1.05;
+    }
+    @media (max-width:520px){
+      .service-name-big{text-align:left;}
     }
 
-    .brand-subtitle {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
+    /* Gallery */
+    .gallery-footer{margin-top:10px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:.75rem;color:var(--text-muted);align-items:center;}
+    .link-button{background:var(--purple);color:white;text-decoration:none;padding:6px 14px;border-radius:999px;font-size:.75rem;display:inline-flex;align-items:center;gap:8px;}
 
-    .brand-subtitle span {
-      color: var(--purple);
-      font-weight: 600;
-    }
-
-    .vin-tag {
-      font-size: 0.75rem;
-      padding: 6px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--border-subtle);
-      background: #ffffff;
-      color: var(--text-muted);
-      display: inline-flex;
-      gap: 6px;
-      align-items: center;
-      white-space: nowrap;
-    }
-
-    .vin-tag strong {
-      color: var(--text-main);
-      font-weight: 600;
-    }
-
-    .card {
-      background: var(--bg-card);
-      border-radius: 18px;
-      border: 1px solid var(--border-subtle);
-      padding: 20px 22px 24px;
-      box-shadow: 0 12px 25px rgba(15, 23, 42, 0.04);
-    }
-
-    .card-header {
-      display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 18px;
-      flex-wrap: wrap;
-    }
-
-    .vehicle-title {
-      font-size: 1.35rem;
-      font-weight: 600;
-    }
-
-    .vehicle-meta {
-      font-size: 0.9rem;
-      color: var(--text-muted);
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      border-radius: 999px;
-      padding: 4px 12px;
-      background: #111827;
-      color: #ffffff;
-      font-size: 0.7rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr);
-      gap: 18px;
-    }
-
-    @media (max-width: 800px) {
-      .grid { grid-template-columns: 1fr; }
-    }
-
-    .panel {
-      border-radius: 14px;
-      border: 1px solid var(--border-subtle);
-      padding: 14px 16px 16px;
-    }
-
-    .panel-title {
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.18em;
-      color: var(--text-muted);
-      margin-bottom: 10px;
-    }
-
-    .info-item { margin-bottom: 10px; }
-
-    .info-label {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: var(--text-muted);
-    }
-
-    .info-value {
-      font-size: 0.95rem;
-      font-weight: 500;
-      word-break: break-word;
-    }
-
-    .service-item {
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid var(--border-subtle);
-      background: #f9fafb;
-      margin-bottom: 10px;
-    }
-
-    .service-date {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      margin-bottom: 2px;
-    }
-
-    .service-type {
-      font-size: 0.8rem;
-      font-weight: 700;
-      color: var(--purple);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 6px;
-    }
-
-    /* description preview bullets */
-    .service-desc {
-      font-size: 0.85rem;
-      color: var(--text-main);
-      margin-top: 2px;
-    }
-
-    .service-desc ul {
-      margin: 0;
-      padding-left: 16px;
-    }
-
-    .service-desc li {
-      margin: 2px 0;
-    }
-
-    /* ====== Collapsible Service History ====== */
-    .service-history-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-top: 14px;
-    }
-
-    .service-history-toggle {
-      border: none;
-      background: transparent;
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      cursor: pointer;
-      padding: 2px 8px;
-      border-radius: 999px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      white-space: nowrap;
-      user-select: none;
-    }
-
-    .service-history-toggle:hover {
-      background: var(--purple-soft);
-      color: var(--purple);
-    }
-
-    .toggle-caret {
-      display: inline-block;
-      transform: rotate(-90deg);
-      transition: transform 0.18s ease;
-      line-height: 1;
-    }
-
-    .service-history-toggle[aria-expanded="true"] .toggle-caret {
-      transform: rotate(0deg);
-    }
-
-    .service-history-content {
-      display: none;     /* collapsed by default */
-      margin-top: 10px;
-    }
-
-    .service-history-content.is-open {
-      display: block;
-    }
-    /* ====== End Collapsible ====== */
-
-    .gallery-footer {
-      margin-top: 10px;
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      align-items: center;
-    }
-
-    .link-button {
-      background: var(--purple);
-      color: white;
-      text-decoration: none;
-      padding: 6px 14px;
-      border-radius: 999px;
-      font-size: 0.75rem;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .not-found {
-      background: #fef2f2;
-      border: 1px solid #fecaca;
-      color: #991b1b;
-      border-radius: 14px;
-      padding: 18px;
-      font-size: 0.9rem;
-    }
+    .not-found{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:14px;padding:18px;font-size:.9rem;}
   </style>
 </head>
 
@@ -293,13 +143,9 @@
     <header>
       <div>
         <div class="brand-title">Purple Dashboard</div>
-        <div class="brand-subtitle">
-          Vehicle service snapshot by <span>Purple Detailing</span>
-        </div>
+        <div class="brand-subtitle">Vehicle service snapshot by <span>Purple Detailing</span></div>
       </div>
-      <div class="vin-tag">
-        VIN <strong>{{ vin }}</strong>
-      </div>
+      <div class="vin-tag">VIN <strong>{{ vin }}</strong></div>
     </header>
 
     {% if not_found %}
@@ -313,12 +159,8 @@
       <main class="card">
         <div class="card-header">
           <div>
-            <div class="vehicle-title">
-              {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}
-            </div>
-            <div class="vehicle-meta">
-              Maintained by Purple Detailing
-            </div>
+            <div class="vehicle-title">{{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}</div>
+            <div class="vehicle-meta">Maintained by Purple Detailing</div>
           </div>
           <div class="badge">Purple Report</div>
         </div>
@@ -334,9 +176,7 @@
 
             <div class="info-item">
               <div class="info-label">Make / Model / Year</div>
-              <div class="info-value">
-                {{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}
-              </div>
+              <div class="info-value">{{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}</div>
             </div>
 
             {% set visit_count = service_history|length if service_history else 0 %}
@@ -347,13 +187,13 @@
               <button
                 type="button"
                 id="serviceHistoryToggle"
-                class="service-history-toggle"
+                class="visits-toggle"
                 aria-expanded="false"
                 aria-controls="serviceHistoryContent"
                 {% if visit_count == 0 %}disabled style="cursor:default;opacity:.6;"{% endif %}
                 title="Click to show/hide service history"
               >
-                <span class="toggle-caret">▾</span>
+                <span class="caret">▾</span>
                 <span>{{ visit_count }} visits</span>
               </button>
             </div>
@@ -361,49 +201,45 @@
             <div id="serviceHistoryContent" class="service-history-content">
               {% if service_history %}
                 {% for entry in service_history %}
-                  <div class="service-item">
-                    <div class="service-date">{{ entry.date }}</div>
-                    <div class="service-type">{{ entry.service_type }}</div>
+                  {# pick description field (works with your existing backend) #}
+                  {% set desc = (entry.service_description if entry.service_description is defined else '') %}
+                  {% if not desc %}{% set desc = (entry.description if entry.description is defined else '') %}{% endif %}
+                  {% if not desc %}{% set desc = (entry.notes if entry.notes is defined else '') %}{% endif %}
 
-                    {# Prefer description if present, otherwise notes if you use that #}
-                    {% set desc = (entry.service_description if entry.service_description is defined else '') %}
-                    {% if not desc %}
-                      {% set desc = (entry.description if entry.description is defined else '') %}
-                    {% endif %}
-                    {% if not desc %}
-                      {% set desc = (entry.notes if entry.notes is defined else '') %}
-                    {% endif %}
+                  {# normalize lines #}
+                  {% set raw = (desc|string).replace('\r\n','\n') %}
+                  {% set lines = raw.split('\n') %}
 
-                    {% if desc %}
-                      <div class="service-desc">
-                        {# If it already contains line breaks or dash bullets, render as bullets #}
-                        {% set lines = desc.replace('\r\n','\n').split('\n') %}
-                        {% if lines|length > 1 %}
+                  <div class="service-row">
+                    <div class="service-left">
+                      <div class="service-date">{{ entry.date }}</div>
+
+                      <div class="service-lines">
+                        {% if desc %}
                           <ul>
                             {% for line in lines %}
                               {% set t = line.strip() %}
                               {% if t %}
-                                {% if t.startswith('-') %}
-                                  {% set t = t[1:].strip() %}
-                                {% endif %}
-                                {% if t %}
-                                  <li>{{ t }}</li>
-                                {% endif %}
+                                {% if t.startswith('-') %}{% set t = t[1:].strip() %}{% endif %}
+                                {% if t %}<li>{{ t }}</li>{% endif %}
                               {% endif %}
                             {% endfor %}
                           </ul>
                         {% else %}
-                          {# single line: show as plain text #}
-                          <div>{{ desc }}</div>
+                          <div style="color:var(--text-muted);font-size:.9rem;">No details recorded.</div>
                         {% endif %}
                       </div>
-                    {% endif %}
+
+                      <div class="service-more">Click To See More Details</div>
+                    </div>
+
+                    <div class="service-right">
+                      <div class="service-name-big">{{ entry.service_type }}</div>
+                    </div>
                   </div>
                 {% endfor %}
               {% else %}
-                <p style="font-size:0.85rem;color:var(--text-muted);">
-                  No service records available yet.
-                </p>
+                <p style="font-size:0.85rem;color:var(--text-muted);">No service records available yet.</p>
               {% endif %}
             </div>
           </section>
@@ -416,9 +252,7 @@
                 {% for u in photo_urls %}
                   <a href="{{ u }}" target="_blank" rel="noopener noreferrer"
                      style="display:block;border-radius:12px;overflow:hidden;border:1px solid var(--border-subtle);background:#0f172a;">
-                    <img src="{{ u }}"
-                         style="width:100%;height:180px;object-fit:cover;display:block;"
-                         loading="lazy" />
+                    <img src="{{ u }}" style="width:100%;height:180px;object-fit:cover;display:block;" loading="lazy" />
                   </a>
                 {% endfor %}
               </div>
@@ -427,9 +261,7 @@
                 <span>Photos uploaded for this visit (max 8)</span>
 
                 {% if vehicle.service_history_link %}
-                  <a href="{{ vehicle.service_history_link }}"
-                     target="_blank"
-                     class="link-button">
+                  <a href="{{ vehicle.service_history_link }}" target="_blank" class="link-button">
                     Open Full Gallery ↗
                   </a>
                 {% else %}
@@ -437,9 +269,7 @@
                 {% endif %}
               </div>
             {% else %}
-              <p style="font-size:0.85rem;color:var(--text-muted);">
-                No photos uploaded yet.
-              </p>
+              <p style="font-size:0.85rem;color:var(--text-muted);">No photos uploaded yet.</p>
             {% endif %}
           </section>
         </section>
