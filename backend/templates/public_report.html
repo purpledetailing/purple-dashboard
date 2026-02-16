@@ -188,8 +188,57 @@
       color: var(--purple);
       text-transform: uppercase;
       letter-spacing: 0.08em;
-
     }
+
+    /* ====== Collapsible Service History (NEW) ====== */
+    .service-history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .service-history-toggle {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    .service-history-toggle:hover {
+      background: var(--purple-soft);
+      color: var(--purple);
+    }
+
+    .toggle-caret {
+      display: inline-block;
+      transform: rotate(-90deg);
+      transition: transform 0.18s ease;
+      line-height: 1;
+    }
+
+    .service-history-toggle[aria-expanded="true"] .toggle-caret {
+      transform: rotate(0deg);
+    }
+
+    .service-history-content {
+      display: none;     /* collapsed by default */
+      margin-top: 10px;
+    }
+
+    .service-history-content.is-open {
+      display: block;
+    }
+    /* ====== End Collapsible Service History (NEW) ====== */
 
     .gallery-footer {
       margin-top: 10px;
@@ -276,19 +325,41 @@
               </div>
             </div>
 
-            <div class="panel-title" style="margin-top:14px;">Service History</div>
+            <!-- ====== Service History (Collapsible like index) ====== -->
+            {% set visit_count = service_history|length if service_history else 0 %}
 
-            {% if service_history %}
-              {% for entry in service_history %}
-                <div class="service-item">
-                  <div class="service-date">{{ entry.date }}</div>
-                  <div class="service-type">{{ entry.service_type }}</div>
-              {% endfor %}
-            {% else %}
-              <p style="font-size:0.85rem;color:var(--text-muted);">
-                No service records available yet.
-              </p>
-            {% endif %}
+            <div class="service-history-header">
+              <div class="panel-title" style="margin:0;">Service History</div>
+
+              <button
+                type="button"
+                id="serviceHistoryToggle"
+                class="service-history-toggle"
+                aria-expanded="false"
+                aria-controls="serviceHistoryContent"
+                {% if visit_count == 0 %}disabled style="cursor:default;opacity:.6;"{% endif %}
+                title="Click to show/hide service history"
+              >
+                <span class="toggle-caret">▾</span>
+                <span>{{ visit_count }} visits</span>
+              </button>
+            </div>
+
+            <div id="serviceHistoryContent" class="service-history-content">
+              {% if service_history %}
+                {% for entry in service_history %}
+                  <div class="service-item">
+                    <div class="service-date">{{ entry.date }}</div>
+                    <div class="service-type">{{ entry.service_type }}</div>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <p style="font-size:0.85rem;color:var(--text-muted);">
+                  No service records available yet.
+                </p>
+              {% endif %}
+            </div>
+            <!-- ====== End Service History ====== -->
           </section>
 
           <section class="panel">
@@ -329,6 +400,22 @@
       </main>
     {% endif %}
   </div>
+
+  <!-- ====== Collapsible Service History Script (NEW) ====== -->
+  <script>
+    (function () {
+      const toggle = document.getElementById("serviceHistoryToggle");
+      const content = document.getElementById("serviceHistoryContent");
+      if (!toggle || !content) return;
+      if (toggle.disabled) return;
+
+      // collapsed by default (matches your request)
+      toggle.addEventListener("click", () => {
+        const isOpen = content.classList.toggle("is-open");
+        toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      });
+    })();
+  </script>
+  <!-- ====== End Script ====== -->
 </body>
 </html>
-
