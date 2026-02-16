@@ -12,139 +12,329 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <style>
-    :root{
-      --purple:#6d28d9;
-      --purple-soft:#ede9fe;
-      --bg-page:#f9fafb;
-      --bg-card:#ffffff;
-      --border-subtle:#e5e7eb;
-      --text-main:#111827;
-      --text-muted:#6b7280;
-    }
-    *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
-    body{min-height:100vh;background:var(--bg-page);color:var(--text-main);display:flex;justify-content:center;padding:32px 16px;}
-    .page{width:100%;max-width:1000px;}
-
-    header{margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;}
-    .brand-title{font-size:2rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;}
-    .brand-subtitle{font-size:.85rem;color:var(--text-muted);}
-    .brand-subtitle span{color:var(--purple);font-weight:600;}
-    .vin-tag{font-size:.75rem;padding:6px 10px;border-radius:999px;border:1px solid var(--border-subtle);background:#fff;color:var(--text-muted);display:inline-flex;gap:6px;align-items:center;white-space:nowrap;}
-    .vin-tag strong{color:var(--text-main);font-weight:600;}
-
-    .card{background:var(--bg-card);border-radius:18px;border:1px solid var(--border-subtle);padding:20px 22px 24px;box-shadow:0 12px 25px rgba(15,23,42,.04);}
-    .card-header{display:flex;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap;}
-    .vehicle-title{font-size:1.35rem;font-weight:600;}
-    .vehicle-meta{font-size:.9rem;color:var(--text-muted);}
-    .badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 12px;background:#111827;color:#fff;font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;}
-
-    .grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.4fr);gap:18px;}
-    @media (max-width:800px){.grid{grid-template-columns:1fr;}}
-
-    .panel{border-radius:14px;border:1px solid var(--border-subtle);padding:14px 16px 16px;}
-    .panel-title{font-size:.8rem;text-transform:uppercase;letter-spacing:.18em;color:var(--text-muted);margin-bottom:10px;}
-    .info-item{margin-bottom:10px;}
-    .info-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.14em;color:var(--text-muted);}
-    .info-value{font-size:.95rem;font-weight:500;word-break:break-word;}
-
-    /* ===== Service History: stair-step accordion ===== */
-    .service-history-header{
-      display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;
+    :root {
+      --purple: #6d28d9;
+      --purple-soft: #ede9fe;
+      --bg-page: #f9fafb;
+      --bg-card: #ffffff;
+      --border-subtle: #e5e7eb;
+      --text-main: #111827;
+      --text-muted: #6b7280;
     }
 
-    .records-toggle{
-      border:none;background:transparent;color:var(--text-muted);
-      cursor:pointer;padding:4px 10px;border-radius:999px;
-      display:inline-flex;align-items:center;gap:8px;
-      font-size:.85rem;user-select:none;white-space:nowrap;
-    }
-    .records-toggle:hover{background:var(--purple-soft);color:var(--purple);}
-    .records-toggle .pm{
-      width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;
-      border:1px solid var(--border-subtle);border-radius:6px;
-      font-weight:800;line-height:1;background:#fff;color:inherit;
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    .service-history-content{display:none;margin-top:10px;}
-    .service-history-content.is-open{display:block;}
-
-    /* Each visit row */
-    .visit{
-      border:1px solid var(--border-subtle);
-      background:#f9fafb;
-      border-radius:12px;
-      overflow:hidden;
-      margin-bottom:10px;
+    body {
+      min-height: 100vh;
+      background: var(--bg-page);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
     }
 
-    .visit-summary{
-      display:grid;
-      grid-template-columns:minmax(0,1fr) 220px;
-      gap:10px;
-      align-items:center;
-      padding:10px 12px;
-      cursor:pointer;
-    }
-    @media (max-width:520px){
-      .visit-summary{grid-template-columns:1fr;}
+    .page {
+      width: 100%;
+      max-width: 1000px;
     }
 
-    .visit-left{min-width:0;}
-    .visit-date{font-size:.82rem;color:var(--text-muted);margin-bottom:2px;}
-    .visit-type{
-      font-size:.95rem;
-      font-weight:700;
-      color:var(--purple);
-      text-transform:uppercase;
-      letter-spacing:.06em;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      max-width:100%;
+    header {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
-    /* Right column becomes "+ Click To See Details" */
-    .visit-right{
-      display:flex;
-      justify-content:flex-end;
-      align-items:center;
-      gap:8px;
-      color:var(--text-main);
-      font-size:.85rem;
-      font-weight:700;
-      letter-spacing:.06em;
-      text-transform:uppercase;
-      opacity:.85;
-      user-select:none;
-      white-space:nowrap;
+    .brand-title {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
     }
-    .visit-right .plusbox{
-      width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;
-      border:1px solid var(--border-subtle);
-      border-radius:6px;
-      background:#fff;
-      font-weight:900;
-      line-height:1;
+
+    .brand-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
     }
-    .visit:hover .visit-right{opacity:1;}
-    .visit.is-open .visit-right{color:var(--purple);}
 
-    .visit-details{
-      display:none;
-      padding:0 12px 12px 12px;
+    .brand-subtitle span {
+      color: var(--purple);
+      font-weight: 600;
     }
-    .visit.is-open .visit-details{display:block;}
-    .visit.is-open .visit-summary{background:#ffffff;}
 
-    .service-lines{font-size:.92rem;color:var(--text-main);padding-top:10px;}
-    .service-lines ul{margin:0;padding-left:18px;}
-    .service-lines li{margin:2px 0;}
+    .vin-tag {
+      font-size: 0.75rem;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      background: #ffffff;
+      color: var(--text-muted);
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      white-space: nowrap;
+    }
 
-    .not-found{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:14px;padding:18px;font-size:.9rem;}
+    .vin-tag strong {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border-radius: 18px;
+      border: 1px solid var(--border-subtle);
+      padding: 20px 22px 24px;
+      box-shadow: 0 12px 25px rgba(15, 23, 42, 0.04);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .vehicle-title {
+      font-size: 1.35rem;
+      font-weight: 600;
+    }
+
+    .vehicle-meta {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 4px 12px;
+      background: #111827;
+      color: #ffffff;
+      font-size: 0.7rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr);
+      gap: 18px;
+    }
+
+    @media (max-width: 800px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      border-radius: 14px;
+      border: 1px solid var(--border-subtle);
+      padding: 14px 16px 16px;
+    }
+
+    .panel-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .info-item { margin-bottom: 10px; }
+
+    .info-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-muted);
+    }
+
+    .info-value {
+      font-size: 0.95rem;
+      font-weight: 500;
+      word-break: break-word;
+    }
+
+    /* --- Service History Header Row --- */
+    .service-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+      margin-bottom: 10px;
+    }
+
+    .service-count {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .service-count .pill {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+      display: grid;
+      place-items: center;
+      background: #fff;
+      color: var(--text-main);
+      font-weight: 700;
+      line-height: 1;
+      font-size: 0.9rem;
+    }
+
+    /* --- Service Item --- */
+    .service-item {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+      background: #f9fafb;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+
+    .service-item:hover {
+      background: #ffffff;
+      border-color: #d1d5db;
+    }
+
+    .service-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .service-left {
+      min-width: 0;
+    }
+
+    .service-date {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    /* keep the service name strong but not huge */
+    .service-type {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--purple);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    /* small right-side action (NOT huge) */
+    .details-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      background: #fff;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .details-cta .pm {
+      width: 18px;
+      height: 18px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: var(--text-main);
+      background: #fff;
+      line-height: 1;
+    }
+
+    .service-details {
+      display: none;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border-subtle);
+    }
+
+    .service-item.is-open .service-details {
+      display: block;
+    }
+
+    .service-item.is-open .details-cta {
+      color: var(--text-main);
+    }
+
+    .service-item.is-open .details-cta .pm {
+      content: "-";
+    }
+
+    .svc-list {
+      margin-left: 18px;
+      color: var(--text-main);
+      font-size: 0.92rem;
+      line-height: 1.35;
+    }
+
+    .svc-list li { margin: 6px 0; }
 
     /* Gallery */
-    .gallery-footer{margin-top:10px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:.75rem;color:var(--text-muted);align-items:center;}
-    .link-button{background:var(--purple);color:white;text-decoration:none;padding:6px 14px;border-radius:999px;font-size:.75rem;display:inline-flex;align-items:center;gap:8px;}
+    .gallery-footer {
+      margin-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      align-items: center;
+    }
+
+    .link-button {
+      background: var(--purple);
+      color: white;
+      text-decoration: none;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .not-found {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      border-radius: 14px;
+      padding: 18px;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 
@@ -153,9 +343,13 @@
     <header>
       <div>
         <div class="brand-title">Purple Dashboard</div>
-        <div class="brand-subtitle">Vehicle service snapshot by <span>Purple Detailing</span></div>
+        <div class="brand-subtitle">
+          Vehicle service snapshot by <span>Purple Detailing</span>
+        </div>
       </div>
-      <div class="vin-tag">VIN <strong>{{ vin }}</strong></div>
+      <div class="vin-tag">
+        VIN <strong>{{ vin }}</strong>
+      </div>
     </header>
 
     {% if not_found %}
@@ -169,8 +363,12 @@
       <main class="card">
         <div class="card-header">
           <div>
-            <div class="vehicle-title">{{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}</div>
-            <div class="vehicle-meta">Maintained by Purple Detailing</div>
+            <div class="vehicle-title">
+              {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}
+            </div>
+            <div class="vehicle-meta">
+              Maintained by Purple Detailing
+            </div>
           </div>
           <div class="badge">Purple Report</div>
         </div>
@@ -186,74 +384,59 @@
 
             <div class="info-item">
               <div class="info-label">Make / Model / Year</div>
-              <div class="info-value">{{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}</div>
+              <div class="info-value">
+                {{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}
+              </div>
             </div>
 
-            {% set record_count = service_history|length if service_history else 0 %}
-
-            <div class="service-history-header">
+            <div class="service-header">
               <div class="panel-title" style="margin:0;">Service History</div>
-
-              <button
-                type="button"
-                id="recordsToggle"
-                class="records-toggle"
-                aria-expanded="false"
-                aria-controls="serviceHistoryContent"
-                {% if record_count == 0 %}disabled style="cursor:default;opacity:.6;"{% endif %}
-              >
-                <span class="pm" id="recordsPM">+</span>
-                <span>{{ record_count }} service records</span>
-              </button>
+              <div class="service-count">
+                <span class="pill" id="svcMasterPm">−</span>
+                <span>{{ service_history|length }} service records</span>
+              </div>
             </div>
 
-            <div id="serviceHistoryContent" class="service-history-content">
-              {% if service_history %}
+            {% if service_history %}
+              <div id="serviceHistoryWrap">
                 {% for entry in service_history %}
-                  {% set desc = (entry.service_description if entry.service_description is defined else '') %}
-                  {% if not desc %}{% set desc = (entry.description if entry.description is defined else '') %}{% endif %}
-                  {% if not desc %}{% set desc = (entry.notes if entry.notes is defined else '') %}{% endif %}
-
-                  {% set raw = (desc|string).replace('\r\n','\n') %}
-                  {% set lines = raw.split('\n') %}
-
-                  <div class="visit" data-visit>
-                    <div class="visit-summary" role="button" tabindex="0" aria-expanded="false">
-                      <div class="visit-left">
-                        <div class="visit-date">{{ entry.date }}</div>
-                        <div class="visit-type">{{ entry.service_type }}</div>
+                  <div class="service-item {% if loop.first %}is-open{% endif %}" data-idx="{{ loop.index0 }}">
+                    <div class="service-top">
+                      <div class="service-left">
+                        <div class="service-date">{{ entry.date }}</div>
+                        <div class="service-type">{{ entry.service_type }}</div>
                       </div>
 
-                      <div class="visit-right" aria-hidden="true">
-                        <span class="plusbox" data-plus>+</span>
-                        <span data-cta>Click To See Details</span>
+                      <div class="details-cta" aria-label="Toggle details">
+                        <span class="pm">{% if loop.first %}−{% else %}+{% endif %}</span>
+                        <span>Details</span>
                       </div>
                     </div>
 
-                    <div class="visit-details">
-                      <div class="service-lines">
-                        {% if desc %}
-                          <ul>
-                            {% for line in lines %}
-                              {% set t = line.strip() %}
-                              {% if t %}
-                                {% if t.startswith('-') %}{% set t = t[1:].strip() %}{% endif %}
-                                {% if t %}<li>{{ t }}</li>{% endif %}
-                              {% endif %}
-                            {% endfor %}
-                          </ul>
-                        {% else %}
-                          <div style="color:var(--text-muted);font-size:.9rem;">No details recorded.</div>
-                        {% endif %}
-                      </div>
-                      {# Removed the old "Click To See More Details" line #}
+                    <div class="service-details">
+                      {% if entry.service_description %}
+                        <ul class="svc-list">
+                          {% for line in entry.service_description.split('\n') %}
+                            {% set t = line.strip() %}
+                            {% if t %}
+                              <li>{{ t.lstrip('-•').strip() }}</li>
+                            {% endif %}
+                          {% endfor %}
+                        </ul>
+                      {% else %}
+                        <div style="font-size:0.85rem;color:var(--text-muted);">
+                          No details recorded for this visit.
+                        </div>
+                      {% endif %}
                     </div>
                   </div>
                 {% endfor %}
-              {% else %}
-                <p style="font-size:0.85rem;color:var(--text-muted);">No service records available yet.</p>
-              {% endif %}
-            </div>
+              </div>
+            {% else %}
+              <p style="font-size:0.85rem;color:var(--text-muted);">
+                No service records available yet.
+              </p>
+            {% endif %}
           </section>
 
           <section class="panel">
@@ -264,7 +447,9 @@
                 {% for u in photo_urls %}
                   <a href="{{ u }}" target="_blank" rel="noopener noreferrer"
                      style="display:block;border-radius:12px;overflow:hidden;border:1px solid var(--border-subtle);background:#0f172a;">
-                    <img src="{{ u }}" style="width:100%;height:180px;object-fit:cover;display:block;" loading="lazy" />
+                    <img src="{{ u }}"
+                         style="width:100%;height:180px;object-fit:cover;display:block;"
+                         loading="lazy" />
                   </a>
                 {% endfor %}
               </div>
@@ -273,7 +458,9 @@
                 <span>Photos uploaded for this visit (max 8)</span>
 
                 {% if vehicle.service_history_link %}
-                  <a href="{{ vehicle.service_history_link }}" target="_blank" class="link-button">
+                  <a href="{{ vehicle.service_history_link }}"
+                     target="_blank"
+                     class="link-button">
                     Open Full Gallery ↗
                   </a>
                 {% else %}
@@ -281,7 +468,9 @@
                 {% endif %}
               </div>
             {% else %}
-              <p style="font-size:0.85rem;color:var(--text-muted);">No photos uploaded yet.</p>
+              <p style="font-size:0.85rem;color:var(--text-muted);">
+                No photos uploaded yet.
+              </p>
             {% endif %}
           </section>
         </section>
@@ -291,69 +480,38 @@
 
   <script>
     (function () {
-      const recordsToggle = document.getElementById("recordsToggle");
-      const pm = document.getElementById("recordsPM");
-      const list = document.getElementById("serviceHistoryContent");
-      if (!recordsToggle || !pm || !list || recordsToggle.disabled) return;
+      const wrap = document.getElementById("serviceHistoryWrap");
+      const masterPm = document.getElementById("svcMasterPm");
+      if (!wrap) return;
 
-      function setListOpen(open){
-        list.classList.toggle("is-open", open);
-        recordsToggle.setAttribute("aria-expanded", open ? "true" : "false");
-        pm.textContent = open ? "−" : "+";
-        if (!open){
-          document.querySelectorAll("[data-visit]").forEach(v => {
-            v.classList.remove("is-open");
-            const sum = v.querySelector(".visit-summary");
-            if (sum) sum.setAttribute("aria-expanded","false");
-            const plus = v.querySelector("[data-plus]");
-            const cta = v.querySelector("[data-cta]");
-            if (plus) plus.textContent = "+";
-            if (cta) cta.textContent = "Click To See Details";
-          });
-        }
+      function closeAll() {
+        wrap.querySelectorAll(".service-item.is-open").forEach(el => {
+          el.classList.remove("is-open");
+          const pm = el.querySelector(".details-cta .pm");
+          if (pm) pm.textContent = "+";
+        });
       }
 
-      recordsToggle.addEventListener("click", () => {
-        setListOpen(!list.classList.contains("is-open"));
+      function openOne(item) {
+        item.classList.add("is-open");
+        const pm = item.querySelector(".details-cta .pm");
+        if (pm) pm.textContent = "−";
+      }
+
+      // One-at-a-time accordion behavior
+      wrap.addEventListener("click", (e) => {
+        const item = e.target.closest(".service-item");
+        if (!item) return;
+
+        const isOpen = item.classList.contains("is-open");
+        closeAll();
+
+        if (!isOpen) openOne(item);
+
+        // master indicator: if anything open, show − else +
+        const anyOpen = !!wrap.querySelector(".service-item.is-open");
+        if (masterPm) masterPm.textContent = anyOpen ? "−" : "+";
       });
-
-      function setVisitOpen(visit, open){
-        const sum = visit.querySelector(".visit-summary");
-        const plus = visit.querySelector("[data-plus]");
-        const cta = visit.querySelector("[data-cta]");
-        visit.classList.toggle("is-open", open);
-        if (sum) sum.setAttribute("aria-expanded", open ? "true" : "false");
-        if (plus) plus.textContent = open ? "−" : "+";
-        if (cta) cta.textContent = open ? "Click To Hide Details" : "Click To See Details";
-      }
-
-      function openOnly(target){
-        document.querySelectorAll("[data-visit]").forEach(v => {
-          setVisitOpen(v, v === target);
-        });
-      }
-
-      document.querySelectorAll("[data-visit] .visit-summary").forEach(sum => {
-        sum.addEventListener("click", () => {
-          const visit = sum.closest("[data-visit]");
-          if (!visit) return;
-          const isOpen = visit.classList.contains("is-open");
-          if (isOpen){
-            setVisitOpen(visit, false);
-          } else {
-            openOnly(visit);
-          }
-        });
-
-        sum.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            sum.click();
-          }
-        });
-      });
-
-      setListOpen(false);
     })();
   </script>
 </body>
