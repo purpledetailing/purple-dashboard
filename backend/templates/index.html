@@ -650,133 +650,185 @@
         }
       }
 
-      /** ===== Service History: normalize + sort newest-first + dedupe ===== */
+      <script>
+  /** ===== Service History: normalize + sort newest-first + dedupe ===== */
 
-      // Accepts: service_date OR date OR created_at
-      function normalizeServiceDate(entry) {
-        const sd = (entry?.service_date || entry?.date || "").toString().trim();
-        if (sd) return sd.slice(0, 10); // "YYYY-MM-DD" expected (or "YYYY-MM-DDTHH...")
-        const ca = (entry?.created_at || "").toString().trim();
-        if (ca) return ca.slice(0, 10);
-        return "";
-      }
+  // Parse these formats:
+  // - YYYY-MM-DD
+  // - YYYY-MM-DDTHH:mm:ss...
+  // - M/D/YYYY or MM/DD/YYYY
+  // - M-D-YYYY or MM-DD-YYYY
+  function parseDateToMs(raw) {
+    const s = (raw || "").toString().trim();
+    if (!s) return 0;
 
-      function normalizeServiceName(entry) {
-        // new: service_name
-        // old: service_type
-        const n = (entry?.service_name || entry?.service_type || "").toString().trim();
-        return n ? n.toUpperCase() : "—";
-      }
+    // ISO / YYYY-MM-DD...
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) {
+      const y = Number(iso[1]);
+      const m = Number(iso[2]) - 1;
+      const d = Number(iso[3]);
+      const ms = Date.UTC(y, m, d);
+      return Number.isFinite(ms) ? ms : 0;
+    }
 
-      function normalizeServiceDescription(entry) {
-        // new: service_description
-        // old: service_description/service_notes/next_recommended_service etc
-        const d =
-          (entry?.service_description ??
-            entry?.service_notes ??
-            entry?.next_recommended_service ??
-            "") + "";
-        return d.trim();
-      }
+    // M/D/YYYY or M-D-YYYY (handles 1 or 2 digits for month/day)
+    const us = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (us) {
+      const m = Number(us[1]) - 1;
+      const d = Number(us[2]);
+      const y = Number(us[3]);
+      const ms = Date.UTC(y, m, d);
+      return Number.isFinite(ms) ? ms : 0;
+    }
 
-      function sortNewestFirst(history) {
-        return history.sort((a, b) => {
-          const da = normalizeServiceDate(a);
-          const db = normalizeServiceDate(b);
-          if (da !== db) return db.localeCompare(da); // DESC
-          const ca = (a?.created_at || "").toString();
-          const cb = (b?.created_at || "").toString();
-          return cb.localeCompare(ca); // DESC
-        });
-      }
+    // fallback: try Date.parse (last resort)
+    const parsed = Date.parse(s);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
 
-      function dedupeHistory(history) {
-        const seen = new Set();
-        const out = [];
-        for (const e of history) {
-          const dateKey = normalizeServiceDate(e) || "NO_DATE";
-          const nameKey = normalizeServiceName(e);
-          const descKey = normalizeServiceDescription(e).replace(/\s+/g, " ").trim();
-          const key = `${dateKey}__${nameKey}__${descKey}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          out.push(e);
-        }
-        return out;
-      }
+  // Display label: keep it nice + consistent
+  function formatDateForDisplay(entry) {
+    const raw =
+      (entry?.service_date || entry?.date || entry?.created_at || "").toString().trim();
+    if (!raw) return "DATE N/A";
 
-      function toPreviewText(desc) {
-        // make the preview a couple lines, not smashed
-        return (desc || "")
-          .replace(/\r\n/g, "\n")
-          .replace(/\r/g, "\n")
-          .trim();
-      }
+    // If ISO, show as M/D/YYYY
+    const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) {
+      const y = Number(iso[1]);
+      const m = Number(iso[2]);
+      const d = Number(iso[3]);
+      return `${m}/${d}/${y}`;
+    }
 
-      function renderServiceHistory(history) {
-        if (!Array.isArray(history) || history.length === 0) {
-          historyBlock.style.display = "none";
-          historyList.innerHTML = "";
-          return;
-        }
+    // If already M/D/YYYY-ish, return as-is
+    const us = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (us) return `${Number(us[1])}/${Number(us[2])}/${us[3]}`;
 
-        // normalize pipeline: sort + dedupe
-        let cleaned = [...history];
-        cleaned = sortNewestFirst(cleaned);
-        cleaned = dedupeHistory(cleaned);
+    // Otherwise, show first 10 chars safely
+    return raw.slice(0, 10);
+  }
 
-        historyBlock.style.display = "block";
-        historyBlock.open = false;
+  function normalizeServiceName(entry) {
+    const n = (entry?.service_name || entry?.service_type || "").toString().trim();
+    return n ? n.toUpperCase() : "—";
+  }
 
-        historyCountLabel.textContent =
-          cleaned.length === 1 ? "1 visit" : `${cleaned.length} visits`;
+  function normalizeServiceDescription(entry) {
+    const d =
+      (entry?.service_description ??
+        entry?.service_notes ??
+        entry?.next_recommended_service ??
+        "") + "";
+    return d.trim();
+  }
 
-        historyList.innerHTML = cleaned
-          .map((entry) => {
-            const date = normalizeServiceDate(entry) || "DATE N/A";
-            const name = normalizeServiceName(entry);
-            const desc = normalizeServiceDescription(entry);
-            const hasDesc = !!desc.trim();
+  function getEffectiveDateMs(entry) {
+    // prefer service_date/date; fallback to created_at
+    const primary = entry?.service_date || entry?.date || "";
+    const msPrimary = parseDateToMs(primary);
+    if (msPrimary) return msPrimary;
 
-            const safeDate = escapeHtml(date);
-            const safeName = escapeHtml(name);
+    const msCreated = parseDateToMs(entry?.created_at || "");
+    return msCreated || 0;
+  }
 
-            const preview = toPreviewText(desc);
-            const safePreview = escapeHtml(preview);
+  function sortNewestFirst(history) {
+    return history.sort((a, b) => {
+      const ta = getEffectiveDateMs(a);
+      const tb = getEffectiveDateMs(b);
+      if (ta !== tb) return tb - ta; // numeric DESC
 
-            const safeFull = escapeHtml(desc);
+      // tie-breaker: created_at if present
+      const ca = parseDateToMs(a?.created_at || "");
+      const cb = parseDateToMs(b?.created_at || "");
+      return cb - ca;
+    });
+  }
 
-            return `
-              <div class="history-card">
-                <div class="history-top">
-                  <div class="history-date">${safeDate}</div>
-                  <div class="history-name">${safeName}</div>
-                </div>
+  function dedupeHistory(history) {
+    const seen = new Set();
+    const out = [];
+    for (const e of history) {
+      const dateKey = getEffectiveDateMs(e) || 0;
+      const nameKey = normalizeServiceName(e);
+      const descKey = normalizeServiceDescription(e).replace(/\s+/g, " ").trim();
+      const key = `${dateKey}__${nameKey}__${descKey}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(e);
+    }
+    return out;
+  }
 
-                ${
-                  hasDesc
-                    ? `<div class="history-preview">${safePreview}</div>`
-                    : `<div class="muted" style="margin-top:6px;">No description saved.</div>`
-                }
+  function toPreviewText(desc) {
+    return (desc || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .trim();
+  }
 
-                ${
-                  hasDesc
-                    ? `
-                    <details class="history-details">
-                      <summary style="cursor:pointer;font-size:0.8rem;color:#6b7280;">
-                        Click To See More Details
-                      </summary>
-                      <div class="history-pre" style="margin-top:8px;">${safeFull}</div>
-                    </details>
-                  `
-                    : ""
-                }
-              </div>
-            `;
-          })
-          .join("");
-      }
+  function renderServiceHistory(history) {
+    if (!Array.isArray(history) || history.length === 0) {
+      historyBlock.style.display = "none";
+      historyList.innerHTML = "";
+      return;
+    }
 
+    let cleaned = [...history];
+    cleaned = sortNewestFirst(cleaned);
+    cleaned = dedupeHistory(cleaned);
+
+    historyBlock.style.display = "block";
+    historyBlock.open = false;
+    historyCountLabel.textContent =
+      cleaned.length === 1 ? "1 visit" : `${cleaned.length} visits`;
+
+    historyList.innerHTML = cleaned
+      .map((entry) => {
+        const date = formatDateForDisplay(entry);
+        const name = normalizeServiceName(entry);
+        const desc = normalizeServiceDescription(entry);
+        const hasDesc = !!desc.trim();
+
+        const safeDate = escapeHtml(date);
+        const safeName = escapeHtml(name);
+        const preview = toPreviewText(desc);
+        const safePreview = escapeHtml(preview);
+        const safeFull = escapeHtml(desc);
+
+        return `
+          <div class="history-card">
+            <div class="history-top">
+              <div class="history-date">${safeDate}</div>
+              <div class="history-name">${safeName}</div>
+            </div>
+
+            ${
+              hasDesc
+                ? `<div class="history-preview">${safePreview}</div>`
+                : `<div class="muted" style="margin-top:6px;">No description saved.</div>`
+            }
+
+            ${
+              hasDesc
+                ? `
+                  <details class="history-details">
+                    <summary style="cursor:pointer;font-size:0.8rem;color:#6b7280;">
+                      Click To See More Details
+                    </summary>
+                    <div class="history-pre" style="margin-top:8px;">${safeFull}</div>
+                  </details>
+                `
+                : ""
+            }
+          </div>
+        `;
+      })
+      .join("");
+  }
+</script> 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
 
