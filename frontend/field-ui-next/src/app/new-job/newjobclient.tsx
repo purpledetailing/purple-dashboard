@@ -86,7 +86,7 @@ const PACKAGE_DETAILS: Record<string, string[]> = {
     "Gentle Exterior Wash",
     "Gentle Microfiber Towel Dry",
     "Interior and Exterior Window Clean",
-    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents & Door Jams)",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents & Door Jambs)",
     "High Pressure Air Blowout (Eliminate Interior Contamination)",
     "Pet Hair Removal",
     "Interior Vacuum Including Trunk",
