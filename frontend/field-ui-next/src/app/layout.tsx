@@ -3,8 +3,8 @@ import Providers from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-   title: "Purple Intel",
-  description: "Purple Detailing Intel Platform",
+   title: "Purple Intelligence",
+  description: "Purple Intelligence Platform",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
