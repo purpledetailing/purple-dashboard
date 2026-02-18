@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
+type PendingSignup = {
+  business_name?: string;
+  contact_name?: string;
+};
+
 export default function LoginPage() {
   const router = useRouter();
 
@@ -12,14 +17,75 @@ export default function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // ✅ If already logged in, skip login page
+  async function ensureBusinessRow() {
+    // Must have a session user for RLS to allow insert/select
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr) throw userErr;
+
+    const user = userData?.user;
+    if (!user) throw new Error("No user session found. Please log in again.");
+
+    // Check if business row exists for this user
+    const { data: existing, error: fetchErr } = await supabase
+      .from("businesses")
+      .select("id")
+      .eq("owner_user_id", user.id)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+
+    if (existing?.id) return existing.id;
+
+    // Create it using pending signup info (stored during signup)
+    let pending: PendingSignup | null = null;
+    try {
+      const raw = localStorage.getItem("pv_pending_signup");
+      pending = raw ? JSON.parse(raw) : null;
+    } catch {
+      pending = null;
+    }
+
+    const business_name = pending?.business_name?.trim() || "New Business";
+    const contact_name = pending?.contact_name?.trim() || "";
+
+    const { data: inserted, error: insErr } = await supabase
+      .from("businesses")
+      .insert({
+        owner_user_id: user.id,
+        business_name,
+        contact_name,
+      })
+      .select("id")
+      .single();
+
+    if (insErr) throw insErr;
+
+    // Clear pending once we successfully created the business
+    localStorage.removeItem("pv_pending_signup");
+
+    return inserted.id;
+  }
+
+  // ✅ If already logged in, ensure business row, then redirect
   useEffect(() => {
     (async () => {
+      setErr(null);
       const { data, error } = await supabase.auth.getSession();
-      if (!error && data.session) {
+
+      if (error) return;
+      if (!data.session) return;
+
+      setLoading(true);
+      try {
+        await ensureBusinessRow();
         router.replace("/new-job");
+      } catch (e: any) {
+        setErr(e?.message ?? "Login session found, but failed preparing account.");
+      } finally {
+        setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   async function onLogin(e: React.FormEvent) {
@@ -32,15 +98,20 @@ export default function LoginPage() {
       password,
     });
 
-    setLoading(false);
-
     if (error) {
+      setLoading(false);
       setErr(error.message);
       return;
     }
 
-    // ✅ send them to field tool start
-    router.replace("/new-job");
+    try {
+      await ensureBusinessRow();
+      router.replace("/new-job");
+    } catch (e: any) {
+      setErr(e?.message ?? "Signed in, but failed creating business row.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
