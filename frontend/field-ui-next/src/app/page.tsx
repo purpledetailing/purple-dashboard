@@ -1,8 +1,18 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+
 export default function Home() {
-  return (
-    <main style={{ padding: 24 }}>
-      <h1>Field UI</h1>
-      <p>Go to /login</p>
-    </main>
-  );
-}
+  const router = useRouter();
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      router.replace(data.session ? "/new-job" : "/login");
+    })();
+  }, [router]);
+
+  return null;
+} 
