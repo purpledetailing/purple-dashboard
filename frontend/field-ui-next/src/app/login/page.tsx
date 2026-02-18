@@ -1,10 +1,8 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 type PendingSignup = {
   business_name?: string;
@@ -15,60 +13,44 @@ type PendingSignup = {
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-
-  const nextPath = useMemo(() => {
-    const n = searchParams.get("next");
-    // safety: only allow internal paths
-    if (n && n.startsWith("/")) return n;
-    return "/new-job";
-  }, [searchParams]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(true);
 
-  // ✅ On load: if already logged in, ensure business then redirect
+  // ✅ On load: ONLY redirect if there is an active session
   useEffect(() => {
-    let cancelled = false;
+    let alive = true;
 
     (async () => {
-      setChecking(true);
-      setErr(null);
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (!alive) return;
 
-      const { data, error } = await supabase.auth.getSession();
-      if (cancelled) return;
+        if (error) {
+          // don’t crash build/render; just stay on login
+          console.warn("getSession error:", error.message);
+          return;
+        }
 
-      if (error) {
-        setErr(error.message);
-        setChecking(false);
-        return;
+        if (data.session) {
+          const ok = await ensureBusiness();
+          if (!alive) return;
+          if (ok) router.replace("/new-job");
+        }
+      } catch (e: any) {
+        console.warn("login boot error:", e?.message ?? e);
       }
-
-      if (!data.session) {
-        setChecking(false);
-        return; // not logged in, show form
-      }
-
-      const ok = await ensureBusiness();
-      if (cancelled) return;
-
-      setChecking(false);
-      if (ok) router.replace(nextPath);
     })();
 
     return () => {
-      cancelled = true;
+      alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextPath]);
+  }, []);
 
   async function ensureBusiness(): Promise<boolean> {
-    setErr(null);
-
     // 1) get current user
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes.user) {
@@ -86,17 +68,20 @@ export default function LoginPage() {
       .maybeSingle();
 
     if (linkErr) {
-      setErr(`business_users lookup failed: ${linkErr.message}`);
+      setErr(linkErr.message);
       return false;
     }
 
     if (link?.business_id) return true;
 
-    // 3) Need to create business now (first login after signup)
+    // 3) pull business name from localStorage OR user_metadata
     let pending: PendingSignup | null = null;
-    try {
-      pending = JSON.parse(localStorage.getItem("pv_pending_signup") || "null");
-    } catch {}
+
+    if (typeof window !== "undefined") {
+      try {
+        pending = JSON.parse(localStorage.getItem("pv_pending_signup") || "null");
+      } catch {}
+    }
 
     const bizName =
       pending?.business_name?.trim() ||
@@ -108,19 +93,20 @@ export default function LoginPage() {
       return false;
     }
 
-    // 4) call RPC to create business + link user
+    // 4) create business + link user via RPC (recommended for RLS)
     const { data: newBizId, error: rpcErr } = await supabase.rpc(
       "create_business_for_user",
       { business_name: bizName }
     );
 
     if (rpcErr) {
-      setErr(`RPC create_business_for_user failed: ${rpcErr.message}`);
+      setErr(rpcErr.message);
       return false;
     }
 
-    // cleanup pending signup (we’re done)
-    localStorage.removeItem("pv_pending_signup");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("pv_pending_signup");
+    }
 
     return !!newBizId;
   }
@@ -130,33 +116,26 @@ export default function LoginPage() {
     setErr(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-    if (error) {
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+
+      const ok = await ensureBusiness();
+      if (!ok) return;
+
+      router.replace("/new-job");
+    } catch (e: any) {
+      setErr(e?.message ?? "Login failed");
+    } finally {
       setLoading(false);
-      setErr(error.message);
-      return;
     }
-
-    const ok = await ensureBusiness();
-
-    setLoading(false);
-    if (!ok) return;
-
-    router.replace(nextPath);
-  }
-
-  // Optional: small UX while checking existing session
-  if (checking) {
-    return (
-      <div style={{ maxWidth: 420, margin: "48px auto", padding: 16 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800 }}>Business Login</h1>
-        <p style={{ opacity: 0.8, marginTop: 8 }}>Checking session...</p>
-      </div>
-    );
   }
 
   return (
