@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
 export default function SignupPage() {
   const router = useRouter();
+
   const [businessName, setBusinessName] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -18,81 +20,76 @@ export default function SignupPage() {
     setErr(null);
     setLoading(true);
 
-    const res = await fetch("/api/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, businessName, fullName }),
-    });
+    try {
+      // 1) Create auth user
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: {
+            full_name: fullName.trim(),
+            business_name: businessName.trim(),
+          },
+        },
+      });
 
-    const data = await res.json();
-    setLoading(false);
+      if (error) throw error;
 
-    if (!res.ok) {
-      setErr(data?.error || "Signup failed");
-      return;
+      // IMPORTANT: If email confirmations are ON, session may be null here.
+      const userId = data.user?.id;
+      if (!userId) {
+        throw new Error(
+          "Signup created no user id (email confirmation may be enabled). Check Supabase Auth settings."
+        );
+      }
+
+      // 2) Create the business row
+      const { data: biz, error: bizErr } = await supabase
+        .from("businesses")
+        .insert({
+          name: businessName.trim(),
+          owner_user_id: userId, // match your column name
+        })
+        .select("id")
+        .single();
+
+      if (bizErr) throw bizErr;
+
+      // 3) Link the user to the business
+      const { error: linkErr } = await supabase.from("business_users").insert({
+        business_id: biz.id,
+        user_id: userId,
+        role: "owner",
+      });
+
+      if (linkErr) throw linkErr;
+
+      // 4) Send to field tool
+      router.replace("/new-job");
+    } catch (e: any) {
+      console.error("SIGNUP FAILED:", e);
+      setErr(e?.message ?? "Signup failed");
+    } finally {
+      setLoading(false);
     }
-
-    router.push("/login");
   }
 
   return (
-    <div style={{ maxWidth: 460, margin: "48px auto", padding: 16 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 800 }}>Create Business Account</h1>
-      <p style={{ opacity: 0.8, marginTop: 8 }}>
-        Start capturing cosmetic history with PurpleVin.
-      </p>
+    <div style={{ maxWidth: 520, margin: "48px auto", padding: 16 }}>
+      <h1 style={{ fontSize: 34, fontWeight: 900 }}>Create Business Account</h1>
 
-      <form onSubmit={onSignup} style={{ marginTop: 16, display: "grid", gap: 10 }}>
-        <input
-          value={businessName}
-          onChange={(e) => setBusinessName(e.target.value)}
-          placeholder="Business name (e.g., Jared’s Detailing)"
-          style={{ padding: 12, borderRadius: 10, border: "1px solid #ddd" }}
-        />
+      <form onSubmit={onSignup} style={{ display: "grid", gap: 10, marginTop: 18 }}>
+        <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="Business name" />
+        <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your name" />
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
+        <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" type="password" />
 
-        <input
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          placeholder="Your name"
-          style={{ padding: 12, borderRadius: 10, border: "1px solid #ddd" }}
-        />
+        {err && <div style={{ color: "crimson" }}>{err}</div>}
 
-        <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-          autoComplete="email"
-          style={{ padding: 12, borderRadius: 10, border: "1px solid #ddd" }}
-        />
-
-        <input
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          type="password"
-          autoComplete="new-password"
-          style={{ padding: 12, borderRadius: 10, border: "1px solid #ddd" }}
-        />
-
-        {err && <div style={{ color: "crimson", fontSize: 14 }}>{err}</div>}
-
-        <button
-          disabled={loading}
-          style={{
-            padding: 12,
-            borderRadius: 999,
-            border: "none",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
+        <button disabled={loading} style={{ padding: 12, borderRadius: 999, fontWeight: 800 }}>
           {loading ? "Creating..." : "Create Account"}
         </button>
       </form>
-
-      <div style={{ marginTop: 14, fontSize: 14, opacity: 0.85 }}>
-        Already have one? <a href="/login">Log in</a>
-      </div>
     </div>
   );
 } 
