@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
@@ -8,36 +8,73 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const login = async (e: FormEvent) => {
+  async function onLogin(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
+    setErr(null);
+    setLoading(true);
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return setError(error.message);
 
-    router.push("/new-job");
-  };
+    setLoading(false);
+
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
+    router.push("/"); // or /dashboard later
+  }
 
   return (
-    <div style={{ maxWidth: 420, margin: "60px auto" }}>
-      <h2>Login</h2>
+    <div style={{ maxWidth: 420, margin: "48px auto", padding: 16 }}>
+      <h1 style={{ fontSize: 28, fontWeight: 800 }}>Business Login</h1>
+      <p style={{ opacity: 0.8, marginTop: 8 }}>
+        Sign in to PurpleVin.
+      </p>
 
-      <form onSubmit={login}>
-        <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <br />
+      <form onSubmit={onLogin} style={{ marginTop: 16, display: "grid", gap: 10 }}>
         <input
-          type="password"
-          placeholder="Password"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+          autoComplete="email"
+          style={{ padding: 12, borderRadius: 10, border: "1px solid #ddd" }}
+        />
+        <input
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password"
+          type="password"
+          autoComplete="current-password"
+          style={{ padding: 12, borderRadius: 10, border: "1px solid #ddd" }}
         />
-        <br />
-        <button type="submit">Login</button>
+
+        {err && (
+          <div style={{ color: "crimson", fontSize: 14 }}>
+            {err}
+          </div>
+        )}
+
+        <button
+          disabled={loading}
+          style={{
+            padding: 12,
+            borderRadius: 999,
+            border: "none",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          {loading ? "Signing in..." : "Sign In"}
+        </button>
       </form>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      <div style={{ marginTop: 14, fontSize: 14, opacity: 0.85 }}>
+        Need an account? <a href="/signup">Create a business account</a>
+      </div>
     </div>
   );
-}
+} 
