@@ -407,6 +407,20 @@ function NewJobInner() {
   const router = useRouter();
   const { signOut } = useAuth();
 
+ useEffect(() => {
+  const handler = (event: any) => {
+    setMsg(String(event?.reason?.message || event?.reason || event?.message || "Unknown error"));
+  };
+
+  window.addEventListener("unhandledrejection", handler);
+  window.addEventListener("error", handler as any);
+
+  return () => {
+    window.removeEventListener("unhandledrejection", handler);
+    window.removeEventListener("error", handler as any);
+  };
+}, []); 
+
   const [step, setStep] = useState<Step>(1);
   const [services, setServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
