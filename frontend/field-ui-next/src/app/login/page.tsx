@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 type PendingSignup = {
   business_name?: string;
   contact_name?: string;
+  email?: string;
+  created_at?: string;
 };
 
 export default function LoginPage() {
@@ -17,76 +19,77 @@ export default function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function ensureBusinessRow() {
-    // Must have a session user for RLS to allow insert/select
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
-    if (userErr) throw userErr;
-
-    const user = userData?.user;
-    if (!user) throw new Error("No user session found. Please log in again.");
-
-    // Check if business row exists for this user
-    const { data: existing, error: fetchErr } = await supabase
-      .from("businesses")
-      .select("id")
-      .eq("owner_user_id", user.id)
-      .maybeSingle();
-
-    if (fetchErr) throw fetchErr;
-
-    if (existing?.id) return existing.id;
-
-    // Create it using pending signup info (stored during signup)
-    let pending: PendingSignup | null = null;
-    try {
-      const raw = localStorage.getItem("pv_pending_signup");
-      pending = raw ? JSON.parse(raw) : null;
-    } catch {
-      pending = null;
-    }
-
-    const business_name = pending?.business_name?.trim() || "New Business";
-    const contact_name = pending?.contact_name?.trim() || "";
-
-    const { data: inserted, error: insErr } = await supabase
-      .from("businesses")
-      .insert({
-        owner_user_id: user.id,
-        business_name,
-        contact_name,
-      })
-      .select("id")
-      .single();
-
-    if (insErr) throw insErr;
-
-    // Clear pending once we successfully created the business
-    localStorage.removeItem("pv_pending_signup");
-
-    return inserted.id;
-  }
-
-  // ✅ If already logged in, ensure business row, then redirect
+  // If already logged in, ensure business then go to /new-job
   useEffect(() => {
     (async () => {
-      setErr(null);
-      const { data, error } = await supabase.auth.getSession();
-
-      if (error) return;
-      if (!data.session) return;
-
-      setLoading(true);
-      try {
-        await ensureBusinessRow();
-        router.replace("/new-job");
-      } catch (e: any) {
-        setErr(e?.message ?? "Login session found, but failed preparing account.");
-      } finally {
-        setLoading(false);
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        const ok = await ensureBusiness();
+        if (ok) router.replace("/new-job");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
+  }, []);
+
+  async function ensureBusiness(): Promise<boolean> {
+    // 1) get current user
+    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userRes.user) {
+      setErr(userErr?.message ?? "Not logged in.");
+      return false;
+    }
+    const user = userRes.user;
+
+    // 2) do we already have a business link?
+    const { data: link, error: linkErr } = await supabase
+      .from("business_users")
+      .select("business_id")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (linkErr) {
+      setErr(linkErr.message);
+      return false;
+    }
+
+    if (link?.business_id) {
+      // already linked to a business
+      return true;
+    }
+
+    // 3) Need to create business now (first login after signup)
+    let pending: PendingSignup | null = null;
+    try {
+      pending = JSON.parse(localStorage.getItem("pv_pending_signup") || "null");
+    } catch {}
+
+    const bizName =
+      pending?.business_name?.trim() ||
+      (user.user_metadata?.business_name as string | undefined)?.trim() ||
+      "";
+
+    if (!bizName) {
+      setErr("No business name found to create the account. Please sign up again.");
+      return false;
+    }
+
+    // 4) call RPC to create business + link user
+    const { data: newBizId, error: rpcErr } = await supabase.rpc(
+      "create_business_for_user",
+      { business_name: bizName }
+    );
+
+    if (rpcErr) {
+      setErr(rpcErr.message);
+      return false;
+    }
+
+    // cleanup pending signup (we’re done)
+    localStorage.removeItem("pv_pending_signup");
+
+    return !!newBizId;
+  }
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -104,14 +107,13 @@ export default function LoginPage() {
       return;
     }
 
-    try {
-      await ensureBusinessRow();
-      router.replace("/new-job");
-    } catch (e: any) {
-      setErr(e?.message ?? "Signed in, but failed creating business row.");
-    } finally {
-      setLoading(false);
-    }
+    const ok = await ensureBusiness();
+
+    setLoading(false);
+
+    if (!ok) return;
+
+    router.replace("/new-job");
   }
 
   return (
