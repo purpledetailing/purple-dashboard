@@ -16,7 +16,7 @@ CORS(app)
 # ============================================================
 # DEBUG: confirm which file is running in production
 # ============================================================
-APP_VERSION = "2026-02-19-secure-login-v2"
+APP_VERSION = "2026-02-19-secure-login-v2-login-css-fix"
 
 @app.route("/version")
 def version():
@@ -47,19 +47,19 @@ USE_SUPABASE = env_flag("USE_SUPABASE", "1")
 
 SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
-SUPABASE_ANON_KEY = (os.environ.get("SUPABASE_ANON_KEY") or "").strip()  # ✅ REQUIRED for login/user validation
+SUPABASE_ANON_KEY = (os.environ.get("SUPABASE_ANON_KEY") or "").strip()  # REQUIRED for login/user validation
 
 LEGACY_TABLE = os.environ.get("LEGACY_TABLE", "customer_data_legacy").strip()
 JOBS_LEGACY_TABLE = os.environ.get("JOBS_LEGACY_TABLE", "customer_jobs_legacy").strip()
 PHOTO_BUCKET = os.environ.get("PHOTO_BUCKET", "vehicle-photos").strip()
 
 # ---------------------------
-# Secure auth cookie
+# Secure auth cookie (server-side gate)
 # ---------------------------
 AUTH_COOKIE_NAME = os.environ.get("SECURE_AUTH_COOKIE", "purple_secure_at").strip()
-COOKIE_SECURE = env_flag("COOKIE_SECURE", "1")  # keep 1 in prod
-COOKIE_SAMESITE = (os.environ.get("COOKIE_SAMESITE") or "Lax").strip()  # Lax is fine for standard login
-COOKIE_DOMAIN = (os.environ.get("COOKIE_DOMAIN") or "").strip()  # optional: "secure.purplevin.com" or ".purplevin.com"
+COOKIE_SECURE = env_flag("COOKIE_SECURE", "1")  # set 1 in prod
+COOKIE_SAMESITE = (os.environ.get("COOKIE_SAMESITE") or "Lax").strip()
+COOKIE_DOMAIN = (os.environ.get("COOKIE_DOMAIN") or "").strip()  # e.g. "secure.purplevin.com" or ".purplevin.com"
 
 def supabase_headers_service_role():
     return {
@@ -116,6 +116,30 @@ def fmt_date(iso_str: str) -> str:
     except Exception:
         return str(iso_str)
 
+def _safe_str(v):
+    return "" if v is None else str(v)
+
+def _date_to_str(v):
+    """
+    Accepts date, datetime, or ISO-like strings and returns a friendly date string.
+    Falls back to raw string if it can't parse.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, datetime):
+        return v.date().isoformat()
+    s = str(v).strip()
+    if not s:
+        return ""
+    try:
+        s2 = s.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s2)
+        return dt.date().isoformat()
+    except Exception:
+        return s
+
 def first_truthy(*vals):
     for v in vals:
         if v is None:
@@ -140,18 +164,10 @@ def scrub_empty_history_rows(history_rows):
     return out
 
 def wants_json():
-    # If caller expects JSON
     accept = (request.headers.get("Accept") or "").lower()
     if "application/json" in accept:
         return True
-    # XHR/fetch convention
-    xrw = (request.headers.get("X-Requested-With") or "").lower()
-    if xrw == "xmlhttprequest":
-        return True
-    # treat internal API routes as JSON responses
-    if request.path.startswith("/search") or request.path.startswith("/api/"):
-        return True
-    return False
+    return request.path.startswith("/search") or request.path.startswith("/api/")
 
 # ---------------------------
 # Supabase REST helpers (PostgREST uses SERVICE ROLE)
@@ -162,6 +178,16 @@ def sb_get(path: str, params: dict, timeout: int = 20):
     if r.status_code != 200:
         raise RuntimeError(f"Supabase GET {path} failed: {r.status_code} {r.text}")
     return r.json() or []
+
+def sb_post(path: str, json_body: dict, timeout: int = 20):
+    url = f"{SUPABASE_URL}/rest/v1/{path.lstrip('/')}"
+    r = requests.post(url, headers=supabase_headers_service_role(), json=json_body, timeout=timeout)
+    if r.status_code not in (200, 201, 204):
+        raise RuntimeError(f"Supabase POST {path} failed: {r.status_code} {r.text}")
+    try:
+        return r.json()
+    except Exception:
+        return None
 
 # ---------------------------
 # Supabase Auth helpers (ANON KEY)
@@ -178,7 +204,7 @@ def sb_auth_password_login(email: str, password: str, timeout: int = 20):
     payload = {"email": (email or "").strip(), "password": (password or "").strip()}
 
     headers = supabase_headers_anon()
-    # Supabase expects api key + bearer (anon) for this endpoint
+    # Supabase expects Authorization: Bearer <anon> for the token endpoint
     headers["Authorization"] = f"Bearer {SUPABASE_ANON_KEY}"
 
     r = requests.post(url, headers=headers, json=payload, timeout=timeout)
@@ -189,7 +215,7 @@ def sb_auth_password_login(email: str, password: str, timeout: int = 20):
 def sb_auth_user(access_token: str, timeout: int = 15):
     """
     Validate an access token by calling /auth/v1/user.
-    Returns user json on success, else None.
+    Returns user json on success.
     """
     if not supabase_auth_ready():
         raise RuntimeError("Supabase auth not configured (SUPABASE_ANON_KEY missing).")
@@ -205,10 +231,7 @@ def sb_auth_user(access_token: str, timeout: int = 15):
     r = requests.get(url, headers=headers, timeout=timeout)
     if r.status_code != 200:
         return None
-    try:
-        return r.json() or None
-    except Exception:
-        return None
+    return r.json() or None
 
 def set_auth_cookie(resp, access_token: str):
     cookie_kwargs = {
@@ -220,7 +243,7 @@ def set_auth_cookie(resp, access_token: str):
     if COOKIE_DOMAIN:
         cookie_kwargs["domain"] = COOKIE_DOMAIN
 
-    # access_token expiry is typically ~1 hour; match cookie window
+    # Supabase access tokens typically expire ~1 hour
     resp.set_cookie(AUTH_COOKIE_NAME, access_token, max_age=60 * 60, **cookie_kwargs)
     return resp
 
@@ -236,7 +259,7 @@ def current_access_token():
 
 def require_auth(fn):
     """
-    Protect internal pages. Public VIN report stays untouched.
+    Protect internal pages.
     - If JSON/API request -> 401
     - If browser -> redirect to /login
     """
@@ -244,14 +267,13 @@ def require_auth(fn):
     def wrapper(*args, **kwargs):
         at = current_access_token()
         user = None
-
         try:
             user = sb_auth_user(at) if at else None
         except Exception:
             user = None
 
         if user:
-            request.supabase_user = user  # optional attach
+            request.supabase_user = user
             return fn(*args, **kwargs)
 
         if wants_json():
@@ -307,12 +329,15 @@ def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
     )
     if r.status_code != 200:
         return None
+
     data = r.json() or {}
     signed_path = data.get("signedURL") or data.get("signedUrl") or ""
     if not signed_path:
         return None
+
     if signed_path.startswith("http"):
         return signed_path
+
     if signed_path.startswith("/object/"):
         signed_path = "/storage/v1" + signed_path
     if not signed_path.startswith("/storage/v1/"):
@@ -420,7 +445,7 @@ def sb_customer_by_id(customer_id: str):
     return rows[0] if rows else None
 
 # ============================================================
-# ✅ Pull job history from customer_jobs_legacy
+# Pull job history from customer_jobs_legacy
 # ============================================================
 def sb_jobs_legacy_by_vin(vin: str, limit: int = 50):
     vin = normalize_vin(vin)
@@ -454,7 +479,7 @@ def build_history_from_jobs_legacy(vin: str):
     return scrub_empty_history_rows(out)
 
 # ============================================================
-# ✅ Merge profile
+# Merge profile
 # ============================================================
 def merged_profile_by_vin(vin: str):
     vin = normalize_vin(vin)
@@ -475,12 +500,10 @@ def merged_profile_by_vin(vin: str):
     status = first_truthy((legacy or {}).get("status"), (veh or {}).get("status"), "")
     notes = first_truthy((legacy or {}).get("notes"), (veh or {}).get("notes"), "")
 
-    # --- Customer fields (legacy primary) ---
     customer_name = first_truthy((legacy or {}).get("customer_name"), "")
     phone_number = first_truthy((legacy or {}).get("phone_number"), "")
     email = first_truthy((legacy or {}).get("email"), "")
 
-    # fallback: if customer missing in legacy, use last normalized job’s customer (optional)
     latest_customer = None
     if veh and veh.get("id"):
         try:
@@ -495,10 +518,8 @@ def merged_profile_by_vin(vin: str):
     if not phone_number and latest_customer:
         phone_number = first_truthy(latest_customer.get("phone"), "")
 
-    # ✅ Service history
     service_history = build_history_from_jobs_legacy(vin)
 
-    # --- Photos (latest batch only, max 8) ---
     latest_batch_id = ""
     photo_urls = []
     photo_count = 0
@@ -559,9 +580,8 @@ def health():
         "jobs_legacy_table": JOBS_LEGACY_TABLE,
         "use_supabase": USE_SUPABASE,
         "cookie_secure": bool(COOKIE_SECURE),
-        "cookie_domain": COOKIE_DOMAIN or None,
         "cookie_samesite": COOKIE_SAMESITE,
-        "auth_cookie_name": AUTH_COOKIE_NAME,
+        "cookie_domain": COOKIE_DOMAIN or None,
     })
 
 @app.route("/health/supabase")
@@ -575,7 +595,7 @@ def health_supabase():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 # ---------------------------
-# ✅ Secure login (protects internal use)
+# Secure login (protects internal use)
 # ---------------------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -594,7 +614,7 @@ def login():
         except Exception:
             pass
 
-        # minimal inline UI (works even if you don't want a template yet)
+        # ✅ Inline login UI (CSS fixed so inputs never overflow)
         return f"""
 <!doctype html>
 <html>
@@ -603,14 +623,67 @@ def login():
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Secure Login · PurpleVin</title>
   <style>
-    body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#0b1020; color:#e5e7eb; display:flex; min-height:100vh; align-items:center; justify-content:center; padding:24px; }}
-    .card {{ width:100%; max-width:420px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10); border-radius:18px; padding:20px; }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background:#0b1020;
+      color:#e5e7eb;
+      display:flex;
+      min-height:100vh;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      margin:0;
+    }}
+    .card {{
+      width:100%;
+      max-width:420px;
+      background:rgba(255,255,255,0.04);
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius:18px;
+      padding:20px;
+      overflow:hidden;
+    }}
     h1 {{ margin:0 0 6px; font-size:18px; }}
     p {{ margin:0 0 16px; opacity:0.85; font-size:13px; }}
     label {{ display:block; font-size:12px; opacity:0.85; margin:10px 0 6px; }}
-    input {{ width:100%; height:44px; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.06); color:#fff; padding:0 12px; }}
-    button {{ width:100%; height:44px; border-radius:12px; border:1px solid rgba(168,85,247,0.35); background:rgba(168,85,247,0.18); color:#f5f3ff; font-weight:800; cursor:pointer; margin-top:14px; }}
+    form {{ width:100%; }}
+    input {{
+      width:100%;
+      max-width:100%;
+      height:44px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,0.12);
+      background:rgba(255,255,255,0.06);
+      color:#fff;
+      padding:0 12px;
+      display:block;
+      outline:none;
+    }}
+    input:focus {{
+      border-color: rgba(168,85,247,0.65);
+      box-shadow: 0 0 0 2px rgba(168,85,247,0.22);
+    }}
+    button {{
+      width:100%;
+      max-width:100%;
+      box-sizing:border-box;
+      display:block;
+      height:44px;
+      border-radius:12px;
+      border:1px solid rgba(168,85,247,0.35);
+      background:rgba(168,85,247,0.18);
+      color:#f5f3ff;
+      font-weight:800;
+      cursor:pointer;
+      margin-top:14px;
+    }}
+    button:hover {{
+      background: rgba(168,85,247,0.28);
+      border-color: rgba(168,85,247,0.55);
+    }}
     .small {{ margin-top:12px; font-size:12px; opacity:0.7; }}
+    code {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }}
   </style>
 </head>
 <body>
@@ -656,17 +729,13 @@ def logout():
     return resp
 
 # ---------------------------
-# ✅ Secure home + secure vin search (internal)
+# Secure home + secure vin search (internal)
 # ---------------------------
 @app.route("/")
 @require_auth
 def home():
-    # ✅ pass these so index can init supabase client later (we’ll do next)
-    return render_template(
-        "index.html",
-        supabase_url=SUPABASE_URL,
-        supabase_anon_key=SUPABASE_ANON_KEY,
-    )
+    # ✅ If your index.html expects these template vars (for supabase-js client usage)
+    return render_template("index.html", supabase_url=SUPABASE_URL, supabase_anon_key=SUPABASE_ANON_KEY)
 
 @app.route("/search", methods=["GET"])
 @require_auth
@@ -707,7 +776,7 @@ def search():
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------
-# ✅ Public report stays PUBLIC and UNTOUCHED
+# Public report stays PUBLIC and UNTOUCHED
 # ---------------------------
 @app.route("/vin/<value>")
 def public_report(value):
@@ -786,4 +855,5 @@ def public_report(value):
 # ============================================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=False) 
+    app.run(host="0.0.0.0", port=port, debug=False)
+```0 
