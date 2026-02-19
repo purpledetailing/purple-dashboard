@@ -351,8 +351,8 @@ function normalizeServiceDateInput(raw: string) {
 function dateOnlyToIsoMidday(dateOnly: string) {
   const d = (dateOnly || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return new Date().toISOString();
-  return new Date(`${d}T12:00:00`).toISOString();
-}
+  return `${d}T12:00:00.000Z`;
+} 
 
 /** Extract city/state from "..., Wake Forest, NC 27587" */
 function extractCityState(address: string): { city: string | null; state: string | null } {
