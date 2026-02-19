@@ -7,8 +7,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
 /** =========================
- * Types
- * ========================= */
+* Types
+* ========================= */
 type Service = {
   id: string;
   name: string;
@@ -66,8 +66,8 @@ type PendingPhoto = {
 };
 
 /** =========================
- * Config / Constants
- * ========================= */
+* Config / Constants
+* ========================= */
 const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
   full: "full_service",
   interior: "interior_service",
@@ -78,8 +78,8 @@ const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
 const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
 
 /** =========================
- * Package descriptions
- * ========================= */
+* Package descriptions
+* ========================= */
 const PACKAGE_DETAILS: Record<string, string[]> = {
   "PURPLE RAIN": [
     "Gentle Exterior Wash",
@@ -203,8 +203,8 @@ function buildServiceDescription(serviceName: string, addonNames: string[]) {
 }
 
 /** =========================
- * Helpers
- * ========================= */
+* Helpers
+* ========================= */
 function centsToDollars(cents: number | null) {
   if (cents === null || cents === undefined) return "";
   return (cents / 100).toFixed(2);
@@ -323,7 +323,9 @@ function removeFromQueue(id: string) {
 }
 
 function bumpAttempt(id: string) {
-  const q = getQueue().map((x) => (x.id === id ? { ...x, attempt_count: x.attempt_count + 1 } : x));
+  const q = getQueue().map((x) =>
+    x.id === id ? { ...x, attempt_count: x.attempt_count + 1 } : x
+  );
   setQueue(q);
 }
 
@@ -348,11 +350,55 @@ function normalizeServiceDateInput(raw: string) {
   return v;
 }
 
+/**
+* YYYY-MM-DD for "today" in America/New_York (fixes EST/EDT vs UTC)
+*/
+function todayDateOnlyNY(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  if (!y || !m || !d) return new Date().toISOString().slice(0, 10);
+  return `${y}-${m}-${d}`;
+}
+
+/**
+* ISO timestamp for a date-only. We use midday to avoid timezone edge cases.
+*/
 function dateOnlyToIsoMidday(dateOnly: string) {
   const d = (dateOnly || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return new Date().toISOString();
-  return `${d}T12:00:00.000Z`;
-} 
+  return new Date(`${d}T12:00:00`).toISOString();
+}
+
+/**
+* Convert ISO -> YYYY-MM-DD in America/New_York.
+* Used to guarantee legacy service_date is never NULL.
+*/
+function isoToDateOnlyNY(iso: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(iso));
+
+    const y = parts.find((p) => p.type === "year")?.value;
+    const m = parts.find((p) => p.type === "month")?.value;
+    const d = parts.find((p) => p.type === "day")?.value;
+    if (!y || !m || !d) return "";
+    return `${y}-${m}-${d}`;
+  } catch {
+    return "";
+  }
+}
 
 /** Extract city/state from "..., Wake Forest, NC 27587" */
 function extractCityState(address: string): { city: string | null; state: string | null } {
@@ -375,8 +421,8 @@ function extractCityState(address: string): { city: string | null; state: string
 }
 
 /** =========================
- * Photo compression (client-side)
- * ========================= */
+* Photo compression (client-side)
+* ========================= */
 async function compressImageFile(
   file: File,
   opts?: { maxDim?: number; quality?: number }
@@ -423,8 +469,8 @@ async function compressImageFile(
 }
 
 /** =========================
- * Export Wrapper
- * ========================= */
+* Export Wrapper
+* ========================= */
 export default function NewJobPage() {
   return (
     <Protected>
@@ -434,8 +480,8 @@ export default function NewJobPage() {
 }
 
 /** =========================
- * Main Component
- * ========================= */
+* Main Component
+* ========================= */
 function NewJobInner() {
   const router = useRouter();
   const { signOut } = useAuth();
@@ -533,7 +579,10 @@ function NewJobInner() {
   }, []);
 
   const packageCategory = SERVICE_TYPE_TO_CATEGORY[serviceType];
-  const packages = useMemo(() => services.filter((s) => s.category === packageCategory), [services, packageCategory]);
+  const packages = useMemo(
+    () => services.filter((s) => s.category === packageCategory),
+    [services, packageCategory]
+  );
   const addons = useMemo(() => services.filter((s) => s.category === "addon"), [services]);
 
   useEffect(() => {
@@ -546,7 +595,10 @@ function NewJobInner() {
     }
   }, [packages, selectedPackageId]);
 
-  const selectedAddons = useMemo(() => addons.filter((a) => selectedAddonIds[a.id]), [addons, selectedAddonIds]);
+  const selectedAddons = useMemo(
+    () => addons.filter((a) => selectedAddonIds[a.id]),
+    [addons, selectedAddonIds]
+  );
   const filteredAddons = useMemo(() => {
     const q = addonQuery.trim().toLowerCase();
     if (!q) return addons;
@@ -787,7 +839,10 @@ function NewJobInner() {
     if (findErr) throw findErr;
 
     if (existing?.id) {
-      const { error: updErr } = await supabase.from("customer_data_legacy").update(payload).eq("id", existing.id);
+      const { error: updErr } = await supabase
+        .from("customer_data_legacy")
+        .update(payload)
+        .eq("id", existing.id);
       if (updErr) throw updErr;
     } else {
       const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
@@ -822,7 +877,8 @@ function NewJobInner() {
         service_description: service_description || null,
         service_date,
       },
-      { onConflict: "vin,service_date,service_name", ignoreDuplicates: true }
+      // ✅ include business_id in conflict key
+      { onConflict: "business_id,vin,service_date,service_name", ignoreDuplicates: true }
     );
 
     if (error) console.error("insertCustomerJobLegacy failed:", error);
@@ -895,7 +951,12 @@ function NewJobInner() {
         model: decoded.model ?? null,
       };
 
-      const { data, error } = await supabase.from("vehicles").update(patch).eq("id", vehicleId).select("id,vin,year,make,model").single();
+      const { data, error } = await supabase
+        .from("vehicles")
+        .update(patch)
+        .eq("id", vehicleId)
+        .select("id,vin,year,make,model")
+        .single();
 
       if (error) {
         setVinStatus("VEHICLE IDENTIFIED, BUT FAILED TO SAVE DETAILS.");
@@ -1029,6 +1090,12 @@ function NewJobInner() {
         ? dateOnlyToIsoMidday(payload.service_date)
         : payload.performed_at || new Date().toISOString();
 
+    // ✅ GUARANTEE legacy date-only even if tech leaves it blank
+    const serviceDateFinal =
+      payload.service_date && normalizeServiceDateInput(payload.service_date)
+        ? payload.service_date
+        : isoToDateOnlyNY(performedAtIso) || todayDateOnlyNY();
+
     const pkg = services.find((s) => s.id === payload.selected_package_id);
     const pkgNameRaw = pkg?.name ?? "SERVICE";
     const pkgName = capsTrim(pkgNameRaw);
@@ -1054,21 +1121,25 @@ function NewJobInner() {
       work_done: description ? `${pkgName}\n${description}` : pkgName,
     });
 
-    if (payload.service_date && normalizeServiceDateInput(payload.service_date)) {
-      await insertCustomerJobLegacy({
-        businessId,
-        vin: v,
-        serviceName: pkgName,
-        serviceDescription: description,
-        serviceDate: payload.service_date,
-      });
-    }
+    // ✅ ALWAYS write legacy job history (no NULL service_date path)
+    await insertCustomerJobLegacy({
+      businessId,
+      vin: v,
+      serviceName: pkgName,
+      serviceDescription: description,
+      serviceDate: serviceDateFinal,
+    });
 
     // Normalized mirror best-effort
     try {
       let vehicleId: string | null = null;
 
-      const foundVeh = await supabase.from("vehicles").select("id,vin,year,make,model").eq("vin", v).limit(1).maybeSingle();
+      const foundVeh = await supabase
+        .from("vehicles")
+        .select("id,vin,year,make,model")
+        .eq("vin", v)
+        .limit(1)
+        .maybeSingle();
 
       if (!foundVeh.error && foundVeh.data?.id) {
         vehicleId = foundVeh.data.id as string;
@@ -1564,7 +1635,9 @@ function NewJobInner() {
                     disabled={!canGoStep2()}
                     className={[
                       "text-sm font-semibold transition touch-manipulation",
-                      canGoStep2() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                      canGoStep2()
+                        ? "text-purple-200 hover:text-purple-100"
+                        : "text-slate-500 cursor-not-allowed",
                     ].join(" ")}
                   >
                     CONTINUE →
@@ -1654,7 +1727,9 @@ function NewJobInner() {
                     disabled={!canGoStep3()}
                     className={[
                       "text-sm font-semibold transition",
-                      canGoStep3() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                      canGoStep3()
+                        ? "text-purple-200 hover:text-purple-100"
+                        : "text-slate-500 cursor-not-allowed",
                     ].join(" ")}
                   >
                     CONTINUE →
@@ -1760,7 +1835,9 @@ function NewJobInner() {
                   </div>
                 )}
 
-                <div className="mt-3 text-[11px] text-slate-300/80">{photoMsg ? photoMsg : `Selected: ${photos.length}/8`}</div>
+                <div className="mt-3 text-[11px] text-slate-300/80">
+                  {photoMsg ? photoMsg : `Selected: ${photos.length}/8`}
+                </div>
 
                 <div className="mt-2">
                   <button
@@ -1769,7 +1846,9 @@ function NewJobInner() {
                     disabled={photoBusy || photos.length === 0}
                     className={[
                       "w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3 text-sm font-extrabold transition",
-                      photoBusy || photos.length === 0 ? "text-slate-500 cursor-not-allowed" : "text-slate-200 hover:ring-white/20 hover:text-white",
+                      photoBusy || photos.length === 0
+                        ? "text-slate-500 cursor-not-allowed"
+                        : "text-slate-200 hover:ring-white/20 hover:text-white",
                     ].join(" ")}
                   >
                     CLEAR PHOTOS
@@ -1836,7 +1915,11 @@ function NewJobInner() {
 
                   {addonsOpen && (
                     <div className="mt-3">
-                      <SchemaInput value={addonQuery} onChange={(e) => setAddonQuery(e.target.value)} placeholder="Search add-ons…" />
+                      <SchemaInput
+                        value={addonQuery}
+                        onChange={(e) => setAddonQuery(e.target.value)}
+                        placeholder="Search add-ons…"
+                      />
                       <div className="mt-3 space-y-2">
                         {filteredAddons.map((a) => (
                           <button
@@ -1853,9 +1936,13 @@ function NewJobInner() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm font-extrabold truncate">{a.name}</div>
-                                {a.price_note ? <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div> : null}
+                                {a.price_note ? (
+                                  <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div>
+                                ) : null}
                               </div>
-                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">{suggestedRangeText(a)}</div>
+                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">
+                                {suggestedRangeText(a)}
+                              </div>
                             </div>
                           </button>
                         ))}
@@ -1902,7 +1989,8 @@ function NewJobInner() {
                   type="date"
                   value={serviceDate}
                   onChange={(e) => setServiceDate(normalizeServiceDateInput(e.target.value))}
-                  max={new Date().toISOString().slice(0, 10)}
+                  // ✅ FIX: avoid UTC "tomorrow" issue in EST/EDT
+                  max={todayDateOnlyNY()}
                 />
                 <div className="mt-2 text-[11px] text-slate-300/80">
                   Leave blank to use today. Set a past date to backfill legacy maintenance history for this VIN.
@@ -1962,8 +2050,8 @@ function NewJobInner() {
 }
 
 /** =========================
- * Schema UI components
- * ========================= */
+* Schema UI components
+* ========================= */
 function SchemaCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-3xl bg-white/[0.03] ring-1 ring-white/10 overflow-hidden">
