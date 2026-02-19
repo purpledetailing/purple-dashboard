@@ -19,7 +19,8 @@
         box-sizing: border-box;
         margin: 0;
         padding: 0;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
       }
       body {
         min-height: 100vh;
@@ -55,7 +56,7 @@
         opacity: 0.95;
       }
 
-      /* ✅ NEW: logout button */
+      /* ✅ Logout button */
       .logout-btn {
         position: absolute;
         right: 0;
@@ -128,7 +129,8 @@
         color: var(--text-main);
         font-size: 0.95rem;
         outline: none;
-        transition: border 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+        transition: border 0.15s ease, box-shadow 0.15s ease,
+          background 0.15s ease;
       }
       .search-input::placeholder {
         color: #9ca3af;
@@ -151,7 +153,8 @@
         align-items: center;
         gap: 6px;
         box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
-        transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.12s ease;
+        transition: transform 0.1s ease, box-shadow 0.15s ease,
+          filter 0.12s ease;
         white-space: nowrap;
       }
       .search-button:hover {
@@ -175,7 +178,12 @@
       .divider {
         height: 1px;
         width: 100%;
-        background: linear-gradient(90deg, transparent, var(--border-soft), transparent);
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--border-soft),
+          transparent
+        );
         margin: 14px 0;
       }
       .status {
@@ -377,6 +385,7 @@
         color: var(--text-muted);
       }
 
+      /* Service history display helpers */
       .history-card {
         border-radius: 10px;
         border: 1px solid rgba(209, 213, 219, 1);
@@ -431,9 +440,7 @@
   <body>
     <div class="container">
       <header class="header">
-        <!-- ✅ NEW: Logout -->
         <button id="logoutBtn" class="logout-btn" type="button">Logout</button>
-
         <div class="logo-text"><span>Purple</span> Dashboard</div>
         <p class="subheading">
           Internal vehicle profile & service gallery — powered by Purple Intelligence
@@ -559,44 +566,10 @@
       </main>
     </div>
 
-    <!-- ✅ NEW: Supabase Auth (guard + logout) -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      // Injected from Flask render_template(...)
-      const SUPABASE_URL = "{{ supabase_url }}";
-      const SUPABASE_ANON_KEY = "{{ supabase_anon_key }}";
-
-      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-        console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY in template variables.");
-      }
-
-      const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-      async function requireSessionOrRedirect() {
-        try {
-          const { data } = await sb.auth.getSession();
-          const session = data?.session;
-          if (!session) {
-            window.location.href = "/login";
-            return false;
-          }
-          return true;
-        } catch (e) {
-          window.location.href = "/login";
-          return false;
-        }
-      }
-
-      // Run guard ASAP
-      requireSessionOrRedirect();
-
-      // Logout button
-      document.getElementById("logoutBtn")?.addEventListener("click", async () => {
-        try {
-          await sb.auth.signOut();
-        } finally {
-          window.location.href = "/login";
-        }
+      // ✅ Logout uses server cookie-based auth
+      document.getElementById("logoutBtn")?.addEventListener("click", () => {
+        window.location.href = "/logout";
       });
     </script>
 
@@ -627,7 +600,6 @@
 
       const shareLinkEl = document.getElementById("shareLink");
       const copyShareBtn = document.getElementById("copyShareBtn");
-      const shareHintEl = document.getElementById("shareHint");
 
       const photoGrid = document.getElementById("photoGrid");
       const noPhotosMsg = document.getElementById("noPhotosMsg");
@@ -711,8 +683,112 @@
         }
       }
 
-      /** ===== Service History: normalize + sort newest-first + dedupe ===== */
-      // (keep your existing history logic below — unchanged)
+      // ✅ IMPORTANT: always include credentials so cookies are sent
+      async function fetchWithAuth(url) {
+        const r = await fetch(url, { credentials: "include" });
+        if (r.status === 401) {
+          window.location.href = "/login";
+          throw new Error("AUTH REQUIRED");
+        }
+        return r;
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const vin = (vinInput.value || "").trim().toUpperCase();
+        if (vin.length !== 17) {
+          setStatus("VIN must be 17 characters.", "error");
+          return;
+        }
+
+        setStatus("Searching...", "");
+        resultsSection.style.display = "none";
+
+        try {
+          const r = await fetchWithAuth(`/search?vin=${encodeURIComponent(vin)}`);
+          const payload = await r.json();
+
+          if (!r.ok) {
+            setStatus(payload?.error || "Search failed.", "error");
+            return;
+          }
+
+          // Fill fields
+          customerNameEl.textContent = payload.customer_name || "—";
+          phoneNumberEl.textContent = payload.phone_number || "";
+          addressEl.textContent = payload.address || "";
+          zipCodeEl.textContent = payload.zip_code || "";
+          emailAddressEl.textContent = payload.email || "";
+          mmYearEl.textContent = `${payload.make || ""} ${payload.model || ""} ${payload.year || ""}`.trim();
+          vinNumberEl.textContent = payload.vin_number || vin;
+
+          statusBadgeEl.innerHTML = makeStatusBadge(payload.status || "");
+
+          // Notes
+          const notes = (payload.notes || "").trim();
+          if (notes) {
+            notesText.textContent = notes;
+            notesBlock.style.display = "block";
+          } else {
+            notesBlock.style.display = "none";
+            notesText.textContent = "";
+          }
+
+          // Share link
+          shareLinkEl.value = payload.customer_portal_url || `${getPublicBaseUrl()}/vin/${vin}`;
+
+          // Copy
+          copyShareBtn.onclick = async () => {
+            const ok = await copyToClipboard(shareLinkEl.value);
+            setStatus(ok ? "Copied portal link." : "Copy failed.", ok ? "ok" : "error");
+          };
+
+          // Photos
+          renderPhotos(payload);
+
+          // Service history (leave your existing logic below if you have it)
+          // For now: just show count + basic list if present
+          const history = Array.isArray(payload.service_history) ? payload.service_history : [];
+          if (history.length) {
+            historyCountLabel.textContent = `${history.length} record(s)`;
+            historyList.innerHTML = history.map((h) => {
+              const d = escapeHtml(h.date || "");
+              const t = escapeHtml(h.service_type || "");
+              const desc = escapeHtml(h.service_description || "");
+              const notes = escapeHtml(h.service_notes || "");
+              const hasDetails = Boolean(desc || notes);
+
+              return `
+                <div class="history-card">
+                  <div class="history-top">
+                    <div class="history-name">${t || "SERVICE"}</div>
+                    <div class="history-date">${d}</div>
+                  </div>
+                  ${desc ? `<div class="history-preview">${desc}</div>` : ``}
+                  ${hasDetails ? `
+                    <div class="history-details">
+                      ${desc ? `<div class="history-pre"><b>Details:</b>\n${desc}</div>` : ``}
+                      ${notes ? `<div class="history-pre" style="margin-top:8px;"><b>Notes:</b>\n${notes}</div>` : ``}
+                    </div>
+                  ` : ``}
+                </div>
+              `;
+            }).join("");
+            historyBlock.style.display = "block";
+          } else {
+            historyBlock.style.display = "none";
+            historyList.innerHTML = "";
+            historyCountLabel.textContent = "";
+          }
+
+          resultsSection.style.display = "block";
+          setStatus("Loaded.", "ok");
+
+        } catch (err) {
+          setStatus(String(err?.message || err || "Error"), "error");
+        }
+      });
     </script>
   </body>
 </html> 
