@@ -16,7 +16,7 @@ CORS(app)
 # ============================================================
 # DEBUG: confirm which file is running in production
 # ============================================================
-APP_VERSION = "2026-02-19-secure-login-v1"
+APP_VERSION = "2026-02-19-secure-login-v2"
 
 @app.route("/version")
 def version():
@@ -57,9 +57,9 @@ PHOTO_BUCKET = os.environ.get("PHOTO_BUCKET", "vehicle-photos").strip()
 # Secure auth cookie
 # ---------------------------
 AUTH_COOKIE_NAME = os.environ.get("SECURE_AUTH_COOKIE", "purple_secure_at").strip()
-COOKIE_SECURE = env_flag("COOKIE_SECURE", "1")  # set 1 in prod
-COOKIE_SAMESITE = (os.environ.get("COOKIE_SAMESITE") or "Lax").strip()  # Lax is fine for normal login
-COOKIE_DOMAIN = (os.environ.get("COOKIE_DOMAIN") or "").strip()  # set to "secure.purplevin.com" or ".purplevin.com" if needed
+COOKIE_SECURE = env_flag("COOKIE_SECURE", "1")  # keep 1 in prod
+COOKIE_SAMESITE = (os.environ.get("COOKIE_SAMESITE") or "Lax").strip()  # Lax is fine for standard login
+COOKIE_DOMAIN = (os.environ.get("COOKIE_DOMAIN") or "").strip()  # optional: "secure.purplevin.com" or ".purplevin.com"
 
 def supabase_headers_service_role():
     return {
@@ -116,30 +116,6 @@ def fmt_date(iso_str: str) -> str:
     except Exception:
         return str(iso_str)
 
-def _safe_str(v):
-    return "" if v is None else str(v)
-
-def _date_to_str(v):
-    """
-    Accepts date, datetime, or ISO-like strings and returns a friendly date string.
-    Falls back to raw string if it can't parse.
-    """
-    if v is None:
-        return ""
-    if isinstance(v, date) and not isinstance(v, datetime):
-        return v.isoformat()
-    if isinstance(v, datetime):
-        return v.date().isoformat()
-    s = str(v).strip()
-    if not s:
-        return ""
-    try:
-        s2 = s.replace("Z", "+00:00")
-        dt = datetime.fromisoformat(s2)
-        return dt.date().isoformat()
-    except Exception:
-        return s
-
 def first_truthy(*vals):
     for v in vals:
         if v is None:
@@ -164,11 +140,18 @@ def scrub_empty_history_rows(history_rows):
     return out
 
 def wants_json():
+    # If caller expects JSON
     accept = (request.headers.get("Accept") or "").lower()
     if "application/json" in accept:
         return True
-    # API-ish path
-    return request.path.startswith("/search") or request.path.startswith("/api/")
+    # XHR/fetch convention
+    xrw = (request.headers.get("X-Requested-With") or "").lower()
+    if xrw == "xmlhttprequest":
+        return True
+    # treat internal API routes as JSON responses
+    if request.path.startswith("/search") or request.path.startswith("/api/"):
+        return True
+    return False
 
 # ---------------------------
 # Supabase REST helpers (PostgREST uses SERVICE ROLE)
@@ -179,16 +162,6 @@ def sb_get(path: str, params: dict, timeout: int = 20):
     if r.status_code != 200:
         raise RuntimeError(f"Supabase GET {path} failed: {r.status_code} {r.text}")
     return r.json() or []
-
-def sb_post(path: str, json_body: dict, timeout: int = 20):
-    url = f"{SUPABASE_URL}/rest/v1/{path.lstrip('/')}"
-    r = requests.post(url, headers=supabase_headers_service_role(), json=json_body, timeout=timeout)
-    if r.status_code not in (200, 201, 204):
-        raise RuntimeError(f"Supabase POST {path} failed: {r.status_code} {r.text}")
-    try:
-        return r.json()
-    except Exception:
-        return None
 
 # ---------------------------
 # Supabase Auth helpers (ANON KEY)
@@ -203,19 +176,20 @@ def sb_auth_password_login(email: str, password: str, timeout: int = 20):
 
     url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
     payload = {"email": (email or "").strip(), "password": (password or "").strip()}
+
     headers = supabase_headers_anon()
+    # Supabase expects api key + bearer (anon) for this endpoint
     headers["Authorization"] = f"Bearer {SUPABASE_ANON_KEY}"
 
     r = requests.post(url, headers=headers, json=payload, timeout=timeout)
     if r.status_code != 200:
-        # Supabase returns useful message in body; keep short
         raise RuntimeError(f"LOGIN FAILED: {r.status_code} {r.text}")
     return r.json() or {}
 
 def sb_auth_user(access_token: str, timeout: int = 15):
     """
     Validate an access token by calling /auth/v1/user.
-    Returns user json on success.
+    Returns user json on success, else None.
     """
     if not supabase_auth_ready():
         raise RuntimeError("Supabase auth not configured (SUPABASE_ANON_KEY missing).")
@@ -231,7 +205,10 @@ def sb_auth_user(access_token: str, timeout: int = 15):
     r = requests.get(url, headers=headers, timeout=timeout)
     if r.status_code != 200:
         return None
-    return r.json() or None
+    try:
+        return r.json() or None
+    except Exception:
+        return None
 
 def set_auth_cookie(resp, access_token: str):
     cookie_kwargs = {
@@ -243,7 +220,7 @@ def set_auth_cookie(resp, access_token: str):
     if COOKIE_DOMAIN:
         cookie_kwargs["domain"] = COOKIE_DOMAIN
 
-    # Supabase default token expiry is typically 1 hour; cookie can match.
+    # access_token expiry is typically ~1 hour; match cookie window
     resp.set_cookie(AUTH_COOKIE_NAME, access_token, max_age=60 * 60, **cookie_kwargs)
     return resp
 
@@ -265,23 +242,21 @@ def require_auth(fn):
     """
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        # allow health/version publicly
         at = current_access_token()
         user = None
+
         try:
             user = sb_auth_user(at) if at else None
         except Exception:
             user = None
 
         if user:
-            # attach if you want to use later
-            request.supabase_user = user  # lightweight attach
+            request.supabase_user = user  # optional attach
             return fn(*args, **kwargs)
 
         if wants_json():
             return jsonify({"error": "AUTH REQUIRED"}), 401
 
-        # browser
         nxt = request.full_path if request.query_string else request.path
         return redirect(f"/login?next={nxt}")
     return wrapper
@@ -585,6 +560,8 @@ def health():
         "use_supabase": USE_SUPABASE,
         "cookie_secure": bool(COOKIE_SECURE),
         "cookie_domain": COOKIE_DOMAIN or None,
+        "cookie_samesite": COOKIE_SAMESITE,
+        "auth_cookie_name": AUTH_COOKIE_NAME,
     })
 
 @app.route("/health/supabase")
@@ -602,12 +579,8 @@ def health_supabase():
 # ---------------------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    # If auth isn't configured, fail loudly (so you fix env)
     if not supabase_auth_ready():
-        return (
-            "Supabase auth not configured. Set SUPABASE_ANON_KEY on server.",
-            500,
-        )
+        return ("Supabase auth not configured. Set SUPABASE_ANON_KEY on server.", 500)
 
     next_url = (request.args.get("next") or "/").strip()
     if not next_url.startswith("/"):
@@ -621,7 +594,7 @@ def login():
         except Exception:
             pass
 
-        # Minimal inline login UI (no template required)
+        # minimal inline UI (works even if you don't want a template yet)
         return f"""
 <!doctype html>
 <html>
@@ -674,7 +647,6 @@ def login():
         return resp
 
     except Exception as e:
-        # show a simple error; keep safe
         return (f"Login failed. {str(e)}", 401)
 
 @app.route("/logout")
@@ -689,7 +661,12 @@ def logout():
 @app.route("/")
 @require_auth
 def home():
-    return render_template("index.html")
+    # ✅ pass these so index can init supabase client later (we’ll do next)
+    return render_template(
+        "index.html",
+        supabase_url=SUPABASE_URL,
+        supabase_anon_key=SUPABASE_ANON_KEY,
+    )
 
 @app.route("/search", methods=["GET"])
 @require_auth
