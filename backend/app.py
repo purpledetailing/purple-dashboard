@@ -634,7 +634,7 @@ def login():
   <title>Secure Login · PurpleVin</title>
   <style>
     * {{ box-sizing: border-box; }}
-    body {
+    body {{}
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   background:#0b1020;
   color:#e5e7eb;
@@ -647,7 +647,7 @@ def login():
   overflow:hidden;
 }
 /* 🐘 Hendrix Elephant */
-body::before {
+body::before {{}
   content:"";
   position:absolute;
   width:600px;
