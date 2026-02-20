@@ -596,7 +596,7 @@ def login():
     }}
 
     :root{{
-      ----elephant: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E
+      --elephant: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E
 %3Cpath d='M50 110
 Q40 80 70 70
 Q85 40 115 55
@@ -626,7 +626,7 @@ stroke-width='5'
 stroke-linecap='round'/%3E
 
 %3Ccircle cx='90' cy='95' r='5' fill='%239c6cff'/%3E
-%3C/svg%3E"); 
+%3C/svg%3E");
     }}
 
     body::before{{
