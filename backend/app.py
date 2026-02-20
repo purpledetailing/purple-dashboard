@@ -9,14 +9,12 @@ from datetime import datetime, date
 from functools import wraps
 
 app = Flask(__name__, template_folder="templates", static_folder="../static")
-
-# If you want CORS only for /vin + /search API later, we can tighten it.
 CORS(app)
 
 # ============================================================
 # DEBUG: confirm which file is running in production
 # ============================================================
-APP_VERSION = "2026-02-19-secure-login-v2"
+APP_VERSION = "2026-02-19-secure-login-v3-elephant-wallpaper"
 
 @app.route("/version")
 def version():
@@ -44,10 +42,9 @@ def env_flag(name: str, default: str = "1") -> bool:
     return v in ("1", "true", "yes", "y", "on")
 
 USE_SUPABASE = env_flag("USE_SUPABASE", "1")
-
 SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
-SUPABASE_ANON_KEY = (os.environ.get("SUPABASE_ANON_KEY") or "").strip()  # ✅ REQUIRED for /login user validation
+SUPABASE_ANON_KEY = (os.environ.get("SUPABASE_ANON_KEY") or "").strip()  # required for auth validation
 
 LEGACY_TABLE = os.environ.get("LEGACY_TABLE", "customer_data_legacy").strip()
 JOBS_LEGACY_TABLE = os.environ.get("JOBS_LEGACY_TABLE", "customer_jobs_legacy").strip()
@@ -58,8 +55,8 @@ PHOTO_BUCKET = os.environ.get("PHOTO_BUCKET", "vehicle-photos").strip()
 # ---------------------------
 AUTH_COOKIE_NAME = os.environ.get("SECURE_AUTH_COOKIE", "purple_secure_at").strip()
 COOKIE_SECURE = env_flag("COOKIE_SECURE", "1")  # set 1 in prod (https)
-COOKIE_SAMESITE = (os.environ.get("COOKIE_SAMESITE") or "Lax").strip()  # Lax is fine for normal login
-COOKIE_DOMAIN = (os.environ.get("COOKIE_DOMAIN") or "").strip()  # optional: "secure.purplevin.com" or ".purplevin.com"
+COOKIE_SAMESITE = (os.environ.get("COOKIE_SAMESITE") or "Lax").strip()
+COOKIE_DOMAIN = (os.environ.get("COOKIE_DOMAIN") or "").strip()  # optional: ".purplevin.com"
 
 def supabase_headers_service_role():
     return {
@@ -70,7 +67,6 @@ def supabase_headers_service_role():
     }
 
 def supabase_headers_anon():
-    # For auth endpoints & /auth/v1/user validation
     return {
         "apikey": SUPABASE_ANON_KEY,
         "Content-Type": "application/json",
@@ -117,10 +113,6 @@ def fmt_date(iso_str: str) -> str:
         return str(iso_str)
 
 def _date_to_str(v):
-    """
-    Accepts date, datetime, or ISO-like strings and returns a friendly date string.
-    Falls back to raw string if it can't parse.
-    """
     if v is None:
         return ""
     if isinstance(v, date) and not isinstance(v, datetime):
@@ -147,10 +139,6 @@ def first_truthy(*vals):
     return ""
 
 def scrub_empty_history_rows(history_rows):
-    """
-    Remove rows that have no meaningful service_type/description/notes.
-    Prevents blank cards in UI.
-    """
     out = []
     for r in history_rows or []:
         st = (r.get("service_type") or "").strip()
@@ -164,24 +152,18 @@ def wants_json():
     accept = (request.headers.get("Accept") or "").lower()
     if "application/json" in accept:
         return True
-    # API-ish paths
     return request.path.startswith("/search") or request.path.startswith("/api/")
 
 def safe_next_path(next_url: str) -> str:
-    """
-    Only allow local redirects like "/".
-    Prevent open redirect.
-    """
     nxt = (next_url or "").strip()
     if not nxt.startswith("/"):
         return "/"
-    # block protocol-relative like "//evil.com"
     if nxt.startswith("//"):
         return "/"
     return nxt
 
 # ---------------------------
-# Supabase REST helpers (PostgREST uses SERVICE ROLE)
+# Supabase REST helpers (SERVICE ROLE)
 # ---------------------------
 def sb_get(path: str, params: dict, timeout: int = 20):
     url = f"{SUPABASE_URL}/rest/v1/{path.lstrip('/')}"
@@ -201,42 +183,29 @@ def sb_post(path: str, json_body: dict, timeout: int = 20):
         return None
 
 # ---------------------------
-# Supabase Auth helpers (ANON KEY)
+# Supabase Auth helpers (ANON)
 # ---------------------------
 def sb_auth_password_login(email: str, password: str, timeout: int = 20):
-    """
-    Uses Supabase Auth password grant.
-    Returns dict with access_token / refresh_token on success.
-    """
     if not supabase_auth_ready():
         raise RuntimeError("Supabase auth not configured (SUPABASE_ANON_KEY missing).")
-
     url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
     payload = {"email": (email or "").strip(), "password": (password or "").strip()}
     headers = supabase_headers_anon()
     headers["Authorization"] = f"Bearer {SUPABASE_ANON_KEY}"
-
     r = requests.post(url, headers=headers, json=payload, timeout=timeout)
     if r.status_code != 200:
         raise RuntimeError(f"LOGIN FAILED: {r.status_code} {r.text}")
     return r.json() or {}
 
 def sb_auth_user(access_token: str, timeout: int = 15):
-    """
-    Validate an access token by calling /auth/v1/user.
-    Returns user json on success, None on failure.
-    """
     if not supabase_auth_ready():
         return None
-
     at = (access_token or "").strip()
     if not at:
         return None
-
     url = f"{SUPABASE_URL}/auth/v1/user"
     headers = supabase_headers_anon()
     headers["Authorization"] = f"Bearer {at}"
-
     r = requests.get(url, headers=headers, timeout=timeout)
     if r.status_code != 200:
         return None
@@ -251,8 +220,6 @@ def set_auth_cookie(resp, access_token: str):
     }
     if COOKIE_DOMAIN:
         cookie_kwargs["domain"] = COOKIE_DOMAIN
-
-    # Supabase access token typically ~1 hour
     resp.set_cookie(AUTH_COOKIE_NAME, access_token, max_age=60 * 60, **cookie_kwargs)
     return resp
 
@@ -267,11 +234,6 @@ def current_access_token():
     return (request.cookies.get(AUTH_COOKIE_NAME) or "").strip()
 
 def require_auth(fn):
-    """
-    Protect internal pages. Public VIN report stays untouched.
-    - If JSON/API request -> 401
-    - If browser -> redirect to /login
-    """
     @wraps(fn)
     def wrapper(*args, **kwargs):
         at = current_access_token()
@@ -317,15 +279,10 @@ def sb_photos_for_vin_batch(vin: str, batch_id: str, limit: int = 8):
     return rows or []
 
 def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
-    """
-    Return a signed URL for a storage object path (PHOTO_BUCKET bucket).
-    Uses SERVICE ROLE because it's server-side.
-    """
     if not storage_path:
         return None
     storage_path = str(storage_path).lstrip("/")
     url = f"{SUPABASE_URL}/storage/v1/object/sign/{PHOTO_BUCKET}/{storage_path}"
-
     r = requests.post(
         url,
         headers={
@@ -338,6 +295,7 @@ def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
     )
     if r.status_code != 200:
         return None
+
     data = r.json() or {}
     signed_path = data.get("signedURL") or data.get("signedUrl") or ""
     if not signed_path:
@@ -451,7 +409,7 @@ def sb_customer_by_id(customer_id: str):
     return rows[0] if rows else None
 
 # ============================================================
-# ✅ Pull job history from customer_jobs_legacy
+# Pull job history from customer_jobs_legacy
 # ============================================================
 def sb_jobs_legacy_by_vin(vin: str, limit: int = 50):
     vin = normalize_vin(vin)
@@ -485,7 +443,7 @@ def build_history_from_jobs_legacy(vin: str):
     return scrub_empty_history_rows(out)
 
 # ============================================================
-# ✅ Merge profile
+# Merge profile
 # ============================================================
 def merged_profile_by_vin(vin: str):
     vin = normalize_vin(vin)
@@ -497,21 +455,16 @@ def merged_profile_by_vin(vin: str):
     make = first_truthy((veh or {}).get("make"), (legacy or {}).get("make"))
     model = first_truthy((veh or {}).get("model"), (legacy or {}).get("model"))
     year = (veh or {}).get("year") or (legacy or {}).get("year") or ""
+
     vehicle_nickname = first_truthy((legacy or {}).get("vehicle_nickname"), (veh or {}).get("nickname"), "")
-    service_history_link = first_truthy(
-        (legacy or {}).get("service_history_link"),
-        (veh or {}).get("service_history_link"),
-        ""
-    )
+    service_history_link = first_truthy((legacy or {}).get("service_history_link"), (veh or {}).get("service_history_link"), "")
     status = first_truthy((legacy or {}).get("status"), (veh or {}).get("status"), "")
     notes = first_truthy((legacy or {}).get("notes"), (veh or {}).get("notes"), "")
 
-    # --- Customer fields (legacy primary) ---
     customer_name = first_truthy((legacy or {}).get("customer_name"), "")
     phone_number = first_truthy((legacy or {}).get("phone_number"), "")
     email = first_truthy((legacy or {}).get("email"), "")
 
-    # fallback if legacy missing customer fields
     latest_customer = None
     if veh and veh.get("id"):
         try:
@@ -526,10 +479,8 @@ def merged_profile_by_vin(vin: str):
     if not phone_number and latest_customer:
         phone_number = first_truthy(latest_customer.get("phone"), "")
 
-    # ✅ Service history
     service_history = build_history_from_jobs_legacy(vin)
 
-    # --- Photos (latest batch only, max 8) ---
     latest_batch_id = ""
     photo_urls = []
     photo_count = 0
@@ -575,7 +526,7 @@ def merged_profile_by_vin(vin: str):
     }
 
 # ============================================================
-# Routes (Public vs Secure)
+# Routes
 # ============================================================
 @app.route("/health")
 def health():
@@ -604,7 +555,7 @@ def health_supabase():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 # ---------------------------
-# ✅ Secure login (server cookie auth)
+# Secure login (server cookie auth)
 # ---------------------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -613,22 +564,15 @@ def login():
 
     next_url = safe_next_path(request.args.get("next") or "/")
 
-    # --- Shared HTML renderer so GET + failed POST show the same page ---
-    def render_login_html(error_msg: str = ""):
-        # NOTE: this is URL-encoded SVG. Do NOT paste raw <svg> outside this string.
-        elephant_svg_data_uri = (
-            "data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20"
-            "viewBox%3D%270%200%20200%20200%27%3E"
-            "%3Cpath%20d%3D%27M40%2090%20Q30%2070%2060%2060%20Q70%2040%20100%2050%20"
-            "Q130%2040%20140%2070%20Q170%2080%20150%20110%20Q140%20140%20100%20150%20"
-            "Q60%20140%2050%20110%20Z%27%20stroke%3D%27%239c6cff%27%20fill%3D%27none%27%20"
-            "stroke-width%3D%274%27%20stroke-linecap%3D%27round%27/%3E"
-            "%3Ccircle%20cx%3D%2770%27%20cy%3D%2790%27%20r%3D%274%27%20fill%3D%27%239c6cff%27/%3E"
-            "%3C/svg%3E"
-        )
+    if request.method == "GET":
+        # If already logged in, go where they wanted
+        try:
+            if sb_auth_user(current_access_token()):
+                return redirect(next_url)
+        except Exception:
+            pass
 
-        err_html = f'<div class="error">{escape_html(error_msg)}</div>' if error_msg else ""
-
+        # Solid card + clearer kid elephant wallpaper (smaller/more/not linear)
         return f"""<!doctype html>
 <html>
 <head>
@@ -638,10 +582,10 @@ def login():
   <style>
     * {{ box-sizing: border-box; }}
 
-    body {{
+    body{{
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       background:#0b1020;
-      color:#e5e7eb;
+      color:#0f172a;
       display:flex;
       min-height:100vh;
       align-items:center;
@@ -651,86 +595,102 @@ def login():
       overflow:hidden;
     }}
 
-    /* 🐘 Hendrix Elephant wallpaper */
-    body::before {{
-      content:"";
-      position:fixed;
-      inset:-40px;
-      opacity:0.16;
-      pointer-events:none;
-      z-index:0;
-
-      background-image:url("{elephant_svg_data_uri}");
-      background-repeat:repeat;
-      background-position:center;
-      background-size:420px 420px;
+    :root{{
+      --elephant: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A//www.w3.org/2000/svg'%20viewBox%3D'0%200%20200%20200'%3E%3Cg%20fill%3D'none'%20stroke%3D'%239c6cff'%20stroke-width%3D'6'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M55%20115%20q-15-30%2012-52%20q25-20%2063-12%20q34-10%2055%2014%20q18%2022%208%2050%20q-6%2020-28%2027%20q-22%2013-63%209%20q-36-4-47-36z'/%3E%3Cpath%20d%3D'M150%2092%20q22%2010%2018%2026%20q-3%2012-16%2016'/%3E%3Cpath%20d%3D'M168%20134%20q8%2014-6%2024%20q-14%2010-28-2'/%3E%3Cpath%20d%3D'M82%20146%20q-2%2018%2010%2026'/%3E%3Cpath%20d%3D'M112%20150%20q2%2018-10%2026'/%3E%3Cpath%20d%3D'M128%20148%20q2%2018%2012%2024'/%3E%3Ccircle%20cx%3D'95'%20cy%3D'85'%20r%3D'2.5'%20fill%3D'%239c6cff'/%3E%3Cpath%20d%3D'M70%2094%20q10%2012%2026%2012'%3E%3C/path%3E%3C/g%3E%3C/svg%3E");
     }}
 
-    .card {{
+    body::before{{
+      content:"";
+      position:fixed;
+      inset:0;
+      pointer-events:none;
+      z-index:0;
+      opacity:0.22;
+
+      background-image:
+        var(--elephant),
+        var(--elephant),
+        var(--elephant),
+        var(--elephant);
+
+      background-repeat:
+        repeat,
+        repeat,
+        repeat,
+        repeat;
+
+      background-size:
+        220px 220px,
+        170px 170px,
+        260px 260px,
+        200px 200px;
+
+      background-position:
+        18px 24px,
+        90px 140px,
+        -60px 80px,
+        160px -30px;
+
+      filter: blur(0.2px);
+    }}
+
+    .card{{
       width:100%;
       max-width:420px;
-      background:rgba(255,255,255,0.04);
-      border:1px solid rgba(255,255,255,0.10);
+      background:#ffffff;
+      border:1px solid rgba(15,23,42,0.10);
       border-radius:18px;
-      padding:20px;
-      overflow:hidden;
-
-      /* keep card above elephant */
+      padding:22px;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.30);
       position:relative;
       z-index:1;
     }}
 
-    h1 {{ margin:0 0 6px; font-size:18px; }}
-    p {{ margin:0 0 16px; opacity:0.85; font-size:13px; }}
-    form {{ margin:0; }}
-    label {{ display:block; font-size:12px; opacity:0.85; margin:10px 0 6px; }}
+    h1{{ margin:0 0 6px; font-size:20px; color:#0f172a; }}
+    p{{ margin:0 0 16px; color:#334155; font-size:13px; }}
+    form{{ margin:0; }}
+    label{{ display:block; font-size:12px; color:#475569; margin:10px 0 6px; }}
 
-    input {{
+    input{{
       width:100%;
-      max-width:100%;
       height:44px;
       border-radius:12px;
-      border:1px solid rgba(255,255,255,0.12);
-      background:rgba(255,255,255,0.06);
-      color:#fff;
+      border:1px solid rgba(15,23,42,0.12);
+      background:#f8fafc;
+      color:#0f172a;
       padding:0 12px;
       outline:none;
     }}
-    input:focus {{
-      border-color: rgba(168,85,247,0.55);
-      box-shadow: 0 0 0 2px rgba(168,85,247,0.18);
+
+    input:focus{{
+      border-color: rgba(124,58,237,0.55);
+      box-shadow: 0 0 0 3px rgba(124,58,237,0.18);
+      background:#ffffff;
     }}
 
-    button {{
+    button{{
       width:100%;
-      max-width:100%;
       height:44px;
       border-radius:12px;
-      border:1px solid rgba(168,85,247,0.35);
-      background:rgba(168,85,247,0.18);
-      color:#f5f3ff;
+      border:0;
+      background: linear-gradient(135deg, #111827, #6d28d9);
+      color:#fff;
       font-weight:800;
       cursor:pointer;
       margin-top:14px;
     }}
-    button:hover {{ background: rgba(168,85,247,0.28); }}
 
-    .small {{ margin-top:12px; font-size:12px; opacity:0.7; }}
-    .error {{
-      margin-top: 10px;
-      font-size: 12px;
-      color: #fecaca;
-      opacity: 0.95;
-      line-height: 1.35;
-    }}
-    code {{ opacity:0.9; }}
+    button:hover{{ filter: brightness(1.04); }}
+
+    .small{{ margin-top:12px; font-size:12px; color:#475569; }}
+    .error{{ margin-top:10px; font-size:12px; color:#b91c1c; line-height:1.35; }}
+    code{{ background:#f1f5f9; padding:2px 6px; border-radius:8px; }}
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Secure Login</h1>
     <p>Internal access for <b>secure.purplevin.com</b></p>
-
     <form method="POST" action="/login?next={next_url}">
       <label>Email</label>
       <input name="email" type="email" autocomplete="email" required />
@@ -738,71 +698,40 @@ def login():
       <input name="password" type="password" autocomplete="current-password" required />
       <button type="submit">Sign in</button>
     </form>
-
-    {err_html}
-
     <div class="small">Public VIN reports remain accessible at <code>/vin/&lt;VIN&gt;</code>.</div>
   </div>
 </body>
 </html>""".strip()
 
-    # Small helper for safe error display in HTML
-    def escape_html(s: str) -> str:
-        return (
-            (s or "")
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-            .replace("'", "&#039;")
-        )
-
-    if request.method == "GET":
-        # If already logged in, go where they wanted
-        try:
-            if sb_auth_user(current_access_token()):
-                return redirect(next_url)
-        except Exception:
-            pass
-        return render_login_html()
-
     # POST: attempt login
     email = (request.form.get("email") or "").strip()
     password = (request.form.get("password") or "").strip()
     if not email or not password:
-        return render_login_html("Missing email or password."), 400
+        return ("Missing email or password.", 400)
 
     try:
         data = sb_auth_password_login(email, password)
         access_token = (data.get("access_token") or "").strip()
         if not access_token:
             raise RuntimeError("No access_token returned.")
-
         resp = make_response(redirect(next_url))
         resp = set_auth_cookie(resp, access_token)
         return resp
-
     except Exception as e:
-        # Show the page again (instead of plain text)
-        return render_login_html(f"Login failed. {str(e)}"), 401 
+        return (f"Login failed. {str(e)}", 401)
 
 @app.route("/logout")
 def logout():
-    # ✅ SERVER logout: clears our cookie and forces /login
     resp = make_response(redirect("/login"))
     resp = clear_auth_cookie(resp)
     return resp
 
 # ---------------------------
-# ✅ Secure home + secure vin search (internal)
+# Secure home + secure VIN search (internal)
 # ---------------------------
 @app.route("/")
 @require_auth
 def home():
-    # If your index uses the variables, these will be available:
-    # - {{ supabase_url }}
-    # - {{ supabase_anon_key }}
-    # - {{ logout_url }}
     return render_template(
         "index.html",
         supabase_url=SUPABASE_URL,
@@ -847,12 +776,11 @@ def search():
             "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
         }
         return jsonify(payload), 200
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------
-# ✅ Public report stays PUBLIC and UNTOUCHED
+# Public report stays PUBLIC and UNTOUCHED
 # ---------------------------
 @app.route("/vin/<value>")
 def public_report(value):
@@ -881,7 +809,6 @@ def public_report(value):
                 "model": m.get("model") or "",
                 "year": m.get("year") or "",
             }
-
             embed_url = drive_embed_from_folder(m.get("service_history_link") or "")
             photo_urls = m.get("photo_urls") or []
 
