@@ -17,7 +17,7 @@ CORS(app)
 # ============================================================
 # DEBUG: confirm which file is running in production
 # ============================================================
-APP_VERSION = "2026-02-19-secure-login-v3-elephant-bg-fix"
+APP_VERSION = "2026-02-20-secure-login-v4-elephant-face-better-ears-trunk"
 
 @app.route("/version")
 def version():
@@ -608,81 +608,66 @@ def health_supabase():
 # ---------------------------
 # ✅ Secure login (server cookie auth)
 # ---------------------------
-from urllib.parse import quote  # ensure this import exists
-
 def _elephant_svg_data_uri() -> str:
-    # Clean, unmistakable elephant face (no tusks), playful + smart line art
-    svg = r"""
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 520">
+    """
+    Elephant FACE (smart + playful):
+    - Big elephant-like ears
+    - Thicker trunk with curl
+    - No tusk
+    - Reads clearly as an elephant even when faint
+    """
+    svg = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260">
   <g fill="none" stroke="#9c6cff" stroke-linecap="round" stroke-linejoin="round">
 
-    <!-- EARS: big fan shape -->
+    <!-- BIG LEFT EAR (elephant-like) -->
+    <path stroke-width="14"
+      d="M82 96
+         C35 104, 26 150, 52 180
+         C70 202, 112 202, 124 176
+         C136 150, 124 114, 98 102
+         C92 99, 87 97, 82 96 Z"/>
+
+    <!-- BIG RIGHT EAR (elephant-like) -->
+    <path stroke-width="14"
+      d="M178 96
+         C225 104, 234 150, 208 180
+         C190 202, 148 202, 136 176
+         C124 150, 136 114, 162 102
+         C168 99, 173 97, 178 96 Z"/>
+
+    <!-- HEAD -->
+    <path stroke-width="14"
+      d="M130 78
+         C96 78, 72 102, 72 134
+         C72 172, 98 194, 130 194
+         C162 194, 188 172, 188 134
+         C188 102, 164 78, 130 78 Z"/>
+
+    <!-- FOREHEAD CREASES (subtle, makes it feel elephant) -->
+    <path stroke-width="8" opacity="0.8"
+      d="M102 108 C118 96, 142 96, 158 108"/>
+    <path stroke-width="7" opacity="0.75"
+      d="M106 122 C120 112, 140 112, 154 122"/>
+
+    <!-- EYES -->
+    <circle cx="116" cy="136" r="5.5" fill="#9c6cff" stroke="none"/>
+    <circle cx="144" cy="136" r="5.5" fill="#9c6cff" stroke="none"/>
+
+    <!-- FRIENDLY CHEEK SMILE -->
+    <path stroke-width="9" opacity="0.75"
+      d="M112 156 C126 170, 134 170, 148 156"/>
+
+    <!-- THICK TRUNK (centered, clear, curls up slightly) -->
     <path stroke-width="18"
-      d="M175 175
-         C105 170, 55 235, 85 305
-         C110 360, 190 372, 225 330
-         C245 305, 240 255, 215 220
-         C205 205, 192 190, 175 175 Z"/>
-    <path stroke-width="18"
-      d="M345 175
-         C415 170, 465 235, 435 305
-         C410 360, 330 372, 295 330
-         C275 305, 280 255, 305 220
-         C315 205, 328 190, 345 175 Z"/>
+      d="M130 160
+         C130 182, 122 196, 128 212
+         C136 232, 168 228, 162 206
+         C158 192, 140 196, 146 210"/>
 
-    <!-- INNER EARS (panel) -->
-    <path stroke-width="11" opacity="0.90"
-      d="M178 205
-         C130 205, 100 255, 120 300
-         C138 340, 190 345, 210 320"/>
-    <path stroke-width="11" opacity="0.90"
-      d="M342 205
-         C390 205, 420 255, 400 300
-         C382 340, 330 345, 310 320"/>
-
-    <!-- HEAD: elephant face (not circular) -->
-    <path stroke-width="18"
-      d="M260 125
-         C205 125, 165 160, 155 215
-         C145 275, 175 345, 260 355
-         C345 345, 375 275, 365 215
-         C355 160, 315 125, 260 125 Z"/>
-
-    <!-- FOREHEAD / TRUNK ROOT WRINKLES -->
-    <path stroke-width="11" opacity="0.85"
-      d="M210 170 C235 150, 285 150, 310 170"/>
-    <path stroke-width="10" opacity="0.65"
-      d="M220 190 C240 175, 280 175, 300 190"/>
-    <path stroke-width="10" opacity="0.55"
-      d="M232 208 C246 198, 274 198, 288 208"/>
-
-    <!-- EYES (friendly) -->
-    <circle cx="230" cy="235" r="8" fill="#9c6cff" stroke="none"/>
-    <circle cx="290" cy="235" r="8" fill="#9c6cff" stroke="none"/>
-    <path stroke-width="8" opacity="0.55"
-      d="M214 225 C222 215, 238 215, 246 225"/>
-    <path stroke-width="8" opacity="0.55"
-      d="M274 225 C282 215, 298 215, 306 225"/>
-
-    <!-- CHEEKS (tiny smile hints) -->
-    <path stroke-width="10" opacity="0.55"
-      d="M190 270 C210 292, 232 298, 252 292"/>
-    <path stroke-width="10" opacity="0.55"
-      d="M330 270 C310 292, 288 298, 268 292"/>
-
-    <!-- TRUNK: thicker + curl up, no tusks -->
-    <path stroke-width="22"
-      d="M260 275
-         C258 320, 242 350, 260 378
-         C278 406, 322 392, 308 360
-         C300 342, 282 336, 282 318
-         C282 300, 292 288, 306 280"/>
-
-    <!-- TRUNK TIP (nostril hint) -->
-    <path stroke-width="12" opacity="0.90"
-      d="M275 392 C292 404, 314 392, 316 372"/>
-    <path stroke-width="10" opacity="0.60"
-      d="M290 380 C298 386, 308 380, 310 370"/>
+    <!-- TRUNK TIP (cute curl definition) -->
+    <path stroke-width="12" opacity="0.85"
+      d="M142 214 C150 222, 162 218, 164 206"/>
 
   </g>
 </svg>
@@ -735,35 +720,26 @@ def login():
       overflow:hidden;
     }}
 
-    /* 🐘 Hendrix Elephant pattern (smaller, scattered, not too many) */
+    /* 🐘 Larger + fewer elephants (not cluttered) */
     body::before {{
       content:"";
       position:absolute;
       inset:-40px;
       pointer-events:none;
-      opacity:0.14;
+      opacity:0.12;
       background-image:
-        url("{elephant_uri}"),
-        url("{elephant_uri}"),
-        url("{elephant_uri}"),
         url("{elephant_uri}"),
         url("{elephant_uri}"),
         url("{elephant_uri}");
       background-repeat:no-repeat;
       background-size:
-        120px 120px,
-        90px 90px,
-        110px 110px,
-        85px 85px,
-        105px 105px,
-        95px 95px;
+        260px 260px,
+        210px 210px,
+        240px 240px;
       background-position:
-        10% 18%,
-        78% 16%,
-        24% 64%,
-        72% 72%,
-        50% 34%,
-        12% 86%;
+        18% 20%,
+        82% 22%,
+        50% 74%;
       filter: blur(0px);
     }}
 
