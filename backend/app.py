@@ -614,32 +614,37 @@ def _elephant_svg_data_uri() -> str:
     Returns URL-encoded svg for CSS data URI.
     """
     svg = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220">
-  <g fill="none" stroke="#9c6cff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="1">
-    <!-- head + back -->
-    <path d="M55 120
-             C45 90, 60 55, 105 55
-             C145 50, 170 70, 170 105
-             C175 140, 150 160, 120 162
-             C95 165, 70 150, 60 135" />
-    <!-- ear -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <g fill="none" stroke="#9c6cff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <!-- back + head outline -->
+    <path d="M55 140
+             C35 110, 45 70, 85 62
+             C120 55, 160 65, 175 95
+             C185 120, 170 150, 135 160
+             C105 170, 75 160, 60 150" />
+
+    <!-- ear (big, obvious) -->
     <path d="M95 92
-             C82 86, 70 96, 74 110
-             C78 126, 98 125, 105 112
-             C112 100, 106 95, 95 92" />
-    <!-- trunk -->
-    <path d="M170 108
-             C190 112, 196 128, 186 140
-             C178 150, 170 144, 173 136
-             C176 128, 186 130, 192 138" />
-    <!-- tusk -->
-    <path d="M166 118
-             C180 118, 186 124, 176 128" />
-    <!-- legs-ish -->
-    <path d="M78 160 L78 175" />
-    <path d="M118 164 L118 178" />
+             C70 90, 60 112, 72 130
+             C85 150, 115 140, 120 118
+             C124 100, 110 94, 95 92" />
+
+    <!-- trunk (down then forward; NO loop) -->
+    <path d="M175 105
+             C195 120, 198 145, 182 162
+             C172 173, 160 168, 163 155
+             C166 142, 178 145, 188 154" />
+
+    <!-- tusk (clearly tusk-shaped) -->
+    <path d="M168 118
+             C182 118, 190 122, 178 132" />
+
+    <!-- feet-ish -->
+    <path d="M78 164 L78 182" />
+    <path d="M120 164 L120 184" />
+
     <!-- eye -->
-    <circle cx="138" cy="92" r="4" fill="#9c6cff" stroke="none"/>
+    <circle cx="140" cy="92" r="4" fill="#9c6cff" stroke="none"/>
   </g>
 </svg>
 """.strip()
