@@ -17,7 +17,7 @@ CORS(app)
 # ============================================================
 # DEBUG: confirm which file is running in production
 # ============================================================
-APP_VERSION = "2026-02-20-secure-login-elephant-face-perfect-v1"
+APP_VERSION = "2026-02-20-secure-login-v4-elephant-png-bg"
 
 @app.route("/version")
 def version():
@@ -608,57 +608,12 @@ def health_supabase():
 # ---------------------------
 # ✅ Secure login (server cookie auth)
 # ---------------------------
-def _elephant_svg_data_uri() -> str:
-    """
-    Smart + playful elephant FACE icon (bigger ears, thick trunk, NO tusks).
-    Returns URL-encoded svg for CSS data URI.
-    """
-    svg = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
-  <g fill="none" stroke="#9c6cff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
-    <!-- head -->
-    <path d="M70 125
-             C70 92, 92 70, 120 70
-             C148 70, 170 92, 170 125
-             C170 155, 150 175, 120 175
-             C90 175, 70 155, 70 125" />
-    <!-- big elephant ears (more elephant-like) -->
-    <path d="M70 118
-             C46 110, 34 92, 40 74
-             C48 52, 76 60, 86 78
-             C92 90, 88 108, 78 118" />
-    <path d="M170 118
-             C194 110, 206 92, 200 74
-             C192 52, 164 60, 154 78
-             C148 90, 152 108, 162 118" />
-    <!-- inner ear hint -->
-    <path d="M62 108 C52 98, 50 86, 56 78" opacity="0.7"/>
-    <path d="M178 108 C188 98, 190 86, 184 78" opacity="0.7"/>
 
-    <!-- eyes -->
-    <circle cx="108" cy="118" r="5" fill="#9c6cff" stroke="none"/>
-    <circle cx="132" cy="118" r="5" fill="#9c6cff" stroke="none"/>
-
-    <!-- forehead wrinkle (smart/playful) -->
-    <path d="M100 96 C112 88, 128 88, 140 96" opacity="0.8"/>
-
-    <!-- trunk (thicker + curl) -->
-    <path d="M120 128
-             C120 140, 120 150, 120 160
-             C120 174, 132 178, 140 168
-             C147 160, 140 150, 130 154" />
-
-    <!-- trunk tip curl -->
-    <path d="M132 154
-             C120 150, 112 160, 122 168" />
-
-    <!-- cheeks -->
-    <path d="M92 140 C98 148, 106 150, 112 146" opacity="0.7"/>
-    <path d="M148 140 C142 148, 134 150, 128 146" opacity="0.7"/>
-  </g>
-</svg>
-""".strip()
-    return "data:image/svg+xml," + quote(svg)
+# ✅ IMPORTANT:
+# Put the PNG here:
+#   ../static/img/elephant-bg.png
+# Because your Flask app serves static at /static from static_folder="../static"
+LOGIN_BG_URL = "/static/img/elephant-bg.png"
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -675,10 +630,10 @@ def login():
         except Exception:
             pass
 
-        elephant_uri = _elephant_svg_data_uri()
+        bg_url = LOGIN_BG_URL
 
         # IMPORTANT:
-        # This is an f-string (because we insert next_url + elephant_uri),
+        # This is an f-string (because we insert next_url + bg_url),
         # so ALL CSS braces must be doubled {{ }}.
         return f"""
 <!doctype html>
@@ -698,46 +653,35 @@ def login():
       justify-content:center;
       padding:24px;
       color:#0f172a;
+
+      /* base */
       background:
         radial-gradient(1200px 800px at 25% 20%, rgba(156,108,255,0.25), transparent 55%),
         radial-gradient(900px 700px at 80% 70%, rgba(91,31,166,0.22), transparent 55%),
         #0b1020;
+
       position:relative;
       overflow:hidden;
     }}
 
-    /* 🐘 Elephant faces (few, larger, scattered) */
+    /* ✅ EXACT PNG overlay (matches the image I shared) */
     body::before {{
       content:"";
       position:absolute;
-      inset:-40px;
+      inset:0;
       pointer-events:none;
-      opacity:0.14;
-      background-image:
-        url("{elephant_uri}"),
-        url("{elephant_uri}"),
-        url("{elephant_uri}"),
-        url("{elephant_uri}");
-      background-repeat:no-repeat;
-      background-size:
-        320px 320px,
-        260px 260px,
-        220px 220px,
-        280px 280px;
-      background-position:
-        18% 22%,
-        78% 18%,
-        24% 78%,
-        78% 76%;
+      opacity:0.28;                 /* tweak 0.18–0.35 if you want */
+      background: url("{bg_url}") center/cover no-repeat;
+      filter: none;
     }}
 
-    /* subtle grain */
+    /* subtle grain (very light) */
     body::after {{
       content:"";
       position:absolute;
       inset:0;
       pointer-events:none;
-      opacity:0.06;
+      opacity:0.05;
       background-image: radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px);
       background-size: 4px 4px;
       mix-blend-mode: overlay;
@@ -1008,4 +952,4 @@ def public_report(value):
 # ============================================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False) 
