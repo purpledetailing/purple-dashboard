@@ -608,48 +608,59 @@ def health_supabase():
 # ---------------------------
 # ✅ Secure login (server cookie auth)
 # ---------------------------
+from urllib.parse import quote  # ensure this import exists
+
 def _elephant_svg_data_uri() -> str:
     """
     Clear elephant doodle:
-    - BIG ear
-    - trunk DOWN then forward
-    - tusk (obvious)
-    - simple legs
+    - ear extends ABOVE body
+    - trunk curls UP
+    - obvious tusk
+    - small tail
     """
     svg = r"""
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260">
-  <g fill="none" stroke="#9c6cff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="1">
-    <!-- body + head -->
-    <path d="M55 150
-             C35 120, 40 85, 78 72
-             C105 63, 135 66, 160 80
-             C185 95, 197 120, 188 145
-             C180 170, 155 185, 125 186
-             C95 187, 72 175, 60 160" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320">
+  <g fill="none" stroke="#9c6cff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <!-- body + back + belly -->
+    <path d="M70 185
+             C45 150, 55 105, 105 88
+             C145 74, 200 78, 235 102
+             C270 128, 280 165, 262 195
+             C240 232, 195 246, 150 242
+             C112 238, 86 220, 74 205" />
 
-    <!-- big ear -->
-    <path d="M108 92
-             C78 92, 64 118, 78 140
-             C94 165, 132 154, 140 126
-             C146 105, 130 94, 108 92" />
+    <!-- ear (extends above body) -->
+    <path d="M150 95
+             C112 78, 85 112, 95 150
+             C105 190, 160 190, 178 148
+             C193 112, 178 104, 150 95" />
 
-    <!-- trunk (down then forward, no loop tip) -->
-    <path d="M186 108
-             C212 130, 208 165, 182 182
-             C165 193, 150 186, 156 170
-             C162 154, 178 162, 196 176" />
+    <!-- head front bump -->
+    <path d="M232 118
+             C252 122, 262 136, 258 152" />
 
-    <!-- tusk (very obvious, separate from trunk) -->
-    <path d="M170 122
-             C192 120, 202 126, 180 140" />
+    <!-- trunk curls UP (no weird loop tip) -->
+    <path d="M258 152
+             C282 170, 278 202, 250 206
+             C230 209, 224 190, 240 182
+             C258 174, 270 184, 270 198
+             C270 220, 244 232, 228 220" />
 
-    <!-- legs -->
-    <path d="M82 185 L82 210" />
-    <path d="M118 186 L118 214" />
-    <path d="M150 180 L150 210" />
+    <!-- tusk (separate, sharp and obvious) -->
+    <path d="M236 154
+             C258 150, 272 156, 246 170" />
+
+    <!-- legs (simple) -->
+    <path d="M112 242 L112 270" />
+    <path d="M152 244 L152 276" />
+    <path d="M196 238 L196 268" />
+
+    <!-- tail (small) -->
+    <path d="M72 176
+             C60 180, 56 192, 64 200" />
 
     <!-- eye -->
-    <circle cx="146" cy="95" r="4" fill="#9c6cff" stroke="none"/>
+    <circle cx="210" cy="108" r="5" fill="#9c6cff" stroke="none"/>
   </g>
 </svg>
 """.strip()
