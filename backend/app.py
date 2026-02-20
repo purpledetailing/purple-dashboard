@@ -646,7 +646,6 @@ def login():
   position:relative;
   overflow:hidden;
 }
-
 /* 🐘 Hendrix Elephant */
 body::before {
   content:"";
@@ -661,8 +660,7 @@ body::before {
   background-position:center;
   background-size:contain;
   pointer-events:none;
-  background-image:url("data:image/svg+xml;utf8,
-<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'>
+  background-image:url("data:image/svg+xml,%3Csvg%20viewBox%3D%270%200%20200%20200%27%20xmlns%3D%27http://www.w3.org/2000/svg%27%3E%3Cpath%20d%3D%27M40%2090%20Q30%2070%2060%2060%20Q70%2040%20100%2050%20Q130%2040%20140%2070%20Q170%2080%20150%20110%20Q140%20140%20100%20150%20Q60%20140%2050%20110%20Z%27%20stroke%3D%27%239c6cff%27%20fill%3D%27none%27%20stroke-width%3D%274%27%20stroke-linecap%3D%27round%27/%3E%3Ccircle%20cx%3D%2770%27%20cy%3D%2790%27%20r%3D%274%27%20fill%3D%27%239c6cff%27/%3E%3C/svg%3E"); 
   <path d='M40 90 Q30 70 60 60 Q70 40 100 50 Q130 40 140 70 Q170 80 150 110 Q140 140 100 150 Q60 140 50 110 Z'
         stroke='%239c6cff'
         fill='none'
