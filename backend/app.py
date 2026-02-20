@@ -613,19 +613,23 @@ def login():
 
     next_url = safe_next_path(request.args.get("next") or "/")
 
-    if request.method == "GET":
-        # If already logged in, go where they wanted
-        try:
-            if sb_auth_user(current_access_token()):
-                return redirect(next_url)
-        except Exception:
-            pass
+    # --- Shared HTML renderer so GET + failed POST show the same page ---
+    def render_login_html(error_msg: str = ""):
+        # NOTE: this is URL-encoded SVG. Do NOT paste raw <svg> outside this string.
+        elephant_svg_data_uri = (
+            "data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20"
+            "viewBox%3D%270%200%20200%20200%27%3E"
+            "%3Cpath%20d%3D%27M40%2090%20Q30%2070%2060%2060%20Q70%2040%20100%2050%20"
+            "Q130%2040%20140%2070%20Q170%2080%20150%20110%20Q140%20140%20100%20150%20"
+            "Q60%20140%2050%20110%20Z%27%20stroke%3D%27%239c6cff%27%20fill%3D%27none%27%20"
+            "stroke-width%3D%274%27%20stroke-linecap%3D%27round%27/%3E"
+            "%3Ccircle%20cx%3D%2770%27%20cy%3D%2790%27%20r%3D%274%27%20fill%3D%27%239c6cff%27/%3E"
+            "%3C/svg%3E"
+        )
 
-        # ✅ FIX: inputs not overflowing the card:
-        # - box-sizing: border-box
-        # - max-width: 100%
-        return f"""
-<!doctype html>
+        err_html = f'<div class="error">{escape_html(error_msg)}</div>' if error_msg else ""
+
+        return f"""<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -633,41 +637,35 @@ def login():
   <title>Secure Login · PurpleVin</title>
   <style>
     * {{ box-sizing: border-box; }}
-    body {{}
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  background:#0b1020;
-  color:#e5e7eb;
-  display:flex;
-  min-height:100vh;
-  align-items:center;
-  justify-content:center;
-  padding:24px;
-  position:relative;
-  overflow:hidden;
-}
-/* 🐘 Hendrix Elephant */
-body::before {{}
-  content:"";
-  position:absolute;
-  width:600px;
-  height:600px;
-  top:50%;
-  left:50%;
-  transform:translate(-50%, -50%);
-  opacity:0.06;
-  background-repeat:no-repeat;
-  background-position:center;
-  background-size:contain;
-  pointer-events:none;
-  background-image:url("data:image/svg+xml,%3Csvg%20viewBox%3D%270%200%20200%20200%27%20xmlns%3D%27http://www.w3.org/2000/svg%27%3E%3Cpath%20d%3D%27M40%2090%20Q30%2070%2060%2060%20Q70%2040%20100%2050%20Q130%2040%20140%2070%20Q170%2080%20150%20110%20Q140%20140%20100%20150%20Q60%20140%2050%20110%20Z%27%20stroke%3D%27%239c6cff%27%20fill%3D%27none%27%20stroke-width%3D%274%27%20stroke-linecap%3D%27round%27/%3E%3Ccircle%20cx%3D%2770%27%20cy%3D%2790%27%20r%3D%274%27%20fill%3D%27%239c6cff%27/%3E%3C/svg%3E"); 
-  <path d='M40 90 Q30 70 60 60 Q70 40 100 50 Q130 40 140 70 Q170 80 150 110 Q140 140 100 150 Q60 140 50 110 Z'
-        stroke='%239c6cff'
-        fill='none'
-        stroke-width='4'
-        stroke-linecap='round'/>
-  <circle cx='70' cy='90' r='4' fill='%239c6cff'/>
-</svg>");
-} 
+
+    body {{
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background:#0b1020;
+      color:#e5e7eb;
+      display:flex;
+      min-height:100vh;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      position:relative;
+      overflow:hidden;
+    }}
+
+    /* 🐘 Hendrix Elephant wallpaper */
+    body::before {{
+      content:"";
+      position:fixed;
+      inset:-40px;
+      opacity:0.16;
+      pointer-events:none;
+      z-index:0;
+
+      background-image:url("{elephant_svg_data_uri}");
+      background-repeat:repeat;
+      background-position:center;
+      background-size:420px 420px;
+    }}
+
     .card {{
       width:100%;
       max-width:420px;
@@ -676,11 +674,17 @@ body::before {{}
       border-radius:18px;
       padding:20px;
       overflow:hidden;
+
+      /* keep card above elephant */
+      position:relative;
+      z-index:1;
     }}
+
     h1 {{ margin:0 0 6px; font-size:18px; }}
     p {{ margin:0 0 16px; opacity:0.85; font-size:13px; }}
     form {{ margin:0; }}
     label {{ display:block; font-size:12px; opacity:0.85; margin:10px 0 6px; }}
+
     input {{
       width:100%;
       max-width:100%;
@@ -696,6 +700,7 @@ body::before {{}
       border-color: rgba(168,85,247,0.55);
       box-shadow: 0 0 0 2px rgba(168,85,247,0.18);
     }}
+
     button {{
       width:100%;
       max-width:100%;
@@ -709,13 +714,16 @@ body::before {{}
       margin-top:14px;
     }}
     button:hover {{ background: rgba(168,85,247,0.28); }}
+
     .small {{ margin-top:12px; font-size:12px; opacity:0.7; }}
     .error {{
       margin-top: 10px;
       font-size: 12px;
       color: #fecaca;
       opacity: 0.95;
+      line-height: 1.35;
     }}
+    code {{ opacity:0.9; }}
   </style>
 </head>
 <body>
@@ -731,17 +739,38 @@ body::before {{}
       <button type="submit">Sign in</button>
     </form>
 
+    {err_html}
+
     <div class="small">Public VIN reports remain accessible at <code>/vin/&lt;VIN&gt;</code>.</div>
   </div>
 </body>
-</html>
-""".strip()
+</html>""".strip()
+
+    # Small helper for safe error display in HTML
+    def escape_html(s: str) -> str:
+        return (
+            (s or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&#039;")
+        )
+
+    if request.method == "GET":
+        # If already logged in, go where they wanted
+        try:
+            if sb_auth_user(current_access_token()):
+                return redirect(next_url)
+        except Exception:
+            pass
+        return render_login_html()
 
     # POST: attempt login
     email = (request.form.get("email") or "").strip()
     password = (request.form.get("password") or "").strip()
     if not email or not password:
-        return ("Missing email or password.", 400)
+        return render_login_html("Missing email or password."), 400
 
     try:
         data = sb_auth_password_login(email, password)
@@ -754,8 +783,8 @@ body::before {{}
         return resp
 
     except Exception as e:
-        # keep it simple and safe
-        return (f"Login failed. {str(e)}", 401)
+        # Show the page again (instead of plain text)
+        return render_login_html(f"Login failed. {str(e)}"), 401 
 
 @app.route("/logout")
 def logout():
