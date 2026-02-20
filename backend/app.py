@@ -17,7 +17,7 @@ CORS(app)
 # ============================================================
 # DEBUG: confirm which file is running in production
 # ============================================================
-APP_VERSION = "2026-02-20-secure-login-v4-elephant-face-better-ears-trunk"
+APP_VERSION = "2026-02-20-secure-login-elephant-face-perfect-v1"
 
 @app.route("/version")
 def version():
@@ -610,65 +610,51 @@ def health_supabase():
 # ---------------------------
 def _elephant_svg_data_uri() -> str:
     """
-    Elephant FACE (smart + playful):
-    - Big elephant-like ears
-    - Thicker trunk with curl
-    - No tusk
-    - Reads clearly as an elephant even when faint
+    Smart + playful elephant FACE icon (bigger ears, thick trunk, NO tusks).
+    Returns URL-encoded svg for CSS data URI.
     """
     svg = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260">
-  <g fill="none" stroke="#9c6cff" stroke-linecap="round" stroke-linejoin="round">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <g fill="none" stroke="#9c6cff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <!-- head -->
+    <path d="M70 125
+             C70 92, 92 70, 120 70
+             C148 70, 170 92, 170 125
+             C170 155, 150 175, 120 175
+             C90 175, 70 155, 70 125" />
+    <!-- big elephant ears (more elephant-like) -->
+    <path d="M70 118
+             C46 110, 34 92, 40 74
+             C48 52, 76 60, 86 78
+             C92 90, 88 108, 78 118" />
+    <path d="M170 118
+             C194 110, 206 92, 200 74
+             C192 52, 164 60, 154 78
+             C148 90, 152 108, 162 118" />
+    <!-- inner ear hint -->
+    <path d="M62 108 C52 98, 50 86, 56 78" opacity="0.7"/>
+    <path d="M178 108 C188 98, 190 86, 184 78" opacity="0.7"/>
 
-    <!-- BIG LEFT EAR (elephant-like) -->
-    <path stroke-width="14"
-      d="M82 96
-         C35 104, 26 150, 52 180
-         C70 202, 112 202, 124 176
-         C136 150, 124 114, 98 102
-         C92 99, 87 97, 82 96 Z"/>
+    <!-- eyes -->
+    <circle cx="108" cy="118" r="5" fill="#9c6cff" stroke="none"/>
+    <circle cx="132" cy="118" r="5" fill="#9c6cff" stroke="none"/>
 
-    <!-- BIG RIGHT EAR (elephant-like) -->
-    <path stroke-width="14"
-      d="M178 96
-         C225 104, 234 150, 208 180
-         C190 202, 148 202, 136 176
-         C124 150, 136 114, 162 102
-         C168 99, 173 97, 178 96 Z"/>
+    <!-- forehead wrinkle (smart/playful) -->
+    <path d="M100 96 C112 88, 128 88, 140 96" opacity="0.8"/>
 
-    <!-- HEAD -->
-    <path stroke-width="14"
-      d="M130 78
-         C96 78, 72 102, 72 134
-         C72 172, 98 194, 130 194
-         C162 194, 188 172, 188 134
-         C188 102, 164 78, 130 78 Z"/>
+    <!-- trunk (thicker + curl) -->
+    <path d="M120 128
+             C120 140, 120 150, 120 160
+             C120 174, 132 178, 140 168
+             C147 160, 140 150, 130 154" />
 
-    <!-- FOREHEAD CREASES (subtle, makes it feel elephant) -->
-    <path stroke-width="8" opacity="0.8"
-      d="M102 108 C118 96, 142 96, 158 108"/>
-    <path stroke-width="7" opacity="0.75"
-      d="M106 122 C120 112, 140 112, 154 122"/>
+    <!-- trunk tip curl -->
+    <path d="M132 154
+             C120 150, 112 160, 122 168" />
 
-    <!-- EYES -->
-    <circle cx="116" cy="136" r="5.5" fill="#9c6cff" stroke="none"/>
-    <circle cx="144" cy="136" r="5.5" fill="#9c6cff" stroke="none"/>
-
-    <!-- FRIENDLY CHEEK SMILE -->
-    <path stroke-width="9" opacity="0.75"
-      d="M112 156 C126 170, 134 170, 148 156"/>
-
-    <!-- THICK TRUNK (centered, clear, curls up slightly) -->
-    <path stroke-width="18"
-      d="M130 160
-         C130 182, 122 196, 128 212
-         C136 232, 168 228, 162 206
-         C158 192, 140 196, 146 210"/>
-
-    <!-- TRUNK TIP (cute curl definition) -->
-    <path stroke-width="12" opacity="0.85"
-      d="M142 214 C150 222, 162 218, 164 206"/>
-
+    <!-- cheeks -->
+    <path d="M92 140 C98 148, 106 150, 112 146" opacity="0.7"/>
+    <path d="M148 140 C142 148, 134 150, 128 146" opacity="0.7"/>
   </g>
 </svg>
 """.strip()
@@ -720,27 +706,29 @@ def login():
       overflow:hidden;
     }}
 
-    /* 🐘 Larger + fewer elephants (not cluttered) */
+    /* 🐘 Elephant faces (few, larger, scattered) */
     body::before {{
       content:"";
       position:absolute;
       inset:-40px;
       pointer-events:none;
-      opacity:0.12;
+      opacity:0.14;
       background-image:
+        url("{elephant_uri}"),
         url("{elephant_uri}"),
         url("{elephant_uri}"),
         url("{elephant_uri}");
       background-repeat:no-repeat;
       background-size:
+        320px 320px,
         260px 260px,
-        210px 210px,
-        240px 240px;
+        220px 220px,
+        280px 280px;
       background-position:
-        18% 20%,
-        82% 22%,
-        50% 74%;
-      filter: blur(0px);
+        18% 22%,
+        78% 18%,
+        24% 78%,
+        78% 76%;
     }}
 
     /* subtle grain */
@@ -1020,4 +1008,4 @@ def public_report(value):
 # ============================================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=False) 
+    app.run(host="0.0.0.0", port=port, debug=False)
