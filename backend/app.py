@@ -605,33 +605,20 @@ def login():
       inset:0;
       pointer-events:none;
       z-index:0;
-      opacity:0.22;
-
-      background-image:
-        var(--elephant),
-        var(--elephant),
-        var(--elephant),
-        var(--elephant);
-
-      background-repeat:
-        repeat,
-        repeat,
-        repeat,
-        repeat;
-
-      background-size:
-        220px 220px,
-        170px 170px,
-        260px 260px,
-        200px 200px;
-
-      background-position:
-        18px 24px,
-        90px 140px,
-        -60px 80px,
-        160px -30px;
-
-      filter: blur(0.2px);
+      
+      /* fewer + calmer */
+      opacity:0.12;
+      background-image: var(--elephant);
+      background-repeat: repeat;
+      
+      /* bigger tile = fewer elephants */
+      background-size: 320px 320px;
+      
+      /* slight offset so it doesn’t feel like a perfect grid */
+      background-position: 40px 60px;
+      
+      /* soften linework a touch */
+      filter: blur(0.35px);
     }}
 
     .card{{
