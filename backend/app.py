@@ -674,10 +674,10 @@ def login():
 
       background-image: url("{bg_url}");
       background-repeat: repeat;
-      background-size: 240px 240px;
+      background-size: 320px 320px;
       background-position: 0px 0px; 
-      
-      transform: rotate(-6deg);
+
+      transform: rotate(0deg);
       filter: none;
     }}
 
