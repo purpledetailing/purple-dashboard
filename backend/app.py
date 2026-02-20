@@ -7,14 +7,17 @@ import requests
 import traceback
 from datetime import datetime, date
 from functools import wraps
+from urllib.parse import quote
 
 app = Flask(__name__, template_folder="templates", static_folder="../static")
+
+# If you want CORS only for /vin + /search API later, we can tighten it.
 CORS(app)
 
 # ============================================================
 # DEBUG: confirm which file is running in production
 # ============================================================
-APP_VERSION = "2026-02-19-secure-login-v3-elephant-wallpaper"
+APP_VERSION = "2026-02-19-secure-login-v3-elephant-bg-fix"
 
 @app.route("/version")
 def version():
@@ -30,8 +33,9 @@ def version():
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "Customer_Data.db")
 
-PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 if not PUBLIC_BASE_URL:
+    # local dev default (no markdown links)
     PUBLIC_BASE_URL = "http://localhost:5000"
 
 # ---------------------------
@@ -44,19 +48,19 @@ def env_flag(name: str, default: str = "1") -> bool:
 USE_SUPABASE = env_flag("USE_SUPABASE", "1")
 SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
-SUPABASE_ANON_KEY = (os.environ.get("SUPABASE_ANON_KEY") or "").strip()  # required for auth validation
+SUPABASE_ANON_KEY = (os.environ.get("SUPABASE_ANON_KEY") or "").strip()  # ✅ REQUIRED for /login validation
 
-LEGACY_TABLE = os.environ.get("LEGACY_TABLE", "customer_data_legacy").strip()
-JOBS_LEGACY_TABLE = os.environ.get("JOBS_LEGACY_TABLE", "customer_jobs_legacy").strip()
-PHOTO_BUCKET = os.environ.get("PHOTO_BUCKET", "vehicle-photos").strip()
+LEGACY_TABLE = (os.environ.get("LEGACY_TABLE", "customer_data_legacy") or "").strip()
+JOBS_LEGACY_TABLE = (os.environ.get("JOBS_LEGACY_TABLE", "customer_jobs_legacy") or "").strip()
+PHOTO_BUCKET = (os.environ.get("PHOTO_BUCKET", "vehicle-photos") or "").strip()
 
 # ---------------------------
 # Secure auth cookie
 # ---------------------------
-AUTH_COOKIE_NAME = os.environ.get("SECURE_AUTH_COOKIE", "purple_secure_at").strip()
+AUTH_COOKIE_NAME = (os.environ.get("SECURE_AUTH_COOKIE", "purple_secure_at") or "").strip()
 COOKIE_SECURE = env_flag("COOKIE_SECURE", "1")  # set 1 in prod (https)
-COOKIE_SAMESITE = (os.environ.get("COOKIE_SAMESITE") or "Lax").strip()
-COOKIE_DOMAIN = (os.environ.get("COOKIE_DOMAIN") or "").strip()  # optional: ".purplevin.com"
+COOKIE_SAMESITE = (os.environ.get("COOKIE_SAMESITE") or "Lax").strip()  # Lax fine for normal login
+COOKIE_DOMAIN = (os.environ.get("COOKIE_DOMAIN") or "").strip()  # optional: "secure.purplevin.com" or ".purplevin.com"
 
 def supabase_headers_service_role():
     return {
@@ -67,6 +71,7 @@ def supabase_headers_service_role():
     }
 
 def supabase_headers_anon():
+    # For auth endpoints & /auth/v1/user validation
     return {
         "apikey": SUPABASE_ANON_KEY,
         "Content-Type": "application/json",
@@ -108,11 +113,16 @@ def fmt_date(iso_str: str) -> str:
     try:
         s = str(iso_str).replace("Z", "+00:00")
         dt = datetime.fromisoformat(s)
+        # windows vs linux strftime differences
         return dt.strftime("%#m/%#d/%Y") if os.name == "nt" else dt.strftime("%-m/%-d/%Y")
     except Exception:
         return str(iso_str)
 
 def _date_to_str(v):
+    """
+    Accepts date, datetime, or ISO-like strings and returns a friendly date string.
+    Falls back to raw string if it can't parse.
+    """
     if v is None:
         return ""
     if isinstance(v, date) and not isinstance(v, datetime):
@@ -139,6 +149,10 @@ def first_truthy(*vals):
     return ""
 
 def scrub_empty_history_rows(history_rows):
+    """
+    Remove rows that have no meaningful service_type/description/notes.
+    Prevents blank cards in UI.
+    """
     out = []
     for r in history_rows or []:
         st = (r.get("service_type") or "").strip()
@@ -155,6 +169,10 @@ def wants_json():
     return request.path.startswith("/search") or request.path.startswith("/api/")
 
 def safe_next_path(next_url: str) -> str:
+    """
+    Only allow local redirects like "/".
+    Prevent open redirect.
+    """
     nxt = (next_url or "").strip()
     if not nxt.startswith("/"):
         return "/"
@@ -163,7 +181,7 @@ def safe_next_path(next_url: str) -> str:
     return nxt
 
 # ---------------------------
-# Supabase REST helpers (SERVICE ROLE)
+# Supabase REST helpers (PostgREST uses SERVICE ROLE)
 # ---------------------------
 def sb_get(path: str, params: dict, timeout: int = 20):
     url = f"{SUPABASE_URL}/rest/v1/{path.lstrip('/')}"
@@ -183,9 +201,13 @@ def sb_post(path: str, json_body: dict, timeout: int = 20):
         return None
 
 # ---------------------------
-# Supabase Auth helpers (ANON)
+# Supabase Auth helpers (ANON KEY)
 # ---------------------------
 def sb_auth_password_login(email: str, password: str, timeout: int = 20):
+    """
+    Uses Supabase Auth password grant.
+    Returns dict with access_token / refresh_token on success.
+    """
     if not supabase_auth_ready():
         raise RuntimeError("Supabase auth not configured (SUPABASE_ANON_KEY missing).")
     url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
@@ -198,6 +220,10 @@ def sb_auth_password_login(email: str, password: str, timeout: int = 20):
     return r.json() or {}
 
 def sb_auth_user(access_token: str, timeout: int = 15):
+    """
+    Validate an access token by calling /auth/v1/user.
+    Returns user json on success, None on failure.
+    """
     if not supabase_auth_ready():
         return None
     at = (access_token or "").strip()
@@ -220,6 +246,7 @@ def set_auth_cookie(resp, access_token: str):
     }
     if COOKIE_DOMAIN:
         cookie_kwargs["domain"] = COOKIE_DOMAIN
+    # Supabase access token typically ~1 hour
     resp.set_cookie(AUTH_COOKIE_NAME, access_token, max_age=60 * 60, **cookie_kwargs)
     return resp
 
@@ -234,6 +261,11 @@ def current_access_token():
     return (request.cookies.get(AUTH_COOKIE_NAME) or "").strip()
 
 def require_auth(fn):
+    """
+    Protect internal pages. Public VIN report stays untouched.
+    - If JSON/API request -> 401
+    - If browser -> redirect to /login
+    """
     @wraps(fn)
     def wrapper(*args, **kwargs):
         at = current_access_token()
@@ -279,10 +311,16 @@ def sb_photos_for_vin_batch(vin: str, batch_id: str, limit: int = 8):
     return rows or []
 
 def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
+    """
+    Return a signed URL for a storage object path (PHOTO_BUCKET bucket).
+    Uses SERVICE ROLE because it's server-side.
+    """
     if not storage_path:
         return None
+
     storage_path = str(storage_path).lstrip("/")
     url = f"{SUPABASE_URL}/storage/v1/object/sign/{PHOTO_BUCKET}/{storage_path}"
+
     r = requests.post(
         url,
         headers={
@@ -300,12 +338,16 @@ def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
     signed_path = data.get("signedURL") or data.get("signedUrl") or ""
     if not signed_path:
         return None
+
     if signed_path.startswith("http"):
         return signed_path
+
     if signed_path.startswith("/object/"):
         signed_path = "/storage/v1" + signed_path
+
     if not signed_path.startswith("/storage/v1/"):
         signed_path = "/storage/v1/" + signed_path.lstrip("/")
+
     return f"{SUPABASE_URL}{signed_path}"
 
 # ============================================================
@@ -409,7 +451,7 @@ def sb_customer_by_id(customer_id: str):
     return rows[0] if rows else None
 
 # ============================================================
-# Pull job history from customer_jobs_legacy
+# ✅ Pull job history from customer_jobs_legacy
 # ============================================================
 def sb_jobs_legacy_by_vin(vin: str, limit: int = 50):
     vin = normalize_vin(vin)
@@ -443,12 +485,13 @@ def build_history_from_jobs_legacy(vin: str):
     return scrub_empty_history_rows(out)
 
 # ============================================================
-# Merge profile
+# ✅ Merge profile
 # ============================================================
 def merged_profile_by_vin(vin: str):
     vin = normalize_vin(vin)
     veh = sb_vehicle_by_vin(vin)
     legacy = sb_legacy_by_vin(vin)
+
     if not veh and not legacy:
         return None
 
@@ -457,14 +500,20 @@ def merged_profile_by_vin(vin: str):
     year = (veh or {}).get("year") or (legacy or {}).get("year") or ""
 
     vehicle_nickname = first_truthy((legacy or {}).get("vehicle_nickname"), (veh or {}).get("nickname"), "")
-    service_history_link = first_truthy((legacy or {}).get("service_history_link"), (veh or {}).get("service_history_link"), "")
+    service_history_link = first_truthy(
+        (legacy or {}).get("service_history_link"),
+        (veh or {}).get("service_history_link"),
+        ""
+    )
     status = first_truthy((legacy or {}).get("status"), (veh or {}).get("status"), "")
     notes = first_truthy((legacy or {}).get("notes"), (veh or {}).get("notes"), "")
 
+    # --- Customer fields (legacy primary) ---
     customer_name = first_truthy((legacy or {}).get("customer_name"), "")
     phone_number = first_truthy((legacy or {}).get("phone_number"), "")
     email = first_truthy((legacy or {}).get("email"), "")
 
+    # fallback if legacy missing customer fields
     latest_customer = None
     if veh and veh.get("id"):
         try:
@@ -479,8 +528,10 @@ def merged_profile_by_vin(vin: str):
     if not phone_number and latest_customer:
         phone_number = first_truthy(latest_customer.get("phone"), "")
 
+    # ✅ Service history
     service_history = build_history_from_jobs_legacy(vin)
 
+    # --- Photos (latest batch only, max 8) ---
     latest_batch_id = ""
     photo_urls = []
     photo_count = 0
@@ -526,7 +577,7 @@ def merged_profile_by_vin(vin: str):
     }
 
 # ============================================================
-# Routes
+# Routes (Public vs Secure)
 # ============================================================
 @app.route("/health")
 def health():
@@ -555,8 +606,45 @@ def health_supabase():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 # ---------------------------
-# Secure login (server cookie auth)
+# ✅ Secure login (server cookie auth)
 # ---------------------------
+def _elephant_svg_data_uri() -> str:
+    """
+    Kid-doodle elephant (clear trunk + tusk).
+    Returns URL-encoded svg for CSS data URI.
+    """
+    svg = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220">
+  <g fill="none" stroke="#9c6cff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="1">
+    <!-- head + back -->
+    <path d="M55 120
+             C45 90, 60 55, 105 55
+             C145 50, 170 70, 170 105
+             C175 140, 150 160, 120 162
+             C95 165, 70 150, 60 135" />
+    <!-- ear -->
+    <path d="M95 92
+             C82 86, 70 96, 74 110
+             C78 126, 98 125, 105 112
+             C112 100, 106 95, 95 92" />
+    <!-- trunk -->
+    <path d="M170 108
+             C190 112, 196 128, 186 140
+             C178 150, 170 144, 173 136
+             C176 128, 186 130, 192 138" />
+    <!-- tusk -->
+    <path d="M166 118
+             C180 118, 186 124, 176 128" />
+    <!-- legs-ish -->
+    <path d="M78 160 L78 175" />
+    <path d="M118 164 L118 178" />
+    <!-- eye -->
+    <circle cx="138" cy="92" r="4" fill="#9c6cff" stroke="none"/>
+  </g>
+</svg>
+""".strip()
+    return "data:image/svg+xml," + quote(svg)
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if not supabase_auth_ready():
@@ -572,8 +660,13 @@ def login():
         except Exception:
             pass
 
-        # Solid card + clearer kid elephant wallpaper (smaller/more/not linear)
-        return f"""<!doctype html>
+        elephant_uri = _elephant_svg_data_uri()
+
+        # IMPORTANT:
+        # This is an f-string (because we insert next_url + elephant_uri),
+        # so ALL CSS braces must be doubled {{ }}.
+        return f"""
+<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -581,127 +674,148 @@ def login():
   <title>Secure Login · PurpleVin</title>
   <style>
     * {{ box-sizing: border-box; }}
-
-    body{{
+    body {{
+      margin:0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background:#0b1020;
-      color:#0f172a;
-      display:flex;
       min-height:100vh;
+      display:flex;
       align-items:center;
       justify-content:center;
       padding:24px;
+      color:#0f172a;
+      background:
+        radial-gradient(1200px 800px at 25% 20%, rgba(156,108,255,0.25), transparent 55%),
+        radial-gradient(900px 700px at 80% 70%, rgba(91,31,166,0.22), transparent 55%),
+        #0b1020;
       position:relative;
       overflow:hidden;
     }}
 
-    :root{{
-      --elephant: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E
-%3Cpath d='M50 110
-Q40 80 70 70
-Q85 40 115 55
-Q150 45 160 75
-Q180 95 160 120
-Q150 150 115 150
-Q75 145 60 120'
-stroke='%239c6cff'
-fill='none'
-stroke-width='5'
-stroke-linecap='round'
-stroke-linejoin='round'/%3E
-
-%3Cpath d='M60 120
-Q40 135 55 150
-Q70 160 85 145'
-stroke='%239c6cff'
-fill='none'
-stroke-width='5'
-stroke-linecap='round'/%3E
-
-%3Cpath d='M120 80
-Q145 85 140 105'
-stroke='%239c6cff'
-fill='none'
-stroke-width='5'
-stroke-linecap='round'/%3E
-
-%3Ccircle cx='90' cy='95' r='5' fill='%239c6cff'/%3E
-%3C/svg%3E");
+    /* 🐘 Hendrix Elephant pattern (smaller, scattered, not too many) */
+    body::before {{
+      content:"";
+      position:absolute;
+      inset:-40px;
+      pointer-events:none;
+      opacity:0.14;
+      background-image:
+        url("{elephant_uri}"),
+        url("{elephant_uri}"),
+        url("{elephant_uri}"),
+        url("{elephant_uri}"),
+        url("{elephant_uri}"),
+        url("{elephant_uri}");
+      background-repeat:no-repeat;
+      background-size:
+        120px 120px,
+        90px 90px,
+        110px 110px,
+        85px 85px,
+        105px 105px,
+        95px 95px;
+      background-position:
+        10% 18%,
+        78% 16%,
+        24% 64%,
+        72% 72%,
+        50% 34%,
+        12% 86%;
+      filter: blur(0px);
     }}
 
-    body::before{{
+    /* subtle grain */
+    body::after {{
       content:"";
-      position:fixed;
+      position:absolute;
       inset:0;
       pointer-events:none;
-      z-index:0;
-      
-      /* fewer + calmer */
-      opacity:0.12;
-      background-image: var(--elephant);
-      background-repeat: repeat;
-      
-      /* bigger tile = fewer elephants */
-      background-size: 320px 320px;
-      
-      /* slight offset so it doesn’t feel like a perfect grid */
-      background-position: 40px 60px;
-      
-      /* soften linework a touch */
-      filter: blur(0.35px);
+      opacity:0.06;
+      background-image: radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px);
+      background-size: 4px 4px;
+      mix-blend-mode: overlay;
     }}
 
-    .card{{
+    .card {{
       width:100%;
-      max-width:420px;
-      background:#ffffff;
+      max-width:460px;
+      background:#ffffff;           /* ✅ not transparent */
       border:1px solid rgba(15,23,42,0.10);
       border-radius:18px;
-      padding:22px;
-      box-shadow: 0 18px 45px rgba(0,0,0,0.30);
+      padding:22px 22px 18px;
+      box-shadow: 0 18px 50px rgba(2,6,23,0.35);
       position:relative;
       z-index:1;
     }}
 
-    h1{{ margin:0 0 6px; font-size:20px; color:#0f172a; }}
-    p{{ margin:0 0 16px; color:#334155; font-size:13px; }}
-    form{{ margin:0; }}
-    label{{ display:block; font-size:12px; color:#475569; margin:10px 0 6px; }}
+    h1 {{
+      margin:0 0 6px;
+      font-size:20px;
+      letter-spacing:0.02em;
+    }}
+    p {{
+      margin:0 0 14px;
+      color:#475569;
+      font-size:13px;
+      line-height:1.35;
+    }}
 
-    input{{
+    label {{
+      display:block;
+      font-size:12px;
+      color:#64748b;
+      margin:10px 0 6px;
+      text-transform:uppercase;
+      letter-spacing:0.12em;
+    }}
+
+    input {{
       width:100%;
-      height:44px;
+      max-width:100%;
+      height:46px;
       border-radius:12px;
-      border:1px solid rgba(15,23,42,0.12);
+      border:1px solid rgba(15,23,42,0.14);
       background:#f8fafc;
       color:#0f172a;
       padding:0 12px;
       outline:none;
+      transition: border .12s ease, box-shadow .12s ease, background .12s ease;
     }}
-
-    input:focus{{
-      border-color: rgba(124,58,237,0.55);
-      box-shadow: 0 0 0 3px rgba(124,58,237,0.18);
+    input:focus {{
+      border-color: rgba(91,31,166,0.45);
+      box-shadow: 0 0 0 3px rgba(156,108,255,0.18);
       background:#ffffff;
     }}
 
-    button{{
+    button {{
       width:100%;
-      height:44px;
+      max-width:100%;
+      height:46px;
       border-radius:12px;
       border:0;
-      background: linear-gradient(135deg, #111827, #6d28d9);
-      color:#fff;
-      font-weight:800;
+      background: linear-gradient(135deg, #0f172a, #5b1fa6);
+      color:#ffffff;
+      font-weight:900;
       cursor:pointer;
       margin-top:14px;
+      box-shadow: 0 12px 24px rgba(2,6,23,0.25);
     }}
+    button:hover {{ filter: brightness(1.04); }}
+    button:active {{ transform: translateY(1px); }}
 
-    button:hover{{ filter: brightness(1.04); }}
-
-    .small{{ margin-top:12px; font-size:12px; color:#475569; }}
-    .error{{ margin-top:10px; font-size:12px; color:#b91c1c; line-height:1.35; }}
-    code{{ background:#f1f5f9; padding:2px 6px; border-radius:8px; }}
+    .small {{
+      margin-top:12px;
+      font-size:12px;
+      color:#64748b;
+    }}
+    code {{
+      background:#f1f5f9;
+      border:1px solid rgba(15,23,42,0.10);
+      padding:2px 6px;
+      border-radius:8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+      color:#0f172a;
+    }}
   </style>
 </head>
 <body>
@@ -718,7 +832,8 @@ stroke-linecap='round'/%3E
     <div class="small">Public VIN reports remain accessible at <code>/vin/&lt;VIN&gt;</code>.</div>
   </div>
 </body>
-</html>""".strip()
+</html>
+""".strip()
 
     # POST: attempt login
     email = (request.form.get("email") or "").strip()
@@ -731,6 +846,7 @@ stroke-linecap='round'/%3E
         access_token = (data.get("access_token") or "").strip()
         if not access_token:
             raise RuntimeError("No access_token returned.")
+
         resp = make_response(redirect(next_url))
         resp = set_auth_cookie(resp, access_token)
         return resp
@@ -739,16 +855,21 @@ stroke-linecap='round'/%3E
 
 @app.route("/logout")
 def logout():
+    # ✅ SERVER logout: clears our cookie and forces /login
     resp = make_response(redirect("/login"))
     resp = clear_auth_cookie(resp)
     return resp
 
 # ---------------------------
-# Secure home + secure VIN search (internal)
+# ✅ Secure home + secure vin search (internal)
 # ---------------------------
 @app.route("/")
 @require_auth
 def home():
+    # index.html uses:
+    # - {{ supabase_url }}
+    # - {{ supabase_anon_key }}
+    # - {{ logout_url }}
     return render_template(
         "index.html",
         supabase_url=SUPABASE_URL,
@@ -797,7 +918,7 @@ def search():
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------
-# Public report stays PUBLIC and UNTOUCHED
+# ✅ Public report stays PUBLIC and UNTOUCHED
 # ---------------------------
 @app.route("/vin/<value>")
 def public_report(value):
