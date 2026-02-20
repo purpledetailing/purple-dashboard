@@ -1,3 +1,4 @@
+
 from flask import Flask, request, jsonify, render_template, redirect, make_response
 from flask_cors import CORS
 import sqlite3
@@ -633,16 +634,43 @@ def login():
   <title>Secure Login · PurpleVin</title>
   <style>
     * {{ box-sizing: border-box; }}
-    body {{
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background:#0b1020;
-      color:#e5e7eb;
-      display:flex;
-      min-height:100vh;
-      align-items:center;
-      justify-content:center;
-      padding:24px;
-    }}
+    body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background:#0b1020;
+  color:#e5e7eb;
+  display:flex;
+  min-height:100vh;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  position:relative;
+  overflow:hidden;
+}
+
+/* 🐘 Hendrix Elephant */
+body::before {
+  content:"";
+  position:absolute;
+  width:600px;
+  height:600px;
+  top:50%;
+  left:50%;
+  transform:translate(-50%, -50%);
+  opacity:0.06;
+  background-repeat:no-repeat;
+  background-position:center;
+  background-size:contain;
+  pointer-events:none;
+  background-image:url("data:image/svg+xml;utf8,
+<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'>
+  <path d='M40 90 Q30 70 60 60 Q70 40 100 50 Q130 40 140 70 Q170 80 150 110 Q140 140 100 150 Q60 140 50 110 Z'
+        stroke='%239c6cff'
+        fill='none'
+        stroke-width='4'
+        stroke-linecap='round'/>
+  <circle cx='70' cy='90' r='4' fill='%239c6cff'/>
+</svg>");
+} 
     .card {{
       width:100%;
       max-width:420px;
