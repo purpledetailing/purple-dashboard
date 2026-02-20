@@ -611,29 +611,78 @@ def health_supabase():
 from urllib.parse import quote  # ensure this import exists
 
 def _elephant_svg_data_uri() -> str:
+    # Clean, unmistakable elephant face (no tusks), playful + smart line art
     svg = r"""
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360">
-  <g fill="none" stroke="#9c6cff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 520">
+  <g fill="none" stroke="#9c6cff" stroke-linecap="round" stroke-linejoin="round">
 
-    <!-- LEFT EAR (bigger + higher) -->
-    <path d="M110 130
-             C40 70, 30 210, 130 240" />
+    <!-- EARS: big fan shape -->
+    <path stroke-width="18"
+      d="M175 175
+         C105 170, 55 235, 85 305
+         C110 360, 190 372, 225 330
+         C245 305, 240 255, 215 220
+         C205 205, 192 190, 175 175 Z"/>
+    <path stroke-width="18"
+      d="M345 175
+         C415 170, 465 235, 435 305
+         C410 360, 330 372, 295 330
+         C275 305, 280 255, 305 220
+         C315 205, 328 190, 345 175 Z"/>
 
-    <!-- RIGHT EAR -->
-    <path d="M250 130
-             C320 70, 330 210, 230 240" />
+    <!-- INNER EARS (panel) -->
+    <path stroke-width="11" opacity="0.90"
+      d="M178 205
+         C130 205, 100 255, 120 300
+         C138 340, 190 345, 210 320"/>
+    <path stroke-width="11" opacity="0.90"
+      d="M342 205
+         C390 205, 420 255, 400 300
+         C382 340, 330 345, 310 320"/>
 
-    <!-- HEAD -->
-    <circle cx="180" cy="160" r="90" />
+    <!-- HEAD: elephant face (not circular) -->
+    <path stroke-width="18"
+      d="M260 125
+         C205 125, 165 160, 155 215
+         C145 275, 175 345, 260 355
+         C345 345, 375 275, 365 215
+         C355 160, 315 125, 260 125 Z"/>
 
-    <!-- EYES (wider = smarter look) -->
-    <circle cx="145" cy="150" r="6" fill="#9c6cff" stroke="none"/>
-    <circle cx="215" cy="150" r="6" fill="#9c6cff" stroke="none"/>
+    <!-- FOREHEAD / TRUNK ROOT WRINKLES -->
+    <path stroke-width="11" opacity="0.85"
+      d="M210 170 C235 150, 285 150, 310 170"/>
+    <path stroke-width="10" opacity="0.65"
+      d="M220 190 C240 175, 280 175, 300 190"/>
+    <path stroke-width="10" opacity="0.55"
+      d="M232 208 C246 198, 274 198, 288 208"/>
 
-    <!-- THICKER TRUNK (no tusks) -->
-    <path d="M180 210
-             C180 260, 165 290, 200 310
-             C220 325, 240 300, 210 280" />
+    <!-- EYES (friendly) -->
+    <circle cx="230" cy="235" r="8" fill="#9c6cff" stroke="none"/>
+    <circle cx="290" cy="235" r="8" fill="#9c6cff" stroke="none"/>
+    <path stroke-width="8" opacity="0.55"
+      d="M214 225 C222 215, 238 215, 246 225"/>
+    <path stroke-width="8" opacity="0.55"
+      d="M274 225 C282 215, 298 215, 306 225"/>
+
+    <!-- CHEEKS (tiny smile hints) -->
+    <path stroke-width="10" opacity="0.55"
+      d="M190 270 C210 292, 232 298, 252 292"/>
+    <path stroke-width="10" opacity="0.55"
+      d="M330 270 C310 292, 288 298, 268 292"/>
+
+    <!-- TRUNK: thicker + curl up, no tusks -->
+    <path stroke-width="22"
+      d="M260 275
+         C258 320, 242 350, 260 378
+         C278 406, 322 392, 308 360
+         C300 342, 282 336, 282 318
+         C282 300, 292 288, 306 280"/>
+
+    <!-- TRUNK TIP (nostril hint) -->
+    <path stroke-width="12" opacity="0.90"
+      d="M275 392 C292 404, 314 392, 316 372"/>
+    <path stroke-width="10" opacity="0.60"
+      d="M290 380 C298 386, 308 380, 310 370"/>
 
   </g>
 </svg>
