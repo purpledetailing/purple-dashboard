@@ -614,37 +614,39 @@ def _elephant_svg_data_uri() -> str:
     Returns URL-encoded svg for CSS data URI.
     """
     svg = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
-  <g fill="none" stroke="#9c6cff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
-    <!-- back + head outline -->
-    <path d="M55 140
-             C35 110, 45 70, 85 62
-             C120 55, 160 65, 175 95
-             C185 120, 170 150, 135 160
-             C105 170, 75 160, 60 150" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260">
+  <g fill="none" stroke="#9c6cff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="1">
+    <!-- body + head -->
+    <path d="M55 150
+             C35 120, 40 85, 78 72
+             C105 63, 135 66, 160 80
+             C185 95, 197 120, 188 145
+             C180 170, 155 185, 125 186
+             C95 187, 72 175, 60 160" />
 
-    <!-- ear (big, obvious) -->
-    <path d="M95 92
-             C70 90, 60 112, 72 130
-             C85 150, 115 140, 120 118
-             C124 100, 110 94, 95 92" />
+    <!-- big ear -->
+    <path d="M108 92
+             C78 92, 64 118, 78 140
+             C94 165, 132 154, 140 126
+             C146 105, 130 94, 108 92" />
 
-    <!-- trunk (down then forward; NO loop) -->
-    <path d="M175 105
-             C195 120, 198 145, 182 162
-             C172 173, 160 168, 163 155
-             C166 142, 178 145, 188 154" />
+    <!-- trunk (down then forward, no loop tip) -->
+    <path d="M186 108
+             C212 130, 208 165, 182 182
+             C165 193, 150 186, 156 170
+             C162 154, 178 162, 196 176" />
 
-    <!-- tusk (clearly tusk-shaped) -->
-    <path d="M168 118
-             C182 118, 190 122, 178 132" />
+    <!-- tusk (very obvious, separate from trunk) -->
+    <path d="M170 122
+             C192 120, 202 126, 180 140" />
 
-    <!-- feet-ish -->
-    <path d="M78 164 L78 182" />
-    <path d="M120 164 L120 184" />
+    <!-- legs -->
+    <path d="M82 185 L82 210" />
+    <path d="M118 186 L118 214" />
+    <path d="M150 180 L150 210" />
 
     <!-- eye -->
-    <circle cx="140" cy="92" r="4" fill="#9c6cff" stroke="none"/>
+    <circle cx="146" cy="95" r="4" fill="#9c6cff" stroke="none"/>
   </g>
 </svg>
 """.strip()
