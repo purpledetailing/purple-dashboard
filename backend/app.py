@@ -610,10 +610,13 @@ def health_supabase():
 # ---------------------------
 def _elephant_svg_data_uri() -> str:
     """
-    Kid-doodle elephant (clear trunk + tusk).
-    Returns URL-encoded svg for CSS data URI.
+    Clear elephant doodle:
+    - BIG ear
+    - trunk DOWN then forward
+    - tusk (obvious)
+    - simple legs
     """
-    svg = """
+    svg = r"""
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260">
   <g fill="none" stroke="#9c6cff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="1">
     <!-- body + head -->
