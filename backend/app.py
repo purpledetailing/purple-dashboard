@@ -1,3 +1,4 @@
+</svg>
 from flask import Flask, request, jsonify, render_template, redirect, make_response
 from flask_cors import CORS
 import sqlite3
@@ -613,54 +614,55 @@ from urllib.parse import quote  # ensure this import exists
 def _elephant_svg_data_uri() -> str:
     """
     Clear elephant doodle:
-    - ear extends ABOVE body
-    - trunk curls UP
-    - obvious tusk
+    - ear clearly ABOVE body/head
+    - trunk curls UP and reads like a trunk
+    - tusks are obvious
     - small tail
     """
     svg = r"""
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320">
-  <g fill="none" stroke="#9c6cff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
-    <!-- body + back + belly -->
-    <path d="M70 185
-             C45 150, 55 105, 105 88
-             C145 74, 200 78, 235 102
-             C270 128, 280 165, 262 195
-             C240 232, 195 246, 150 242
-             C112 238, 86 220, 74 205" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360">
+  <g fill="none" stroke="#9c6cff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
 
-    <!-- ear (extends above body) -->
-    <path d="M150 95
-             C112 78, 85 112, 95 150
-             C105 190, 160 190, 178 148
-             C193 112, 178 104, 150 95" />
+    <!-- BODY (big oval-ish) -->
+    <path d="M95 205
+             C60 170, 70 120, 125 100
+             C165 85, 230 88, 270 118
+             C315 150, 315 205, 275 235
+             C240 255, 185 262, 140 252
+             C115 246, 100 232, 95 205" />
 
-    <!-- head front bump -->
-    <path d="M232 118
-             C252 122, 262 136, 258 152" />
+    <!-- EAR (high + obvious, sits above body line) -->
+    <path d="M165 88
+             C120 55, 80 110, 105 160
+             C130 210, 200 200, 210 145
+             C217 105, 195 95, 165 88" />
 
-    <!-- trunk curls UP (no weird loop tip) -->
-    <path d="M258 152
-             C282 170, 278 202, 250 206
-             C230 209, 224 190, 240 182
-             C258 174, 270 184, 270 198
-             C270 220, 244 232, 228 220" />
+    <!-- HEAD bump (front) -->
+    <path d="M260 128
+             C285 132, 300 150, 294 170" />
 
-    <!-- tusk (separate, sharp and obvious) -->
-    <path d="M236 154
-             C258 150, 272 156, 246 170" />
+    <!-- TRUNK (thick, curls UP clearly) -->
+    <path d="M294 170
+             C325 195, 320 235, 285 240
+             C260 244, 248 225, 265 213
+             C286 198, 305 210, 304 230
+             C302 265, 255 275, 238 245" />
 
-    <!-- legs (simple) -->
-    <path d="M112 242 L112 270" />
-    <path d="M152 244 L152 276" />
-    <path d="M196 238 L196 268" />
+    <!-- TUSKS (two short hooks - very readable) -->
+    <path d="M262 182 C282 175, 292 182, 270 195" />
+    <path d="M255 192 C275 190, 285 198, 262 206" />
 
-    <!-- tail (small) -->
-    <path d="M72 176
-             C60 180, 56 192, 64 200" />
+    <!-- EYE -->
+    <circle cx="235" cy="126" r="5" fill="#9c6cff" stroke="none"/>
 
-    <!-- eye -->
-    <circle cx="210" cy="108" r="5" fill="#9c6cff" stroke="none"/>
+    <!-- LEGS (simple stubs) -->
+    <path d="M130 252 L130 286" />
+    <path d="M175 255 L175 292" />
+    <path d="M220 248 L220 284" />
+
+    <!-- TAIL (small) -->
+    <path d="M95 185 C80 188, 76 200, 86 210" />
+
   </g>
 </svg>
 """.strip()
