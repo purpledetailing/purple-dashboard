@@ -612,55 +612,40 @@ from urllib.parse import quote  # ensure this import exists
 
 def _elephant_svg_data_uri() -> str:
     """
-    Clear elephant doodle:
-    - ear clearly ABOVE body/head
-    - trunk curls UP and reads like a trunk
-    - tusks are obvious
-    - small tail
+    Clean front-facing elephant face.
+    Symmetrical.
+    Clear trunk + tusks.
+    Big ears.
+    Logo-friendly.
     """
+
     svg = r"""
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360">
   <g fill="none" stroke="#9c6cff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
 
-    <!-- BODY (big oval-ish) -->
-    <path d="M95 205
-             C60 170, 70 120, 125 100
-             C165 85, 230 88, 270 118
-             C315 150, 315 205, 275 235
-             C240 255, 185 262, 140 252
-             C115 246, 100 232, 95 205" />
+    <!-- LEFT EAR -->
+    <path d="M110 120
+             C60 90, 40 170, 110 210" />
 
-    <!-- EAR (high + obvious, sits above body line) -->
-    <path d="M165 88
-             C120 55, 80 110, 105 160
-             C130 210, 200 200, 210 145
-             C217 105, 195 95, 165 88" />
+    <!-- RIGHT EAR -->
+    <path d="M250 120
+             C300 90, 320 170, 250 210" />
 
-    <!-- HEAD bump (front) -->
-    <path d="M260 128
-             C285 132, 300 150, 294 170" />
+    <!-- HEAD -->
+    <circle cx="180" cy="160" r="90" />
 
-    <!-- TRUNK (thick, curls UP clearly) -->
-    <path d="M294 170
-             C325 195, 320 235, 285 240
-             C260 244, 248 225, 265 213
-             C286 198, 305 210, 304 230
-             C302 265, 255 275, 238 245" />
+    <!-- EYES -->
+    <circle cx="150" cy="150" r="6" fill="#9c6cff" stroke="none"/>
+    <circle cx="210" cy="150" r="6" fill="#9c6cff" stroke="none"/>
 
-    <!-- TUSKS (two short hooks - very readable) -->
-    <path d="M262 182 C282 175, 292 182, 270 195" />
-    <path d="M255 192 C275 190, 285 198, 262 206" />
+    <!-- TRUNK (down + slight curl) -->
+    <path d="M180 210
+             C180 260, 170 285, 190 305
+             C205 320, 225 305, 205 285" />
 
-    <!-- EYE -->
-    <circle cx="235" cy="126" r="5" fill="#9c6cff" stroke="none"/>
-
-    <!-- LEGS (simple stubs) -->
-    <path d="M130 252 L130 286" />
-    <path d="M175 255 L175 292" />
-    <path d="M220 248 L220 284" />
-
-    <!-- TAIL (small) -->
-    <path d="M95 185 C80 188, 76 200, 86 210" />
+    <!-- TUSKS -->
+    <path d="M150 215 C135 225, 135 240, 155 240" />
+    <path d="M210 215 C225 225, 225 240, 205 240" />
 
   </g>
 </svg>
