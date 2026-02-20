@@ -611,41 +611,29 @@ def health_supabase():
 from urllib.parse import quote  # ensure this import exists
 
 def _elephant_svg_data_uri() -> str:
-    """
-    Clean front-facing elephant face.
-    Symmetrical.
-    Clear trunk + tusks.
-    Big ears.
-    Logo-friendly.
-    """
-
     svg = r"""
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360">
-  <g fill="none" stroke="#9c6cff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="#9c6cff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
 
-    <!-- LEFT EAR -->
-    <path d="M110 120
-             C60 90, 40 170, 110 210" />
+    <!-- LEFT EAR (bigger + higher) -->
+    <path d="M110 130
+             C40 70, 30 210, 130 240" />
 
     <!-- RIGHT EAR -->
-    <path d="M250 120
-             C300 90, 320 170, 250 210" />
+    <path d="M250 130
+             C320 70, 330 210, 230 240" />
 
     <!-- HEAD -->
     <circle cx="180" cy="160" r="90" />
 
-    <!-- EYES -->
-    <circle cx="150" cy="150" r="6" fill="#9c6cff" stroke="none"/>
-    <circle cx="210" cy="150" r="6" fill="#9c6cff" stroke="none"/>
+    <!-- EYES (wider = smarter look) -->
+    <circle cx="145" cy="150" r="6" fill="#9c6cff" stroke="none"/>
+    <circle cx="215" cy="150" r="6" fill="#9c6cff" stroke="none"/>
 
-    <!-- TRUNK (down + slight curl) -->
+    <!-- THICKER TRUNK (no tusks) -->
     <path d="M180 210
-             C180 260, 170 285, 190 305
-             C205 320, 225 305, 205 285" />
-
-    <!-- TUSKS -->
-    <path d="M150 215 C135 225, 135 240, 155 240" />
-    <path d="M210 215 C225 225, 225 240, 205 240" />
+             C180 260, 165 290, 200 310
+             C220 325, 240 300, 210 280" />
 
   </g>
 </svg>
