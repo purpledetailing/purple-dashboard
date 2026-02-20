@@ -596,7 +596,37 @@ def login():
     }}
 
     :root{{
-      --elephant: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A//www.w3.org/2000/svg'%20viewBox%3D'0%200%20200%20200'%3E%3Cg%20fill%3D'none'%20stroke%3D'%239c6cff'%20stroke-width%3D'6'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M55%20115%20q-15-30%2012-52%20q25-20%2063-12%20q34-10%2055%2014%20q18%2022%208%2050%20q-6%2020-28%2027%20q-22%2013-63%209%20q-36-4-47-36z'/%3E%3Cpath%20d%3D'M150%2092%20q22%2010%2018%2026%20q-3%2012-16%2016'/%3E%3Cpath%20d%3D'M168%20134%20q8%2014-6%2024%20q-14%2010-28-2'/%3E%3Cpath%20d%3D'M82%20146%20q-2%2018%2010%2026'/%3E%3Cpath%20d%3D'M112%20150%20q2%2018-10%2026'/%3E%3Cpath%20d%3D'M128%20148%20q2%2018%2012%2024'/%3E%3Ccircle%20cx%3D'95'%20cy%3D'85'%20r%3D'2.5'%20fill%3D'%239c6cff'/%3E%3Cpath%20d%3D'M70%2094%20q10%2012%2026%2012'%3E%3C/path%3E%3C/g%3E%3C/svg%3E");
+      ----elephant: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E
+%3Cpath d='M50 110
+Q40 80 70 70
+Q85 40 115 55
+Q150 45 160 75
+Q180 95 160 120
+Q150 150 115 150
+Q75 145 60 120'
+stroke='%239c6cff'
+fill='none'
+stroke-width='5'
+stroke-linecap='round'
+stroke-linejoin='round'/%3E
+
+%3Cpath d='M60 120
+Q40 135 55 150
+Q70 160 85 145'
+stroke='%239c6cff'
+fill='none'
+stroke-width='5'
+stroke-linecap='round'/%3E
+
+%3Cpath d='M120 80
+Q145 85 140 105'
+stroke='%239c6cff'
+fill='none'
+stroke-width='5'
+stroke-linecap='round'/%3E
+
+%3Ccircle cx='90' cy='95' r='5' fill='%239c6cff'/%3E
+%3C/svg%3E"); 
     }}
 
     body::before{{
