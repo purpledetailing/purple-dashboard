@@ -674,7 +674,7 @@ def login():
 
       background-image: url("{bg_url}");
       background-repeat: repeat;
-      background-size: 320px 320px;
+      background-size: 360px 360px;
       background-position: 0px 0px; 
 
       transform: rotate(0deg);
