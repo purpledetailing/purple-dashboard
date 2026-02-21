@@ -20,7 +20,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   // ✅ Set your elephant asset path here
-  // Put elephant-bg.png in: /public/elephant.png
+  // Put elephant.png in: /public/elephant.png
   const elephantUrl = useMemo(() => "/elephant.png", []);
 
   // ✅ Control the look here:
