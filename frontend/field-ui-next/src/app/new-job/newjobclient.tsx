@@ -835,42 +835,46 @@ function NewJobInner() {
    * Legacy service history writer (customer_jobs_legacy) - TAGS business_id
    * ========================= */
   async function insertCustomerJobLegacy(params: {
-    businessId: string;
-    vin: string;
-    serviceName: string;
-    serviceDescription: string;
-    serviceDate: string; // "YYYY-MM-DD"
-  }) {
-    const v = normalizeVin(params.vin);
-    if (!isValidVin(v)) return;
+  businessId: string;
+  vin: string;
+  serviceName: string;
+  serviceDescription?: string;
+  serviceDate?: string;
+}) {
 
-    const service_name = capsTrim(params.serviceName || "");
-    const service_description = (params.serviceDescription || "").trim();
+  let normalizedDate = null;
 
-    // ✅ HARD GUARANTEE: never allow empty/invalid date
-    const clean =
-      normalizeServiceDateInput(params.serviceDate) ||
-      isoToDateOnlyNY(new Date().toISOString()) ||
-      todayDateOnlyNY();
-
-    if (!service_name) return;
-
-    const { error } = await supabase.from("customer_jobs_legacy").upsert(
-      {
-        business_id: params.businessId,
-        vin: v,
-        service_name,
-        service_description: service_description || null,
-        service_date: clean, // ✅ NEVER NULL
-      },
-      {
-        onConflict: "business_id,vin,service_date,service_name",
-        ignoreDuplicates: true,
-      }
-    );
-
-    if (error) console.error("insertCustomerJobLegacy failed:", error);
+  if (params.serviceDate) {
+    try {
+      normalizedDate = new Date(params.serviceDate)
+        .toISOString()
+        .split("T")[0];
+    } catch (e) {
+      console.warn("Invalid service date:", params.serviceDate);
+    }
   }
+
+  const payload = {
+    business_id: params.businessId,
+    vin: params.vin,
+    service_name: params.serviceName,
+    service_description: params.serviceDescription ?? null,
+    service_date: normalizedDate
+  };
+
+  const { data, error } = await supabase
+    .from("customer_jobs_legacy")
+    .insert(payload)
+    .select();
+
+  if (error) {
+    console.error("INSERT FAILED:", error);
+    alert(error.message);
+    return null;
+  }
+
+  return data;
+} 
 
   async function autofillCustomerFromLegacy(vin17: string) {
     const v = normalizeVin(vin17);
