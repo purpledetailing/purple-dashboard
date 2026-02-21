@@ -21,7 +21,7 @@ export default function LoginPage() {
 
   // ✅ Set your elephant asset path here
   // Put elephant-bg.png in: /public/elephant.png
-  const elephantUrl = useMemo(() => "elephant.png", []);
+  const elephantUrl = useMemo(() => "/elephant.png", []);
 
   // ✅ Control the look here:
   const ELEPHANT_SIZE_PX = 360; // bigger number = bigger elephants
@@ -150,7 +150,7 @@ export default function LoginPage() {
         aria-hidden
         style={{
           ...styles.elephants,
-          backgroundImage: `url(${elephantUrl})`,
+          backgroundImage: url(${elephantUrl}),
           backgroundSize: `${ELEPHANT_SIZE_PX}px ${ELEPHANT_SIZE_PX}px`,
           opacity: ELEPHANT_OPACITY,
         }}
