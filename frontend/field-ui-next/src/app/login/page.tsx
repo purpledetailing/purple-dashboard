@@ -150,7 +150,7 @@ export default function LoginPage() {
         aria-hidden
         style={{
           ...styles.elephants,
-          backgroundImage: url(${elephantUrl}),
+          backgroundImage: `url("${elephantUrl}")`,
           backgroundSize: `${ELEPHANT_SIZE_PX}px ${ELEPHANT_SIZE_PX}px`,
           opacity: ELEPHANT_OPACITY,
         }}
