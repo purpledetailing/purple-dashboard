@@ -20,8 +20,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   // ✅ Set your elephant asset path here
-  // Put elephant-bg.png in: /public/img/elephant-bg.png
-  const elephantUrl = useMemo(() => "/img/elephant-bg.png", []);
+  // Put elephant-bg.png in: /public/elephant.png
+  const elephantUrl = useMemo(() => "elephant.png", []);
 
   // ✅ Control the look here:
   const ELEPHANT_SIZE_PX = 360; // bigger number = bigger elephants
