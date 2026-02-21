@@ -12,12 +12,7 @@ import { useRouter } from "next/navigation";
 type Service = {
   id: string;
   name: string;
-  category:
-    | "full_service"
-    | "interior_service"
-    | "exterior_service"
-    | "ceramic_service"
-    | "addon";
+  category: "full_service" | "interior_service" | "exterior_service" | "ceramic_service" | "addon";
   pricing_type: "none" | "fixed" | "starting" | "range";
   price_cents: number | null;
   price_cents_max: number | null;
@@ -52,10 +47,8 @@ type PendingJob = {
   addon_ids: string[];
   total_charged: string;
   notes: string;
-
   /** date-only for backfill, format YYYY-MM-DD */
   service_date: string | null;
-
   performed_at: string;
 };
 
@@ -179,6 +172,7 @@ const PACKAGE_DETAILS: Record<string, string[]> = {
 function buildServiceDescription(serviceName: string, addonNames: string[]) {
   const key = (serviceName || "").trim().toUpperCase();
   const baseLines = PACKAGE_DETAILS[key] ?? [];
+
   const lines: string[] = [];
   for (const l of baseLines) lines.push(l);
 
@@ -323,9 +317,7 @@ function removeFromQueue(id: string) {
 }
 
 function bumpAttempt(id: string) {
-  const q = getQueue().map((x) =>
-    x.id === id ? { ...x, attempt_count: x.attempt_count + 1 } : x
-  );
+  const q = getQueue().map((x) => (x.id === id ? { ...x, attempt_count: x.attempt_count + 1 } : x));
   setQueue(q);
 }
 
@@ -350,9 +342,7 @@ function normalizeServiceDateInput(raw: string) {
   return v;
 }
 
-/**
-* YYYY-MM-DD for "today" in America/New_York (fixes EST/EDT vs UTC)
-*/
+/** YYYY-MM-DD for "today" in America/New_York (fixes EST/EDT vs UTC) */
 function todayDateOnlyNY(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
@@ -360,7 +350,6 @@ function todayDateOnlyNY(): string {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(new Date());
-
   const y = parts.find((p) => p.type === "year")?.value;
   const m = parts.find((p) => p.type === "month")?.value;
   const d = parts.find((p) => p.type === "day")?.value;
@@ -368,19 +357,15 @@ function todayDateOnlyNY(): string {
   return `${y}-${m}-${d}`;
 }
 
-/**
-* ISO timestamp for a date-only. We use midday to avoid timezone edge cases.
-*/
+/** ISO timestamp for a date-only. We use midday to avoid timezone edge cases. */
 function dateOnlyToIsoMidday(dateOnly: string) {
   const d = (dateOnly || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return new Date().toISOString();
   return new Date(`${d}T12:00:00`).toISOString();
 }
 
-/**
-* Convert ISO -> YYYY-MM-DD in America/New_York.
-* Used to guarantee legacy service_date is never NULL.
-*/
+/** Convert ISO -> YYYY-MM-DD in America/New_York.
+* Used to guarantee legacy service_date is never NULL. */
 function isoToDateOnlyNY(iso: string): string {
   try {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -389,7 +374,6 @@ function isoToDateOnlyNY(iso: string): string {
       month: "2-digit",
       day: "2-digit",
     }).formatToParts(new Date(iso));
-
     const y = parts.find((p) => p.type === "year")?.value;
     const m = parts.find((p) => p.type === "month")?.value;
     const d = parts.find((p) => p.type === "day")?.value;
@@ -404,29 +388,22 @@ function isoToDateOnlyNY(iso: string): string {
 function extractCityState(address: string): { city: string | null; state: string | null } {
   const a = (address || "").trim();
   if (!a) return { city: null, state: null };
-
   const parts = a
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean);
-
   if (parts.length < 2) return { city: null, state: null };
-
   const last = parts[parts.length - 1];
   const stateMatch = last.match(/\b([A-Z]{2})\b/i);
   const state = stateMatch?.[1]?.toUpperCase() ?? null;
   const city = parts[parts.length - 2] ?? null;
-
   return { city: city || null, state };
 }
 
 /** =========================
 * Photo compression (client-side)
 * ========================= */
-async function compressImageFile(
-  file: File,
-  opts?: { maxDim?: number; quality?: number }
-): Promise<File> {
+async function compressImageFile(file: File, opts?: { maxDim?: number; quality?: number }): Promise<File> {
   const maxDim = opts?.maxDim ?? 1600;
   const quality = opts?.quality ?? 0.82;
   if (!file.type?.startsWith("image/")) return file;
@@ -442,6 +419,7 @@ async function compressImageFile(
     const canvas = document.createElement("canvas");
     canvas.width = outW;
     canvas.height = outH;
+
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
 
@@ -552,7 +530,6 @@ function NewJobInner() {
 
     if (linkErr) throw linkErr;
     if (!link?.business_id) throw new Error("NO BUSINESS LINK FOUND FOR THIS USER.");
-
     return link.business_id as string;
   }
 
@@ -579,10 +556,8 @@ function NewJobInner() {
   }, []);
 
   const packageCategory = SERVICE_TYPE_TO_CATEGORY[serviceType];
-  const packages = useMemo(
-    () => services.filter((s) => s.category === packageCategory),
-    [services, packageCategory]
-  );
+
+  const packages = useMemo(() => services.filter((s) => s.category === packageCategory), [services, packageCategory]);
   const addons = useMemo(() => services.filter((s) => s.category === "addon"), [services]);
 
   useEffect(() => {
@@ -595,10 +570,8 @@ function NewJobInner() {
     }
   }, [packages, selectedPackageId]);
 
-  const selectedAddons = useMemo(
-    () => addons.filter((a) => selectedAddonIds[a.id]),
-    [addons, selectedAddonIds]
-  );
+  const selectedAddons = useMemo(() => addons.filter((a) => selectedAddonIds[a.id]), [addons, selectedAddonIds]);
+
   const filteredAddons = useMemo(() => {
     const q = addonQuery.trim().toLowerCase();
     if (!q) return addons;
@@ -648,6 +621,7 @@ function NewJobInner() {
 
   function addIncomingPhotos(incoming: File[]) {
     if (!incoming || incoming.length === 0) return;
+
     setPhotos((prev) => {
       const remaining = Math.max(0, 8 - prev.length);
       const slice = incoming.slice(0, remaining);
@@ -656,8 +630,10 @@ function NewJobInner() {
         file,
         previewUrl: URL.createObjectURL(file),
       }));
+
       if (incoming.length > remaining) setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
       else setPhotoMsg(null);
+
       return [...prev, ...mapped];
     });
   }
@@ -667,6 +643,7 @@ function NewJobInner() {
    * ========================= */
   async function uploadPhotosForVin(vin17: string, selected: PendingPhoto[]) {
     const v = normalizeVin(vin17);
+
     if (!isValidVin(v)) {
       setPhotoMsg("ENTER A VALID 17-CHAR VIN FIRST.");
       return;
@@ -692,6 +669,7 @@ function NewJobInner() {
       fd.append("vin", v);
 
       setPhotoMsg("PREPARING PHOTOS…");
+
       const prepared = await Promise.all(
         selected.slice(0, 8).map(async (p) => {
           const compressed = await compressImageFile(p.file, { maxDim: 1600, quality: 0.82 });
@@ -705,6 +683,7 @@ function NewJobInner() {
       prepared.forEach((f) => fd.append("photos", f, f.name));
 
       setPhotoMsg("UPLOADING…");
+
       const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
@@ -721,6 +700,7 @@ function NewJobInner() {
           URL.revokeObjectURL(p.previewUrl);
         } catch {}
       });
+
       setPhotos([]);
       if (photoInputRef.current) photoInputRef.current.value = "";
       if (cameraInputRef.current) cameraInputRef.current.value = "";
@@ -748,6 +728,7 @@ function NewJobInner() {
    * ========================= */
   async function lookupZipSuggestionsFromAddress(addr: string) {
     if (!isOnline()) return;
+
     const { city, state } = extractCityState(addr);
     if (!city || !state) return;
     if (state.toUpperCase() !== "NC") return;
@@ -773,13 +754,16 @@ function NewJobInner() {
 
   useEffect(() => {
     if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
+
     if (!customerAddress.trim()) {
       setZipSuggestions([]);
       return;
     }
+
     zipLookupTimer.current = window.setTimeout(() => {
       lookupZipSuggestionsFromAddress(customerAddress);
     }, 450);
+
     return () => {
       if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
     };
@@ -839,10 +823,7 @@ function NewJobInner() {
     if (findErr) throw findErr;
 
     if (existing?.id) {
-      const { error: updErr } = await supabase
-        .from("customer_data_legacy")
-        .update(payload)
-        .eq("id", existing.id);
+      const { error: updErr } = await supabase.from("customer_data_legacy").update(payload).eq("id", existing.id);
       if (updErr) throw updErr;
     } else {
       const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
@@ -865,9 +846,14 @@ function NewJobInner() {
 
     const service_name = capsTrim(params.serviceName || "");
     const service_description = (params.serviceDescription || "").trim();
-    const service_date = (params.serviceDate || "").trim();
 
-    if (!service_name || !service_date) return;
+    // ✅ HARD GUARANTEE: never allow empty/invalid date
+    const clean =
+      normalizeServiceDateInput(params.serviceDate) ||
+      isoToDateOnlyNY(new Date().toISOString()) ||
+      todayDateOnlyNY();
+
+    if (!service_name) return;
 
     const { error } = await supabase.from("customer_jobs_legacy").upsert(
       {
@@ -875,10 +861,12 @@ function NewJobInner() {
         vin: v,
         service_name,
         service_description: service_description || null,
-        service_date,
+        service_date: clean, // ✅ NEVER NULL
       },
-      // ✅ include business_id in conflict key
-      { onConflict: "business_id,vin,service_date,service_name", ignoreDuplicates: true }
+      {
+        onConflict: "business_id,vin,service_date,service_name",
+        ignoreDuplicates: true,
+      }
     );
 
     if (error) console.error("insertCustomerJobLegacy failed:", error);
@@ -898,11 +886,13 @@ function NewJobInner() {
     if (error || !data) return;
 
     const d: any = data;
+
     if (!customerName.trim() && d.customer_name) setCustomerName(capsTrim(String(d.customer_name)));
     if (!customerPhone.trim() && d.phone_number) setCustomerPhone(String(d.phone_number));
     if (!customerEmail.trim() && d.email) setCustomerEmail(toCaps(String(d.email)));
     if (!customerAddress.trim() && d.address) setCustomerAddress(capsTrim(String(d.address)));
     if (!customerZip.trim() && d.zip_code != null) setCustomerZip(String(d.zip_code));
+
     if (!vehMake.trim() && d.make) setVehMake(capsTrim(String(d.make)));
     if (!vehModel.trim() && d.model) setVehModel(capsTrim(String(d.model)));
     if (!vehYearText.trim() && d.year != null) setVehYearText(String(d.year));
@@ -933,6 +923,7 @@ function NewJobInner() {
       setVinStatus("OFFLINE — ENTER YEAR/MAKE/MODEL MANUALLY TO CONTINUE.");
       return;
     }
+
     try {
       setVinBusy(true);
       setVinStatus("IDENTIFYING VEHICLE…");
@@ -978,6 +969,7 @@ function NewJobInner() {
 
   const lookupVin = async () => {
     if (vinBusy) return;
+
     setMsg(null);
     setVinStatus("");
     setVehicle(null);
@@ -986,6 +978,7 @@ function NewJobInner() {
     setVehModel("");
 
     const v = normalizeVin(vin);
+
     if (!isValidVin(v)) {
       setVinStatus("VIN MUST BE 17 CHARACTERS (NO I, O, Q).");
       return;
@@ -1018,15 +1011,8 @@ function NewJobInner() {
       let veh: Vehicle | null = (data as Vehicle) ?? null;
 
       if (!veh) {
-        const createdVeh = await supabase
-          .from("vehicles")
-          .insert({ vin: v })
-          .select("id,vin,year,make,model")
-          .single();
-
-        if (!createdVeh.error && createdVeh.data?.id) {
-          veh = createdVeh.data as Vehicle;
-        }
+        const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id,vin,year,make,model").single();
+        if (!createdVeh.error && createdVeh.data?.id) veh = createdVeh.data as Vehicle;
       }
 
       if (veh) {
@@ -1067,6 +1053,7 @@ function NewJobInner() {
     if (!vehModel.trim()) return false;
     return true;
   };
+
   const canGoStep3 = () => customerName.trim().length > 0;
   const canGoStep4 = () => true;
   const canGoStep5 = () => !!selectedPackageId;
@@ -1121,13 +1108,13 @@ function NewJobInner() {
       work_done: description ? `${pkgName}\n${description}` : pkgName,
     });
 
-    // ✅ ALWAYS write legacy job history (no NULL service_date path)
+    // ✅ ALWAYS write legacy job history with a NON-NULL service_date
     await insertCustomerJobLegacy({
       businessId,
       vin: v,
       serviceName: pkgName,
       serviceDescription: description,
-      serviceDate: serviceDateFinal,
+      serviceDate: serviceDateFinal, // ✅ THIS IS THE KEY FIX
     });
 
     // Normalized mirror best-effort
@@ -1183,6 +1170,7 @@ function NewJobInner() {
 
         if (!existingCust.error && existingCust.data?.id) {
           customerId = existingCust.data.id as string;
+
           await supabase
             .from("customers")
             .update({
@@ -1252,6 +1240,7 @@ function NewJobInner() {
             final_price_cents: null,
             price_note: null,
           }));
+
           await supabase.from("job_services").insert(serviceRows);
         }
       }
@@ -1297,6 +1286,7 @@ function NewJobInner() {
       setOnline(isOnline());
       setQueuedCount(getQueue().length);
     };
+
     refresh();
 
     const onOnline = () => {
@@ -1329,6 +1319,7 @@ function NewJobInner() {
 
     const yearNum = yearToNumberOrNull(vehYearText);
     if (!yearNum || !vehMake.trim() || !vehModel.trim()) return setMsg("YEAR / MAKE / MODEL REQUIRED (AFTER VIN).");
+
     if (!customerName.trim()) return setMsg("CUSTOMER NAME IS REQUIRED.");
     if (!selectedPackageId) return setMsg("SELECT A PACKAGE.");
 
@@ -1447,7 +1438,11 @@ function NewJobInner() {
     return (
       <div
         className={`flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-[12px] font-medium transition
-        ${active ? "bg-purple-600 text-white shadow" : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"}`}
+        ${
+          active
+            ? "bg-purple-600 text-white shadow"
+            : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"
+        }`}
       >
         <span
           className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold
@@ -1517,6 +1512,7 @@ function NewJobInner() {
               </div>
             </div>
 
+            {/* SIGN OUT (kept top-right, compact) */}
             <button
               onClick={async () => {
                 await signOut();
@@ -1579,7 +1575,6 @@ function NewJobInner() {
 
                 <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
                   <div className="text-xs font-extrabold text-white/90">YEAR / MAKE / MODEL (REQUIRED)</div>
-
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     <div className="col-span-1">
                       <SchemaLabel>YEAR</SchemaLabel>
@@ -1590,7 +1585,6 @@ function NewJobInner() {
                         inputMode="numeric"
                       />
                     </div>
-
                     <div className="col-span-2">
                       <SchemaLabel>MAKE</SchemaLabel>
                       <SchemaInput
@@ -1600,7 +1594,6 @@ function NewJobInner() {
                         inputMode="text"
                       />
                     </div>
-
                     <div className="col-span-3">
                       <SchemaLabel>MODEL</SchemaLabel>
                       <SchemaInput
@@ -1635,9 +1628,7 @@ function NewJobInner() {
                     disabled={!canGoStep2()}
                     className={[
                       "text-sm font-semibold transition touch-manipulation",
-                      canGoStep2()
-                        ? "text-purple-200 hover:text-purple-100"
-                        : "text-slate-500 cursor-not-allowed",
+                      canGoStep2() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
                     ].join(" ")}
                   >
                     CONTINUE →
@@ -1666,7 +1657,6 @@ function NewJobInner() {
                       inputMode="tel"
                     />
                   </div>
-
                   <div className="col-span-1">
                     <SchemaLabel>EMAIL</SchemaLabel>
                     <SchemaInput
@@ -1720,16 +1710,13 @@ function NewJobInner() {
                   >
                     ← BACK
                   </button>
-
                   <button
                     type="button"
                     onClick={() => setStep(3)}
                     disabled={!canGoStep3()}
                     className={[
                       "text-sm font-semibold transition",
-                      canGoStep3()
-                        ? "text-purple-200 hover:text-purple-100"
-                        : "text-slate-500 cursor-not-allowed",
+                      canGoStep3() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
                     ].join(" ")}
                   >
                     CONTINUE →
@@ -1835,9 +1822,7 @@ function NewJobInner() {
                   </div>
                 )}
 
-                <div className="mt-3 text-[11px] text-slate-300/80">
-                  {photoMsg ? photoMsg : `Selected: ${photos.length}/8`}
-                </div>
+                <div className="mt-3 text-[11px] text-slate-300/80">{photoMsg ? photoMsg : `Selected: ${photos.length}/8`}</div>
 
                 <div className="mt-2">
                   <button
@@ -1863,7 +1848,6 @@ function NewJobInner() {
                   >
                     ← BACK
                   </button>
-
                   <button
                     type="button"
                     onClick={() => setStep(4)}
@@ -1920,6 +1904,7 @@ function NewJobInner() {
                         onChange={(e) => setAddonQuery(e.target.value)}
                         placeholder="Search add-ons…"
                       />
+
                       <div className="mt-3 space-y-2">
                         {filteredAddons.map((a) => (
                           <button
@@ -1965,7 +1950,6 @@ function NewJobInner() {
                   >
                     ← BACK
                   </button>
-
                   <button
                     type="button"
                     onClick={() => setStep(5)}
@@ -1989,7 +1973,6 @@ function NewJobInner() {
                   type="date"
                   value={serviceDate}
                   onChange={(e) => setServiceDate(normalizeServiceDateInput(e.target.value))}
-                  // ✅ FIX: avoid UTC "tomorrow" issue in EST/EDT
                   max={todayDateOnlyNY()}
                 />
                 <div className="mt-2 text-[11px] text-slate-300/80">
@@ -2109,6 +2092,7 @@ function SchemaButton({
 }) {
   const base = "h-12 rounded-2xl font-extrabold text-sm transition ring-1 touch-manipulation";
   const width = className?.includes("w-") ? "" : "w-full";
+
   const cls =
     variant === "primary"
       ? disabled
