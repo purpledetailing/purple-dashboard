@@ -1494,52 +1494,56 @@ function NewJobInner() {
         <div className="absolute -top-40 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-purple-600/20 blur-[90px]" />
       </div>
 
-      <div className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/80 backdrop-blur">
-        <div className="mx-auto max-w-md px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <div className="text-lg font-extrabold tracking-tight">
-                  <span className="text-purple-300">Purple</span> Field
-                </div>
-                {topStatus}
+      <div className="sticky top-0 z-20">
+  {/* This keeps the header centered and the same width as the form */}
+  <div className="mx-auto max-w-md px-4 pt-3">
+    <div className="rounded-3xl bg-slate-950/80 backdrop-blur ring-1 ring-white/10">
+      <div className="px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="text-lg font-extrabold tracking-tight">
+                <span className="text-purple-300">Purple</span> Field
               </div>
-
-              <div className="mt-1 text-xs text-slate-300/80 truncate">{headerSubtitle}</div>
-
-              <div className="mt-3 grid grid-cols-5 gap-2">
-                <StepPill n={1} label="VIN" active={step === 1} />
-                <StepPill n={2} label="Customer" active={step === 2} />
-                <StepPill n={3} label="Photos" active={step === 3} />
-                <StepPill n={4} label="Services" active={step === 4} />
-                <StepPill n={5} label="Total" active={step === 5} />
-              </div>
+              {topStatus}
             </div>
 
-            {/* SIGN OUT (kept top-right, compact) */}
-            <button
-              onClick={async () => {
-                await signOut();
-                router.replace("/login");
-              }}
-              className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-white/10 text-slate-200 hover:ring-white/20 hover:text-white transition touch-manipulation"
-            >
-              SIGN OUT
-            </button>
+            <div className="mt-1 text-xs text-slate-300/80 truncate">{headerSubtitle}</div>
+
+            <div className="mt-3 grid grid-cols-5 gap-2">
+              <StepPill n={1} label="VIN" active={step === 1} />
+              <StepPill n={2} label="Customer" active={step === 2} />
+              <StepPill n={3} label="Photos" active={step === 3} />
+              <StepPill n={4} label="Services" active={step === 4} />
+              <StepPill n={5} label="Total" active={step === 5} />
+            </div>
           </div>
 
-          {msg && (
-            <div className="mt-3 rounded-2xl bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs text-slate-200">
-              {msg}
-            </div>
-          )}
+          <button
+            onClick={async () => {
+              await signOut();
+              router.replace("/login");
+            }}
+            className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-white/10 text-slate-200 hover:ring-white/20 hover:text-white transition touch-manipulation"
+          >
+            SIGN OUT
+          </button>
         </div>
+
+        {msg && (
+          <div className="mt-3 rounded-2xl bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs text-slate-200">
+            {msg}
+          </div>
+        )}
       </div>
+    </div>
+  </div>
+</div> 
 
       {/* =========================
           BODY (Steps 1-5)
          ========================= */}
-      <div className="mx-auto max-w-md px-4 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
+      <div className="mx-auto max-w-md px-4 pt-3 pb-[calc(7rem+env(safe-area-inset-bottom))]">
         {loadingServices ? (
           <SchemaCard title="LOADING">
             <div className="text-sm text-slate-300">LOADING SERVICES…</div>
