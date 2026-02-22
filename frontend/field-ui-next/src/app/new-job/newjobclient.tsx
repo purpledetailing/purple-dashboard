@@ -1439,25 +1439,25 @@ function NewJobInner() {
   }, [vehicle, vin, vehYearText, vehMake, vehModel]);
 
   function StepPill({ n, label, active = false }: { n: number; label: string; active?: boolean }) {
-    return (
-      <div
-        className={`flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-[12px] font-medium transition
-        ${
-          active
-            ? "bg-purple-600 text-white shadow"
-            : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"
-        }`}
+  return (
+    <div
+      className={`w-full flex items-center justify-center gap-2 rounded-xl px-2 py-2 text-[12px] font-medium transition
+      ${
+        active
+          ? "bg-purple-600 text-white shadow"
+          : "bg-zinc-900/40 text-zinc-300 border border-zinc-700"
+      }`}
+    >
+      <span
+        className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold
+        ${active ? "bg-white text-purple-600" : "bg-zinc-700 text-zinc-200"}`}
       >
-        <span
-          className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold
-          ${active ? "bg-white text-purple-600" : "bg-zinc-700 text-zinc-200"}`}
-        >
-          {n}
-        </span>
-        <span className="tracking-wide">{label}</span>
-      </div>
-    );
-  }
+        {n}
+      </span>
+      <span className="tracking-wide whitespace-nowrap">{label}</span>
+    </div>
+  );
+} 
 
   const topStatus = !online ? (
     <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/20 px-3 py-1 text-[11px] font-semibold">
