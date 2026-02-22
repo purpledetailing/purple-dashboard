@@ -1442,26 +1442,27 @@ function NewJobInner() {
   return (
     <div
       className={[
-        "flex-1 min-w-0", // <-- key
-        "flex items-center justify-center gap-2",
-        "rounded-xl px-2 py-2",
-        "text-[12px] font-semibold transition",
+        "w-full rounded-2xl px-2 py-2",
+        "flex flex-col items-center justify-center gap-1",
+        "ring-1 transition",
         active
-          ? "bg-purple-600 text-white shadow"
-          : "bg-zinc-900/40 text-zinc-200 border border-zinc-700",
+          ? "bg-purple-600 text-white ring-purple-300/30 shadow"
+          : "bg-zinc-900/40 text-zinc-200 ring-zinc-700/70",
       ].join(" ")}
     >
-      <span
+      <div
         className={[
-          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold",
+          "h-7 w-7 rounded-full flex items-center justify-center",
+          "text-[12px] font-extrabold",
           active ? "bg-white text-purple-700" : "bg-zinc-700 text-zinc-100",
         ].join(" ")}
       >
         {n}
-      </span>
+      </div>
 
-      {/* keep text from blowing up layout */}
-      <span className="truncate whitespace-nowrap">{label}</span>
+      <div className="text-[10px] font-extrabold tracking-wide leading-none text-center">
+        {label}
+      </div>
     </div>
   );
 } 
@@ -1517,7 +1518,7 @@ function NewJobInner() {
 
             <div className="mt-1 text-xs text-slate-300/80 truncate">{headerSubtitle}</div>
 
-            <div className="mt-3 flex w-full gap-2">
+            <div className="mt-3 grid grid-cols-5 gap-2">
               <StepPill n={1} label="VIN" active={step === 1} />
               <StepPill n={2} label="Customer" active={step === 2} />
               <StepPill n={3} label="Photos" active={step === 3} />
