@@ -2070,16 +2070,29 @@ function SchemaInput(props: React.InputHTMLAttributes<HTMLInputElement> & { clas
 }
 
 function SchemaSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const { className, ...rest } = props;
+
   return (
     <select
-      {...props}
+      {...rest}
       className={[
-        "h-12 w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 text-base text-white/90",
+        // Base
+        "h-12 w-full rounded-2xl px-4 text-base",
+        // Make the CLOSED select readable
+        "bg-slate-900 text-white ring-1 ring-white/10",
+        // Focus
         "focus:outline-none focus:ring-2 focus:ring-purple-400/30",
+        // Make the OPEN dropdown options readable (critical)
+        "[&>option]:bg-slate-900 [&>option]:text-white",
+        // Some browsers render optgroups too
+        "[&>optgroup]:bg-slate-900 [&>optgroup]:text-white",
+        // Optional: make it feel more like your UI
+        "shadow-sm",
+        className ?? "",
       ].join(" ")}
     />
   );
-}
+} 
 
 function SchemaButton({
   children,
