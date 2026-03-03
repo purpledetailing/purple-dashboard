@@ -883,18 +883,15 @@ function NewJobInner() {
   serviceName: string;
   serviceDescription?: string;
   serviceDate?: string;
-  clientRequestId?: string; // allow undefined
+  clientRequestId?: string;
 }) {
-  // ✅ force a non-null id every single time
   const safeId =
-    typeof params.clientRequestId === "string" && params.clientRequestId.trim().length > 0
+    typeof params.clientRequestId === "string" && params.clientRequestId.trim()
       ? params.clientRequestId.trim()
       : uuidv4();
 
-  // ✅ never allow NULL service_date either
   const normalizedDate =
-    normalizeServiceDateInput(params.serviceDate || "") ||
-    todayDateOnlyNY();
+    normalizeServiceDateInput(params.serviceDate || "") || todayDateOnlyNY();
 
   const payload = {
     business_id: params.businessId,
@@ -902,17 +899,14 @@ function NewJobInner() {
     service_name: capsTrim(params.serviceName),
     service_description: params.serviceDescription ?? null,
     service_date: normalizedDate,
-    client_request_id: safeId, // ✅ guaranteed NOT NULL
+    client_request_id: safeId, // ✅ guaranteed
   };
 
   const { error } = await supabase
     .from("customer_jobs_legacy")
     .upsert(payload, { onConflict: "client_request_id" });
 
-  if (error) {
-    console.error("customer_jobs_legacy upsert failed:", error);
-    throw error;
-  }
+  if (error) throw error;
 
   return safeId;
 } 
@@ -1104,8 +1098,14 @@ function NewJobInner() {
    * Save job
    * ========================= */
   const saveJobToSupabase = async (payload: PendingJob) => {
-    // ✅ IMPORTANT: guarantee idempotency key is ALWAYS present
-    const reqId = payload.client_request_id || uuidv4();
+  // ✅ ALWAYS guarantee idempotency key exists (covers old offline queue items too)
+  const reqId =
+    typeof (payload as any).client_request_id === "string" && (payload as any).client_request_id.trim()
+      ? (payload as any).client_request_id.trim()
+      : uuidv4();
+
+  // ✅ important: write it back so later code never sees undefined
+  (payload as any).client_request_id = reqId;
 
     const v = normalizeVin(payload.vin);
     if (!isValidVin(v)) throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
@@ -1160,7 +1160,7 @@ function NewJobInner() {
       serviceName: pkgName,
       serviceDescription: description,
       serviceDate: serviceDateFinal,
-      clientRequestId: payload.client_request_id, // ✅ ensure it's passed
+      clientRequestId: reqId, // ✅ USE reqId here
 }); 
     // Normalized mirror best-effort
     try {
