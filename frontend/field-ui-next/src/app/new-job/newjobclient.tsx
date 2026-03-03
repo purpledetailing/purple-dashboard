@@ -33,6 +33,10 @@ type PendingJob = {
   id: string;
   created_at: string;
   attempt_count: number;
+
+  /** ✅ idempotency key to prevent duplicates in customer_jobs_legacy */
+  client_request_id: string;
+
   vin: string;
   vehicle_year: number | null;
   vehicle_make: string;
@@ -172,7 +176,6 @@ const PACKAGE_DETAILS: Record<string, string[]> = {
 function buildServiceDescription(serviceName: string, addonNames: string[]) {
   const key = (serviceName || "").trim().toUpperCase();
   const baseLines = PACKAGE_DETAILS[key] ?? [];
-
   const lines: string[] = [];
   for (const l of baseLines) lines.push(l);
 
@@ -183,7 +186,6 @@ function buildServiceDescription(serviceName: string, addonNames: string[]) {
   }
 
   if (lines.length === 0) return "";
-
   return lines
     .map((l) => {
       const t = (l || "").trim();
@@ -291,8 +293,36 @@ function setQueue(items: PendingJob[]) {
   localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items));
 }
 
+/** ✅ UUID v4 generator (Supabase uuid column requires valid uuid format) */
+function uuidv4(): string {
+  const c: any = typeof crypto !== "undefined" ? crypto : null;
+  if (c?.randomUUID) return c.randomUUID();
+
+  // v4 polyfill
+  // eslint-disable-next-line no-bitwise
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  // eslint-disable-next-line no-bitwise
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  // eslint-disable-next-line no-bitwise
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant
+
+  const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0"));
+  return (
+    hex.slice(0, 4).join("") +
+    "-" +
+    hex.slice(4, 6).join("") +
+    "-" +
+    hex.slice(6, 8).join("") +
+    "-" +
+    hex.slice(8, 10).join("") +
+    "-" +
+    hex.slice(10, 16).join("")
+  );
+}
+
+/** keep old safeUuid usage for non-db ids (photos, etc) */
 function safeUuid() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c: any = typeof crypto !== "undefined" ? crypto : null;
   if (c?.randomUUID) return c.randomUUID();
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -364,8 +394,7 @@ function dateOnlyToIsoMidday(dateOnly: string) {
   return new Date(`${d}T12:00:00`).toISOString();
 }
 
-/** Convert ISO -> YYYY-MM-DD in America/New_York.
-* Used to guarantee legacy service_date is never NULL. */
+/** Convert ISO -> YYYY-MM-DD in America/New_York. Used to guarantee legacy service_date is never NULL. */
 function isoToDateOnlyNY(iso: string): string {
   try {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -422,7 +451,6 @@ async function compressImageFile(file: File, opts?: { maxDim?: number; quality?:
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
-
     ctx.drawImage(bitmap, 0, 0, outW, outH);
 
     const blob: Blob = await new Promise((resolve, reject) => {
@@ -467,8 +495,12 @@ function NewJobInner() {
   const [step, setStep] = useState<Step>(1);
   const [services, setServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
+
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /** ✅ hard lock to prevent double-save even if button is tapped twice fast */
+  const savingRef = useRef(false);
 
   const [online, setOnline] = useState(true);
   const [queuedCount, setQueuedCount] = useState(0);
@@ -489,7 +521,6 @@ function NewJobInner() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerZip, setCustomerZip] = useState("");
-
   const [zipSuggestions, setZipSuggestions] = useState<string[]>([]);
   const zipLookupTimer = useRef<number | null>(null);
 
@@ -505,7 +536,6 @@ function NewJobInner() {
   const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>({});
   const [addonQuery, setAddonQuery] = useState("");
   const [addonsOpen, setAddonsOpen] = useState(false);
-
   const [totalCharged, setTotalCharged] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -540,7 +570,6 @@ function NewJobInner() {
     (async () => {
       setLoadingServices(true);
       setMsg(null);
-
       const { data, error } = await supabase
         .from("services")
         .select("id,name,category,pricing_type,price_cents,price_cents_max,price_note")
@@ -556,7 +585,6 @@ function NewJobInner() {
   }, []);
 
   const packageCategory = SERVICE_TYPE_TO_CATEGORY[serviceType];
-
   const packages = useMemo(() => services.filter((s) => s.category === packageCategory), [services, packageCategory]);
   const addons = useMemo(() => services.filter((s) => s.category === "addon"), [services]);
 
@@ -621,7 +649,6 @@ function NewJobInner() {
 
   function addIncomingPhotos(incoming: File[]) {
     if (!incoming || incoming.length === 0) return;
-
     setPhotos((prev) => {
       const remaining = Math.max(0, 8 - prev.length);
       const slice = incoming.slice(0, remaining);
@@ -630,10 +657,8 @@ function NewJobInner() {
         file,
         previewUrl: URL.createObjectURL(file),
       }));
-
       if (incoming.length > remaining) setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
       else setPhotoMsg(null);
-
       return [...prev, ...mapped];
     });
   }
@@ -643,7 +668,6 @@ function NewJobInner() {
    * ========================= */
   async function uploadPhotosForVin(vin17: string, selected: PendingPhoto[]) {
     const v = normalizeVin(vin17);
-
     if (!isValidVin(v)) {
       setPhotoMsg("ENTER A VALID 17-CHAR VIN FIRST.");
       return;
@@ -669,7 +693,6 @@ function NewJobInner() {
       fd.append("vin", v);
 
       setPhotoMsg("PREPARING PHOTOS…");
-
       const prepared = await Promise.all(
         selected.slice(0, 8).map(async (p) => {
           const compressed = await compressImageFile(p.file, { maxDim: 1600, quality: 0.82 });
@@ -683,7 +706,6 @@ function NewJobInner() {
       prepared.forEach((f) => fd.append("photos", f, f.name));
 
       setPhotoMsg("UPLOADING…");
-
       const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
@@ -728,7 +750,6 @@ function NewJobInner() {
    * ========================= */
   async function lookupZipSuggestionsFromAddress(addr: string) {
     if (!isOnline()) return;
-
     const { city, state } = extractCityState(addr);
     if (!city || !state) return;
     if (state.toUpperCase() !== "NC") return;
@@ -742,7 +763,6 @@ function NewJobInner() {
       .limit(10);
 
     if (error) return;
-
     const zips = (data ?? []).map((r: any) => String(r.zip)).filter(Boolean);
     setZipSuggestions(zips);
 
@@ -754,16 +774,13 @@ function NewJobInner() {
 
   useEffect(() => {
     if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
-
     if (!customerAddress.trim()) {
       setZipSuggestions([]);
       return;
     }
-
     zipLookupTimer.current = window.setTimeout(() => {
       lookupZipSuggestionsFromAddress(customerAddress);
     }, 450);
-
     return () => {
       if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
     };
@@ -832,49 +849,46 @@ function NewJobInner() {
   }
 
   /** =========================
-   * Legacy service history writer (customer_jobs_legacy) - TAGS business_id
+   * Legacy service history writer (customer_jobs_legacy)
+   * ✅ idempotent via client_request_id (prevents duplicates permanently)
    * ========================= */
   async function insertCustomerJobLegacy(params: {
-  businessId: string;
-  vin: string;
-  serviceName: string;
-  serviceDescription?: string;
-  serviceDate?: string;
-}) {
-
-  let normalizedDate = null;
-
-  if (params.serviceDate) {
-    try {
-      normalizedDate = new Date(params.serviceDate)
-        .toISOString()
-        .split("T")[0];
-    } catch (e) {
-      console.warn("Invalid service date:", params.serviceDate);
+    businessId: string;
+    vin: string;
+    serviceName: string;
+    serviceDescription?: string;
+    serviceDate?: string;
+    clientRequestId: string; // ✅ required
+  }) {
+    let normalizedDate = null;
+    if (params.serviceDate) {
+      try {
+        normalizedDate = new Date(params.serviceDate).toISOString().split("T")[0];
+      } catch (e) {
+        console.warn("Invalid service date:", params.serviceDate);
+      }
     }
+
+    const payload = {
+      business_id: params.businessId,
+      vin: params.vin,
+      service_name: params.serviceName,
+      service_description: params.serviceDescription ?? null,
+      service_date: normalizedDate,
+      client_request_id: params.clientRequestId, // ✅
+    };
+
+    const { error } = await supabase
+      .from("customer_jobs_legacy")
+      .upsert(payload, { onConflict: "client_request_id" });
+
+    if (error) {
+      console.error("LEGACY UPSERT FAILED:", error);
+      throw error;
+    }
+
+    return true;
   }
-
-  const payload = {
-    business_id: params.businessId,
-    vin: params.vin,
-    service_name: params.serviceName,
-    service_description: params.serviceDescription ?? null,
-    service_date: normalizedDate
-  };
-
-  const { data, error } = await supabase
-    .from("customer_jobs_legacy")
-    .insert(payload)
-    .select();
-
-  if (error) {
-    console.error("INSERT FAILED:", error);
-    alert(error.message);
-    return null;
-  }
-
-  return data;
-} 
 
   async function autofillCustomerFromLegacy(vin17: string) {
     const v = normalizeVin(vin17);
@@ -888,7 +902,6 @@ function NewJobInner() {
       .maybeSingle();
 
     if (error || !data) return;
-
     const d: any = data;
 
     if (!customerName.trim() && d.customer_name) setCustomerName(capsTrim(String(d.customer_name)));
@@ -896,7 +909,6 @@ function NewJobInner() {
     if (!customerEmail.trim() && d.email) setCustomerEmail(toCaps(String(d.email)));
     if (!customerAddress.trim() && d.address) setCustomerAddress(capsTrim(String(d.address)));
     if (!customerZip.trim() && d.zip_code != null) setCustomerZip(String(d.zip_code));
-
     if (!vehMake.trim() && d.make) setVehMake(capsTrim(String(d.make)));
     if (!vehModel.trim() && d.model) setVehModel(capsTrim(String(d.model)));
     if (!vehYearText.trim() && d.year != null) setVehYearText(String(d.year));
@@ -912,7 +924,6 @@ function NewJobInner() {
       .maybeSingle();
 
     if (error) return;
-
     const cust = (data as any)?.customers as any;
     if (!cust) return;
 
@@ -927,7 +938,6 @@ function NewJobInner() {
       setVinStatus("OFFLINE — ENTER YEAR/MAKE/MODEL MANUALLY TO CONTINUE.");
       return;
     }
-
     try {
       setVinBusy(true);
       setVinStatus("IDENTIFYING VEHICLE…");
@@ -982,7 +992,6 @@ function NewJobInner() {
     setVehModel("");
 
     const v = normalizeVin(vin);
-
     if (!isValidVin(v)) {
       setVinStatus("VIN MUST BE 17 CHARACTERS (NO I, O, Q).");
       return;
@@ -1025,11 +1034,9 @@ function NewJobInner() {
         setVehMake(veh.make ? capsTrim(veh.make) : "");
         setVehModel(veh.model ? capsTrim(veh.model) : "");
         setVinStatus("VIN LINKED ✅");
-
         try {
           await autofillCustomerFromVehicle(veh.id);
         } catch {}
-
         if (needsDecode(veh)) {
           try {
             await decodeVinAndUpdateVehicle(veh.id, v);
@@ -1112,19 +1119,19 @@ function NewJobInner() {
       work_done: description ? `${pkgName}\n${description}` : pkgName,
     });
 
-    // ✅ ALWAYS write legacy job history with a NON-NULL service_date
+    // ✅ ALWAYS write legacy job history with NON-DUPLICATING request id
     await insertCustomerJobLegacy({
       businessId,
       vin: v,
       serviceName: pkgName,
       serviceDescription: description,
-      serviceDate: serviceDateFinal, // ✅ THIS IS THE KEY FIX
+      serviceDate: serviceDateFinal,
+      clientRequestId: payload.client_request_id, // ✅ idempotent key
     });
 
     // Normalized mirror best-effort
     try {
       let vehicleId: string | null = null;
-
       const foundVeh = await supabase
         .from("vehicles")
         .select("id,vin,year,make,model")
@@ -1174,7 +1181,6 @@ function NewJobInner() {
 
         if (!existingCust.error && existingCust.data?.id) {
           customerId = existingCust.data.id as string;
-
           await supabase
             .from("customers")
             .update({
@@ -1219,7 +1225,6 @@ function NewJobInner() {
 
       if (customerId && vehicleId) {
         const totalCents = dollarsToCents(payload.total_charged);
-
         const jobRes = await supabase
           .from("jobs")
           .insert({
@@ -1244,7 +1249,6 @@ function NewJobInner() {
             final_price_cents: null,
             price_note: null,
           }));
-
           await supabase.from("job_services").insert(serviceRows);
         }
       }
@@ -1290,7 +1294,6 @@ function NewJobInner() {
       setOnline(isOnline());
       setQueuedCount(getQueue().length);
     };
-
     refresh();
 
     const onOnline = () => {
@@ -1316,23 +1319,47 @@ function NewJobInner() {
   }, []);
 
   const onSave = async () => {
+    if (savingRef.current) return; // ✅ double-tap protection
+    savingRef.current = true;
+
     setMsg(null);
 
     const v = normalizeVin(vin);
-    if (!isValidVin(v)) return setMsg("VIN MUST BE 17 CHARACTERS (NO I, O, Q).");
+    if (!isValidVin(v)) {
+      savingRef.current = false;
+      return setMsg("VIN MUST BE 17 CHARACTERS (NO I, O, Q).");
+    }
 
     const yearNum = yearToNumberOrNull(vehYearText);
-    if (!yearNum || !vehMake.trim() || !vehModel.trim()) return setMsg("YEAR / MAKE / MODEL REQUIRED (AFTER VIN).");
+    if (!yearNum || !vehMake.trim() || !vehModel.trim()) {
+      savingRef.current = false;
+      return setMsg("YEAR / MAKE / MODEL REQUIRED (AFTER VIN).");
+    }
 
-    if (!customerName.trim()) return setMsg("CUSTOMER NAME IS REQUIRED.");
-    if (!selectedPackageId) return setMsg("SELECT A PACKAGE.");
+    if (!customerName.trim()) {
+      savingRef.current = false;
+      return setMsg("CUSTOMER NAME IS REQUIRED.");
+    }
+
+    if (!selectedPackageId) {
+      savingRef.current = false;
+      return setMsg("SELECT A PACKAGE.");
+    }
 
     const totalCents = dollarsToCents(totalCharged);
-    if (totalCents <= 0) return setMsg("TOTAL CHARGED MUST BE > $0.");
+    if (totalCents <= 0) {
+      savingRef.current = false;
+      return setMsg("TOTAL CHARGED MUST BE > $0.");
+    }
 
     const serviceDateClean = normalizeServiceDateInput(serviceDate);
 
+    /** ✅ single idempotency key used for live save + any retries/queue */
+    const requestId = uuidv4();
+
     const payloadBase: Omit<PendingJob, "id" | "created_at" | "attempt_count"> = {
+      client_request_id: requestId, // ✅
+
       vin: v,
       vehicle_year: yearNum,
       vehicle_make: capsTrim(vehMake),
@@ -1358,6 +1385,7 @@ function NewJobInner() {
       setQueuedCount(getQueue().length);
       setMsg("OFFLINE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY WHEN YOU’RE BACK ONLINE.");
       resetForm();
+      savingRef.current = false;
       return;
     }
 
@@ -1371,13 +1399,11 @@ function NewJobInner() {
       };
 
       await saveJobToSupabase(tempPending);
-
       setMsg("SAVED ✅ (LEGACY IS SOURCE OF TRUTH)");
       resetForm();
       flushQueue();
     } catch (e: any) {
       console.error(e);
-
       const message = String(e?.message ?? "").toLowerCase();
       const likelyNetwork =
         !isOnline() ||
@@ -1396,6 +1422,7 @@ function NewJobInner() {
       }
     } finally {
       setBusy(false);
+      savingRef.current = false;
     }
   };
 
@@ -1439,33 +1466,28 @@ function NewJobInner() {
   }, [vehicle, vin, vehYearText, vehMake, vehModel]);
 
   function StepPill({ n, label, active = false }: { n: number; label: string; active?: boolean }) {
-  return (
-    <div
-      className={[
-        "w-full rounded-2xl px-2 py-2",
-        "flex flex-col items-center justify-center gap-1",
-        "ring-1 transition",
-        active
-          ? "bg-purple-600 text-white ring-purple-300/30 shadow"
-          : "bg-zinc-900/40 text-zinc-200 ring-zinc-700/70",
-      ].join(" ")}
-    >
+    return (
       <div
         className={[
-          "h-7 w-7 rounded-full flex items-center justify-center",
-          "text-[12px] font-extrabold",
-          active ? "bg-white text-purple-700" : "bg-zinc-700 text-zinc-100",
+          "w-full rounded-2xl px-2 py-2",
+          "flex flex-col items-center justify-center gap-1",
+          "ring-1 transition",
+          active ? "bg-purple-600 text-white ring-purple-300/30 shadow" : "bg-zinc-900/40 text-zinc-200 ring-zinc-700/70",
         ].join(" ")}
       >
-        {n}
+        <div
+          className={[
+            "h-7 w-7 rounded-full flex items-center justify-center",
+            "text-[12px] font-extrabold",
+            active ? "bg-white text-purple-700" : "bg-zinc-700 text-zinc-100",
+          ].join(" ")}
+        >
+          {n}
+        </div>
+        <div className="text-[10px] font-extrabold tracking-wide leading-none text-center">{label}</div>
       </div>
-
-      <div className="text-[10px] font-extrabold tracking-wide leading-none text-center">
-        {label}
-      </div>
-    </div>
-  );
-} 
+    );
+  }
 
   const topStatus = !online ? (
     <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/20 px-3 py-1 text-[11px] font-semibold">
@@ -1503,54 +1525,51 @@ function NewJobInner() {
       </div>
 
       <div className="sticky top-0 z-20">
-  {/* This keeps the header centered and the same width as the form */}
-  <div className="mx-auto max-w-md px-4 pt-3">
-    <div className="rounded-3xl bg-slate-950/80 backdrop-blur ring-1 ring-white/10">
-      <div className="px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="text-lg font-extrabold tracking-tight">
-                <span className="text-purple-300">Purple</span> Field
+        {/* This keeps the header centered and the same width as the form */}
+        <div className="mx-auto max-w-md px-4 pt-3">
+          <div className="rounded-3xl bg-slate-950/80 backdrop-blur ring-1 ring-white/10">
+            <div className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="text-lg font-extrabold tracking-tight">
+                      <span className="text-purple-300">Purple</span> Field
+                    </div>
+                    {topStatus}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-300/80 truncate">{headerSubtitle}</div>
+                  <div className="mt-3 grid grid-cols-5 gap-2">
+                    <StepPill n={1} label="VIN" active={step === 1} />
+                    <StepPill n={2} label="Customer" active={step === 2} />
+                    <StepPill n={3} label="Photos" active={step === 3} />
+                    <StepPill n={4} label="Services" active={step === 4} />
+                    <StepPill n={5} label="Total" active={step === 5} />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await signOut();
+                    router.replace("/login");
+                  }}
+                  className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-white/10 text-slate-200 hover:ring-white/20 hover:text-white transition touch-manipulation"
+                >
+                  SIGN OUT
+                </button>
               </div>
-              {topStatus}
-            </div>
-
-            <div className="mt-1 text-xs text-slate-300/80 truncate">{headerSubtitle}</div>
-
-            <div className="mt-3 grid grid-cols-5 gap-2">
-              <StepPill n={1} label="VIN" active={step === 1} />
-              <StepPill n={2} label="Customer" active={step === 2} />
-              <StepPill n={3} label="Photos" active={step === 3} />
-              <StepPill n={4} label="Services" active={step === 4} />
-              <StepPill n={5} label="Total" active={step === 5} />
+              {msg && (
+                <div className="mt-3 rounded-2xl bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs text-slate-200">
+                  {msg}
+                </div>
+              )}
             </div>
           </div>
-
-          <button
-            onClick={async () => {
-              await signOut();
-              router.replace("/login");
-            }}
-            className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-white/10 text-slate-200 hover:ring-white/20 hover:text-white transition touch-manipulation"
-          >
-            SIGN OUT
-          </button>
         </div>
-
-        {msg && (
-          <div className="mt-3 rounded-2xl bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs text-slate-200">
-            {msg}
-          </div>
-        )}
       </div>
-    </div>
-  </div>
-</div> 
 
       {/* =========================
           BODY (Steps 1-5)
-         ========================= */}
+      ========================= */}
       <div className="mx-auto max-w-md px-4 pt-3 pb-[calc(7rem+env(safe-area-inset-bottom))]">
         {loadingServices ? (
           <SchemaCard title="LOADING">
@@ -1584,7 +1603,6 @@ function NewJobInner() {
                     {vinBusy ? "…" : "LOOKUP"}
                   </SchemaButton>
                 </div>
-
                 <div className="mt-2 min-h-[18px] text-[11px] text-slate-300/80">
                   {vinStatus ? vinStatus : "TIP: LOOKUP LINKS VIN AND IDENTIFIES VEHICLE (ONLINE)."}
                 </div>
@@ -1637,7 +1655,6 @@ function NewJobInner() {
                       {normalizeVin(vin).length ? maskVin(vin) : "ENTER VIN TO BEGIN"}
                     </div>
                   </div>
-
                   <button
                     type="button"
                     onClick={() => setStep(2)}
@@ -1787,7 +1804,6 @@ function NewJobInner() {
                   >
                     {canUploadPhotos ? "GALLERY" : "ENTER VIN FIRST"}
                   </SchemaButton>
-
                   <SchemaButton
                     variant="ghost"
                     disabled={!canUploadPhotos || photoBusy}
@@ -1847,9 +1863,7 @@ function NewJobInner() {
                     disabled={photoBusy || photos.length === 0}
                     className={[
                       "w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3 text-sm font-extrabold transition",
-                      photoBusy || photos.length === 0
-                        ? "text-slate-500 cursor-not-allowed"
-                        : "text-slate-200 hover:ring-white/20 hover:text-white",
+                      photoBusy || photos.length === 0 ? "text-slate-500 cursor-not-allowed" : "text-slate-200 hover:ring-white/20 hover:text-white",
                     ].join(" ")}
                   >
                     CLEAR PHOTOS
@@ -1915,12 +1929,7 @@ function NewJobInner() {
 
                   {addonsOpen && (
                     <div className="mt-3">
-                      <SchemaInput
-                        value={addonQuery}
-                        onChange={(e) => setAddonQuery(e.target.value)}
-                        placeholder="Search add-ons…"
-                      />
-
+                      <SchemaInput value={addonQuery} onChange={(e) => setAddonQuery(e.target.value)} placeholder="Search add-ons…" />
                       <div className="mt-3 space-y-2">
                         {filteredAddons.map((a) => (
                           <button
@@ -1929,21 +1938,15 @@ function NewJobInner() {
                             onClick={() => toggleAddon(a.id)}
                             className={[
                               "w-full rounded-2xl px-4 py-3 text-left ring-1 transition",
-                              selectedAddonIds[a.id]
-                                ? "bg-purple-500/15 ring-purple-400/30 text-purple-100"
-                                : "bg-white/5 ring-white/10 text-slate-200 hover:ring-white/20",
+                              selectedAddonIds[a.id] ? "bg-purple-500/15 ring-purple-400/30 text-purple-100" : "bg-white/5 ring-white/10 text-slate-200 hover:ring-white/20",
                             ].join(" ")}
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm font-extrabold truncate">{a.name}</div>
-                                {a.price_note ? (
-                                  <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div>
-                                ) : null}
+                                {a.price_note ? <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div> : null}
                               </div>
-                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">
-                                {suggestedRangeText(a)}
-                              </div>
+                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">{suggestedRangeText(a)}</div>
                             </div>
                           </button>
                         ))}
@@ -2083,28 +2086,21 @@ function SchemaInput(props: React.InputHTMLAttributes<HTMLInputElement> & { clas
 
 function SchemaSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   const { className, ...rest } = props;
-
   return (
     <select
       {...rest}
       className={[
-        // Base
         "h-12 w-full rounded-2xl px-4 text-base",
-        // Make the CLOSED select readable
         "bg-slate-900 text-white ring-1 ring-white/10",
-        // Focus
         "focus:outline-none focus:ring-2 focus:ring-purple-400/30",
-        // Make the OPEN dropdown options readable (critical)
         "[&>option]:bg-slate-900 [&>option]:text-white",
-        // Some browsers render optgroups too
         "[&>optgroup]:bg-slate-900 [&>optgroup]:text-white",
-        // Optional: make it feel more like your UI
         "shadow-sm",
         className ?? "",
       ].join(" ")}
     />
   );
-} 
+}
 
 function SchemaButton({
   children,
@@ -2121,7 +2117,6 @@ function SchemaButton({
 }) {
   const base = "h-12 rounded-2xl font-extrabold text-sm transition ring-1 touch-manipulation";
   const width = className?.includes("w-") ? "" : "w-full";
-
   const cls =
     variant === "primary"
       ? disabled
@@ -2130,8 +2125,8 @@ function SchemaButton({
       : "bg-white/3 text-slate-200 ring-white/10 hover:ring-white/20 hover:text-white";
 
   return (
-    <button onClick={onClick} disabled={!!disabled} className={[base, width, cls, className ?? ""].join(" ")}>
+    <button type="button" onClick={onClick} disabled={!!disabled} className={[base, width, cls, className ?? ""].join(" ")}>
       {children}
     </button>
   );
-}
+} 
