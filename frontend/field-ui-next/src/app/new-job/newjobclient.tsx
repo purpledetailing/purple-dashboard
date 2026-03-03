@@ -878,37 +878,44 @@ function NewJobInner() {
    * ✅ idempotent via client_request_id (prevents duplicates permanently)
    * ========================= */
   async function insertCustomerJobLegacy(params: {
-    businessId: string;
-    vin: string;
-    serviceName: string;
-    serviceDescription?: string;
-    serviceDate?: string;
-    clientRequestId: string; // ✅ required
-  }) {
-    // ✅ never allow NULL service_date (covers parse issues)
-    const normalizedDate =
-      normalizeServiceDateInput(params.serviceDate || "") ||
-      todayDateOnlyNY();
+  businessId: string;
+  vin: string;
+  serviceName: string;
+  serviceDescription?: string;
+  serviceDate?: string;
+  clientRequestId?: string; // allow undefined
+}) {
+  // ✅ force a non-null id every single time
+  const safeId =
+    typeof params.clientRequestId === "string" && params.clientRequestId.trim().length > 0
+      ? params.clientRequestId.trim()
+      : uuidv4();
 
-    const payload = {
-      business_id: params.businessId,
-      vin: params.vin,
-      service_name: params.serviceName,
-      service_description: params.serviceDescription ?? null,
-      service_date: normalizedDate,
-      client_request_id: params.clientRequestId,
-    };
+  // ✅ never allow NULL service_date either
+  const normalizedDate =
+    normalizeServiceDateInput(params.serviceDate || "") ||
+    todayDateOnlyNY();
 
-    const { error } = await supabase
-      .from("customer_jobs_legacy")
-      .upsert(payload, { onConflict: "client_request_id" });
+  const payload = {
+    business_id: params.businessId,
+    vin: normalizeVin(params.vin),
+    service_name: capsTrim(params.serviceName),
+    service_description: params.serviceDescription ?? null,
+    service_date: normalizedDate,
+    client_request_id: safeId, // ✅ guaranteed NOT NULL
+  };
 
-    if (error) {
-      console.error("LEGACY UPSERT FAILED:", error);
-      throw error;
-    }
-    return true;
+  const { error } = await supabase
+    .from("customer_jobs_legacy")
+    .upsert(payload, { onConflict: "client_request_id" });
+
+  if (error) {
+    console.error("customer_jobs_legacy upsert failed:", error);
+    throw error;
   }
+
+  return safeId;
+} 
 
   async function autofillCustomerFromLegacy(vin17: string) {
     const v = normalizeVin(vin17);
@@ -1153,9 +1160,8 @@ function NewJobInner() {
       serviceName: pkgName,
       serviceDescription: description,
       serviceDate: serviceDateFinal,
-      clientRequestId: reqId,
-    });
-
+      clientRequestId: payload.client_request_id, // ✅ ensure it's passed
+}); 
     // Normalized mirror best-effort
     try {
       let vehicleId: string | null = null;
