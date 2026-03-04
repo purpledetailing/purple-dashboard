@@ -554,7 +554,7 @@ function NewJobInner() {
   const [notes, setNotes] = useState("");
 
   /** optional backfill date (YYYY-MM-DD) */
-  const [serviceDate, setServiceDate] = useState<string>("");
+  const [serviceDate, setServiceDate] = useState<string>(() => todayDateOnlyNY()); 
 
   const quickTotals = useMemo(() => ["200", "250", "300", "350", "400"], []);
 
@@ -894,7 +894,8 @@ function NewJobInner() {
       : uuidv4();
 
   const normalizedDate =
-    normalizeServiceDateInput(params.serviceDate || "") || todayDateOnlyNY();
+    normalizeServiceDateInput(params.serviceDate || "") || todayDateOnlyNY() ||
+    new Date().toISOString().slice(0, 10);
 
   const payload = {
     business_id: params.businessId,
@@ -904,7 +905,13 @@ function NewJobInner() {
     service_date: normalizedDate,
     client_request_id: safeId, // ✅ guaranteed
   };
-
+  
+  console.log("LEGACY WRIETE", {
+      rawServiceDate:params.serviceDate,
+      normalizedDate,
+      safeId,
+    });
+    
   const { error } = await supabase
     .from("customer_jobs_legacy")
     .upsert(payload, { onConflict: "client_request_id" });
