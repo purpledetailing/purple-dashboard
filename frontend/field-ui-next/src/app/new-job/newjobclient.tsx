@@ -214,7 +214,7 @@ function centsToDollars(cents: number | null) {
 }
 
 function dollarsToCents(input: string): number {
-  const cleaned = (input || "").replace(/[^0-9.]/g, "");
+  const cleaned = input.replace(/[^0-9.]/g, "");
   if (!cleaned) return 0;
   const num = Number(cleaned);
   if (!Number.isFinite(num)) return 0;
@@ -305,15 +305,16 @@ function uuidv4(): string {
   const c: any = typeof crypto !== "undefined" ? crypto : null;
   if (c?.randomUUID) return c.randomUUID();
 
+  // v4 polyfill
   const bytes = new Uint8Array(16);
   for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
-
   // eslint-disable-next-line no-bitwise
   bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
   // eslint-disable-next-line no-bitwise
   bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant
 
   const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0"));
+
   return (
     hex.slice(0, 4).join("") +
     "-" +
@@ -334,6 +335,14 @@ function safeUuid() {
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+/** ✅ enforce business_id at runtime so it can never silently become NULL */
+function requireBusinessId(businessId: string) {
+  const bid = String(businessId || "").trim();
+  const ok = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(bid);
+  if (!ok) throw new Error("BUSINESS_ID MISSING/INVALID — CANNOT SAVE.");
+  return bid;
+}
+
 function enqueueJob(item: Omit<PendingJob, "id" | "created_at" | "attempt_count">) {
   const q = getQueue();
   const newItem: PendingJob = {
@@ -341,6 +350,7 @@ function enqueueJob(item: Omit<PendingJob, "id" | "created_at" | "attempt_count"
     created_at: new Date().toISOString(),
     attempt_count: 0,
     ...item,
+    // ✅ ensure idempotency even for older callers
     client_request_id: item.client_request_id || uuidv4(),
   };
   q.unshift(newItem);
@@ -430,33 +440,17 @@ function isoToDateOnlyNY(iso: string): string {
 function extractCityState(address: string): { city: string | null; state: string | null } {
   const a = (address || "").trim();
   if (!a) return { city: null, state: null };
-
   const parts = a
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean);
 
   if (parts.length < 2) return { city: null, state: null };
-
   const last = parts[parts.length - 1];
   const stateMatch = last.match(/\b([A-Z]{2})\b/i);
   const state = stateMatch?.[1]?.toUpperCase() ?? null;
   const city = parts[parts.length - 2] ?? null;
-
   return { city: city || null, state };
-}
-
-/** =========================
-* ✅ Business ID Guards (NEW)
-* ========================= */
-function isUuid(val: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
-}
-
-function requireBusinessId(businessId: string) {
-  const bid = String(businessId || "").trim();
-  if (!bid || !isUuid(bid)) throw new Error("BUSINESS_ID MISSING/INVALID — CANNOT SAVE.");
-  return bid;
 }
 
 /** =========================
@@ -465,7 +459,6 @@ function requireBusinessId(businessId: string) {
 async function compressImageFile(file: File, opts?: { maxDim?: number; quality?: number }): Promise<File> {
   const maxDim = opts?.maxDim ?? 1600;
   const quality = opts?.quality ?? 0.82;
-
   if (!file.type?.startsWith("image/")) return file;
 
   const bitmap = await createImageBitmap(file);
@@ -479,7 +472,6 @@ async function compressImageFile(file: File, opts?: { maxDim?: number; quality?:
     const canvas = document.createElement("canvas");
     canvas.width = outW;
     canvas.height = outH;
-
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
 
@@ -498,7 +490,6 @@ async function compressImageFile(file: File, opts?: { maxDim?: number; quality?:
 
     const baseName = (file.name || "photo").replace(/\.[^/.]+$/, "");
     const newName = `${baseName}.jpg`;
-
     return new File([blob], newName, { type: "image/jpeg" });
   } finally {
     try {
@@ -526,24 +517,40 @@ function NewJobInner() {
   const { signOut } = useAuth();
 
   const [step, setStep] = useState<Step>(1);
+
   const [services, setServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
+
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   /** ✅ hard lock to prevent double-save even if button is tapped twice fast */
   const savingRef = useRef(false);
 
-  /** ✅ stable idempotency key for the current job (prevents duplicates) */
+  // ✅ stable idempotency key for the current job (prevents duplicates)
   const jobRequestIdRef = useRef<string>(uuidv4());
-
-  /** ✅ Business ID caching (NEW) */
-  const businessIdRef = useRef<string | null>(null);
-  const resolvingBusinessIdRef = useRef<Promise<string> | null>(null);
 
   const [online, setOnline] = useState(true);
   const [queuedCount, setQueuedCount] = useState(0);
   const [syncingQueue, setSyncingQueue] = useState(false);
+
+  // ✅ NEW: refs + state for “Saved ✅ -> auto reset back to step 1”
+  const vinInputRef = useRef<HTMLInputElement | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = (text: string, ms = 1100) => {
+    setToast(text);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), ms);
+  };
+
+  const goToFreshJob = (delayMs = 650) => {
+    window.setTimeout(() => {
+      resetForm();
+      window.setTimeout(() => vinInputRef.current?.focus(), 50);
+    }, delayMs);
+  };
 
   const [vin, setVin] = useState("");
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
@@ -589,13 +596,20 @@ function NewJobInner() {
   const quickTotals = useMemo(() => ["200", "250", "300", "350", "400"], []);
 
   /** =========================
-   * business_id resolver (CACHED + GUARDED)
+   * business_id resolver (CACHED + CONCURRENT SAFE)
    * ========================= */
+  const businessIdRef = useRef<string | null>(null);
+  const resolvingBusinessIdRef = useRef<Promise<string> | null>(null);
+
+  function isUuid(val: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val || "");
+  }
+
   async function getActiveBusinessId(): Promise<string> {
-    // cached
+    // ✅ return cached if already resolved
     if (businessIdRef.current && isUuid(businessIdRef.current)) return businessIdRef.current;
 
-    // collapse concurrent calls
+    // ✅ collapse concurrent calls into one promise
     if (resolvingBusinessIdRef.current) return resolvingBusinessIdRef.current;
 
     resolvingBusinessIdRef.current = (async () => {
@@ -611,7 +625,7 @@ function NewJobInner() {
 
       if (linkErr) throw linkErr;
 
-      const bid = String(link?.business_id || "").trim();
+      const bid = String((link as any)?.business_id || "").trim();
       if (!bid || !isUuid(bid)) throw new Error("NO BUSINESS LINK FOUND (OR INVALID BUSINESS_ID).");
 
       businessIdRef.current = bid;
@@ -625,7 +639,7 @@ function NewJobInner() {
     }
   }
 
-  /** Resolve business id once on mount so we fail early if unlinked */
+  // ✅ pre-resolve once so you find out immediately if user is not linked
   useEffect(() => {
     (async () => {
       try {
@@ -673,10 +687,7 @@ function NewJobInner() {
     }
   }, [packages, selectedPackageId]);
 
-  const selectedAddons = useMemo(
-    () => addons.filter((a) => selectedAddonIds[a.id]),
-    [addons, selectedAddonIds]
-  );
+  const selectedAddons = useMemo(() => addons.filter((a) => selectedAddonIds[a.id]), [addons, selectedAddonIds]);
 
   const filteredAddons = useMemo(() => {
     const q = addonQuery.trim().toLowerCase();
@@ -727,6 +738,7 @@ function NewJobInner() {
 
   function addIncomingPhotos(incoming: File[]) {
     if (!incoming || incoming.length === 0) return;
+
     setPhotos((prev) => {
       const remaining = Math.max(0, 8 - prev.length);
       const slice = incoming.slice(0, remaining);
@@ -735,8 +747,10 @@ function NewJobInner() {
         file,
         previewUrl: URL.createObjectURL(file),
       }));
+
       if (incoming.length > remaining) setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
       else setPhotoMsg(null);
+
       return [...prev, ...mapped];
     });
   }
@@ -771,6 +785,7 @@ function NewJobInner() {
       fd.append("vin", v);
 
       setPhotoMsg("PREPARING PHOTOS…");
+
       const prepared = await Promise.all(
         selected.slice(0, 8).map(async (p) => {
           const compressed = await compressImageFile(p.file, { maxDim: 1600, quality: 0.82 });
@@ -784,6 +799,7 @@ function NewJobInner() {
       prepared.forEach((f) => fd.append("photos", f, f.name));
 
       setPhotoMsg("UPLOADING…");
+
       const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
@@ -794,6 +810,7 @@ function NewJobInner() {
       }
 
       setPhotoMsg(`UPLOADED ${data.count ?? selected.length} PHOTO(S) ✅`);
+
       selected.forEach((p) => {
         try {
           URL.revokeObjectURL(p.previewUrl);
@@ -818,6 +835,7 @@ function NewJobInner() {
           URL.revokeObjectURL(p.previewUrl);
         } catch {}
       });
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -827,7 +845,6 @@ function NewJobInner() {
    * ========================= */
   async function lookupZipSuggestionsFromAddress(addr: string) {
     if (!isOnline()) return;
-
     const { city, state } = extractCityState(addr);
     if (!city || !state) return;
     if (state.toUpperCase() !== "NC") return;
@@ -853,13 +870,16 @@ function NewJobInner() {
 
   useEffect(() => {
     if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
+
     if (!customerAddress.trim()) {
       setZipSuggestions([]);
       return;
     }
+
     zipLookupTimer.current = window.setTimeout(() => {
       lookupZipSuggestionsFromAddress(customerAddress);
     }, 450);
+
     return () => {
       if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
     };
@@ -957,13 +977,22 @@ function NewJobInner() {
       service_name: capsTrim(params.serviceName),
       service_description: params.serviceDescription ?? null,
       service_date: normalizedDate, // ✅ guaranteed YYYY-MM-DD
-      client_request_id: safeId, // ✅ guaranteed uuid
+      client_request_id: safeId, // ✅ guaranteed
     };
 
     const { error } = await supabase.from("customer_jobs_legacy").upsert(payload, { onConflict: "client_request_id" });
-    if (error) throw error;
 
-    return safeId;
+    // ✅ IMPORTANT: if legacy unique constraint is on (vin, service_date) or similar,
+    // we treat that as a WARNING (already logged) instead of a “fail”.
+    if (error) {
+      const msg = String((error as any).message ?? "").toLowerCase();
+      if (msg.includes("customer_jobs_legacy_unique_visit") || msg.includes("duplicate key value")) {
+        return { client_request_id: safeId, wasDuplicate: true as const };
+      }
+      throw error;
+    }
+
+    return { client_request_id: safeId, wasDuplicate: false as const };
   }
 
   async function autofillCustomerFromLegacy(vin17: string) {
@@ -980,11 +1009,13 @@ function NewJobInner() {
     if (error || !data) return;
 
     const d: any = data;
+
     if (!customerName.trim() && d.customer_name) setCustomerName(capsTrim(String(d.customer_name)));
     if (!customerPhone.trim() && d.phone_number) setCustomerPhone(String(d.phone_number));
     if (!customerEmail.trim() && d.email) setCustomerEmail(String(d.email));
     if (!customerAddress.trim() && d.address) setCustomerAddress(capsTrim(String(d.address)));
     if (!customerZip.trim() && d.zip_code != null) setCustomerZip(String(d.zip_code));
+
     if (!vehMake.trim() && d.make) setVehMake(capsTrim(String(d.make)));
     if (!vehModel.trim() && d.model) setVehModel(capsTrim(String(d.model)));
     if (!vehYearText.trim() && d.year != null) setVehYearText(String(d.year));
@@ -1000,7 +1031,6 @@ function NewJobInner() {
       .maybeSingle();
 
     if (error) return;
-
     const cust = (data as any)?.customers as any;
     if (!cust) return;
 
@@ -1066,7 +1096,6 @@ function NewJobInner() {
     setVehModel("");
 
     const v = normalizeVin(vin);
-
     if (!isValidVin(v)) {
       setVinStatus("VIN MUST BE 17 CHARACTERS (NO I, O, Q).");
       return;
@@ -1134,6 +1163,7 @@ function NewJobInner() {
 
     const yearNum = yearToNumberOrNull(vehYearText);
     if (!yearNum) return false;
+
     if (!vehMake.trim()) return false;
     if (!vehModel.trim()) return false;
 
@@ -1154,6 +1184,7 @@ function NewJobInner() {
         ? (payload as any).client_request_id.trim()
         : uuidv4();
 
+    // ✅ important: write it back so later code never sees undefined
     (payload as any).client_request_id = reqId;
 
     const v = normalizeVin(payload.vin);
@@ -1164,9 +1195,8 @@ function NewJobInner() {
     const modelCaps = capsTrim(payload.vehicle_model || "");
     if (!yearNum || !makeCaps || !modelCaps) throw new Error("YEAR/MAKE/MODEL REQUIRED (AFTER VIN).");
 
-    // ✅ Resolve + validate business id (NEW)
-    const businessIdRaw = await getActiveBusinessId();
-    const businessId = requireBusinessId(businessIdRaw);
+    // ✅ cached + validated
+    const businessId = requireBusinessId(await getActiveBusinessId());
 
     // ✅ Decide final date-only for this job (never empty, never null)
     const serviceDateFinal = normalizeServiceDateInput(payload.service_date || "") ?? todayDateOnlyNY();
@@ -1185,7 +1215,6 @@ function NewJobInner() {
 
     const description = buildServiceDescription(pkgName, addonNames);
 
-    // ✅ legacy master record (customer_data_legacy)
     await upsertLegacyByVin({
       businessId,
       vin: v,
@@ -1200,14 +1229,14 @@ function NewJobInner() {
       work_done: description ? `${pkgName}\n${description}` : pkgName,
     });
 
-    // ✅ legacy service history record (customer_jobs_legacy)
-    await insertCustomerJobLegacy({
+    // ✅ ALWAYS write legacy job history with NON-NULL service_date
+    const legacyRes = await insertCustomerJobLegacy({
       businessId,
       vin: v,
       serviceName: pkgName,
       serviceDescription: description,
       serviceDate: serviceDateFinal,
-      clientRequestId: reqId,
+      clientRequestId: reqId, // ✅ USE reqId here
     });
 
     // Normalized mirror best-effort
@@ -1215,8 +1244,9 @@ function NewJobInner() {
       let vehicleId: string | null = null;
 
       const foundVeh = await supabase.from("vehicles").select("id,vin,year,make,model").eq("vin", v).limit(1).maybeSingle();
-      if (!foundVeh.error && foundVeh.data?.id) {
-        vehicleId = foundVeh.data.id as string;
+
+      if (!foundVeh.error && (foundVeh.data as any)?.id) {
+        vehicleId = (foundVeh.data as any).id as string;
       } else {
         const createdVeh = await supabase.from("vehicles").insert({ vin: v, business_id: businessId }).select("id").single();
         if (!createdVeh.error && createdVeh.data?.id) vehicleId = createdVeh.data.id as string;
@@ -1224,7 +1254,6 @@ function NewJobInner() {
 
       if (vehicleId) {
         await supabase.from("vehicles").update({ year: yearNum, make: makeCaps, model: modelCaps, business_id: businessId }).eq("id", vehicleId);
-
         if (isOnline()) {
           try {
             await decodeVinAndUpdateVehicle(vehicleId, v);
@@ -1248,14 +1277,14 @@ function NewJobInner() {
           .limit(1)
           .maybeSingle();
 
-        if (!existingCust.error && existingCust.data?.id) {
-          customerId = existingCust.data.id as string;
+        if (!existingCust.error && (existingCust.data as any)?.id) {
+          customerId = (existingCust.data as any).id as string;
           await supabase
             .from("customers")
             .update({
               business_id: businessId,
-              full_name: typedName || existingCust.data.full_name,
-              phone: typedPhone || existingCust.data.phone,
+              full_name: typedName || (existingCust.data as any).full_name,
+              phone: typedPhone || (existingCust.data as any).phone,
               phone_norm: phoneNorm,
               address: typedAddress,
               zip_code: typedZip,
@@ -1333,7 +1362,8 @@ function NewJobInner() {
       console.error("Normalized mirror failed (legacy saved):", e);
     }
 
-    return v;
+    // ✅ surface to caller whether this was a duplicate legacy insert
+    return { vin: v, legacyWasDuplicate: legacyRes.wasDuplicate };
   };
 
   const flushQueue = async () => {
@@ -1363,6 +1393,7 @@ function NewJobInner() {
           };
 
           await saveJobToSupabase(upgraded);
+
           removeFromQueue(item.id);
           setQueuedCount(getQueue().length);
         } catch (e) {
@@ -1388,6 +1419,7 @@ function NewJobInner() {
       refresh();
       flushQueue();
     };
+
     const onOffline = () => refresh();
 
     window.addEventListener("online", onOnline);
@@ -1452,27 +1484,35 @@ function NewJobInner() {
       vehicle_year: yearNum,
       vehicle_make: capsTrim(vehMake),
       vehicle_model: capsTrim(vehModel),
+
       customer_name: capsTrim(customerName),
       customer_phone: customerPhone,
       customer_email: normalizeEmailForDb(customerEmail),
       customer_address: capsTrim(customerAddress),
       customer_zip: normalizeZipString(customerZip),
+
       service_type: serviceType,
       selected_package_id: selectedPackageId,
       addon_ids: Object.entries(selectedAddonIds)
         .filter(([, on]) => on)
         .map(([id]) => id),
+
       total_charged: totalCharged,
       notes: capsTrim(notes),
-      service_date: serviceDateClean, // ✅ ALWAYS valid date-only
+
+      // ✅ ALWAYS store a valid date-only for the DB layer (no "", no null)
+      service_date: serviceDateClean,
       performed_at: dateOnlyToIsoMidday(serviceDateClean),
     };
 
     if (!isOnline()) {
       enqueueJob(payloadBase);
       setQueuedCount(getQueue().length);
+
+      showToast("OFFLINE ✅ SAVED TO QUEUE");
       setMsg("OFFLINE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY WHEN YOU’RE BACK ONLINE.");
-      resetForm();
+
+      goToFreshJob(450);
       savingRef.current = false;
       return;
     }
@@ -1487,27 +1527,38 @@ function NewJobInner() {
         ...payloadBase,
       };
 
-      await saveJobToSupabase(tempPending);
+      const res = await saveJobToSupabase(tempPending);
 
-      setMsg("SAVED ✅ (LEGACY IS SOURCE OF TRUTH)");
-      resetForm();
+      // ✅ New: clear, visible outcome
+      if (res.legacyWasDuplicate) {
+        // warning is fine
+        showToast("ALREADY LOGGED ✅");
+        setMsg("LOGGED FOR THAT VIN + DATE ✅");
+      } else {
+        showToast("SAVED ✅");
+        setMsg("SAVED ✅");
+      }
+
+      // ✅ New: automatically go back to step 1 after a short beat
+      goToFreshJob(650);
+
+      // keep queue moving
       flushQueue();
     } catch (e: any) {
       console.error(e);
 
       const message = String(e?.message ?? "").toLowerCase();
       const likelyNetwork =
-        !isOnline() ||
-        message.includes("failed to fetch") ||
-        message.includes("fetch") ||
-        message.includes("network") ||
-        message.includes("timeout");
+        !isOnline() || message.includes("failed to fetch") || message.includes("fetch") || message.includes("network") || message.includes("timeout");
 
       if (likelyNetwork) {
         enqueueJob(payloadBase);
         setQueuedCount(getQueue().length);
+
+        showToast("SAVED TO QUEUE ✅");
         setMsg("CONNECTION ISSUE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY.");
-        resetForm();
+
+        goToFreshJob(450);
       } else {
         setMsg((e?.message ?? "ERROR SAVING JOB.").toUpperCase());
       }
@@ -1522,9 +1573,11 @@ function NewJobInner() {
    * ========================= */
   const resetForm = () => {
     jobRequestIdRef.current = uuidv4(); // ✅ new idempotency key for next job
+
     resetPhotos();
 
     setStep(1);
+
     setVin("");
     setVehicle(null);
     setVinStatus("");
@@ -1548,7 +1601,7 @@ function NewJobInner() {
     setTotalCharged("");
     setNotes("");
 
-    // ✅ IMPORTANT: never reset to "" (avoid NULL / empty date issues)
+    // ✅ IMPORTANT: never reset to "" (that can later become NULL)
     setServiceDate(todayDateOnlyNY());
 
     if (packages[0]?.id) setSelectedPackageId(packages[0].id);
@@ -1612,6 +1665,15 @@ function NewJobInner() {
    * ========================= */
   return (
     <div className="min-h-[100dvh] text-slate-100 overscroll-contain">
+      {/* ✅ Toast (visible confirmation, independent from msg) */}
+      {toast && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[60]">
+          <div className="rounded-full bg-slate-950/90 backdrop-blur px-4 py-2 text-xs font-extrabold ring-1 ring-white/10 shadow">
+            {toast}
+          </div>
+        </div>
+      )}
+
       <div className="fixed inset-0 -z-10 bg-slate-950">
         <div
           className="absolute inset-0 opacity-[0.08]"
@@ -1625,6 +1687,7 @@ function NewJobInner() {
       </div>
 
       <div className="sticky top-0 z-20">
+        {/* This keeps the header centered and the same width as the form */}
         <div className="mx-auto max-w-md px-4 pt-3">
           <div className="rounded-3xl bg-slate-950/80 backdrop-blur ring-1 ring-white/10">
             <div className="px-4 py-3">
@@ -1658,11 +1721,7 @@ function NewJobInner() {
                 </button>
               </div>
 
-              {msg && (
-                <div className="mt-3 rounded-2xl bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs text-slate-200">
-                  {msg}
-                </div>
-              )}
+              {msg && <div className="mt-3 rounded-2xl bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs text-slate-200">{msg}</div>}
             </div>
           </div>
         </div>
@@ -1685,6 +1744,7 @@ function NewJobInner() {
 
                 <div className="flex gap-2">
                   <SchemaInput
+                    ref={vinInputRef} // ✅ focus after save/reset
                     value={vin}
                     onChange={(e) => {
                       const cleaned = normalizeVin(e.target.value).slice(0, 17);
@@ -1696,6 +1756,7 @@ function NewJobInner() {
                     autoCorrect="off"
                     maxLength={17}
                   />
+
                   <SchemaButton onClick={lookupVin} disabled={vinBusy || !normalizeVin(vin).length} variant="primary" className="w-[120px]">
                     {vinBusy ? "…" : "LOOKUP"}
                   </SchemaButton>
@@ -1769,12 +1830,7 @@ function NewJobInner() {
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div className="col-span-1">
                     <SchemaLabel>PHONE</SchemaLabel>
-                    <SchemaInput
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="(919) 555-1234"
-                      inputMode="tel"
-                    />
+                    <SchemaInput value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="(919) 555-1234" inputMode="tel" />
                   </div>
 
                   <div className="col-span-1">
@@ -1795,13 +1851,7 @@ function NewJobInner() {
 
                 <div className="mt-3">
                   <SchemaLabel>ZIP</SchemaLabel>
-                  <SchemaInput
-                    value={customerZip}
-                    onChange={(e) => setCustomerZip(normalizeZipString(e.target.value))}
-                    placeholder="27597"
-                    inputMode="numeric"
-                  />
-
+                  <SchemaInput value={customerZip} onChange={(e) => setCustomerZip(normalizeZipString(e.target.value))} placeholder="27597" inputMode="numeric" />
                   {zipSuggestions.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {zipSuggestions.map((z) => (
@@ -2033,9 +2083,7 @@ function NewJobInner() {
                       </div>
 
                       {selectedAddons.length > 0 && (
-                        <div className="mt-3 text-[11px] text-slate-300/80">
-                          Selected: {selectedAddons.map((x) => x.name).join(", ")}
-                        </div>
+                        <div className="mt-3 text-[11px] text-slate-300/80">Selected: {selectedAddons.map((x) => x.name).join(", ")}</div>
                       )}
                     </div>
                   )}
@@ -2068,6 +2116,7 @@ function NewJobInner() {
                 <SchemaInput
                   type="date"
                   value={serviceDate}
+                  // ✅ store raw. normalize at save time. allow clearing.
                   onChange={(e) => setServiceDate(e.target.value)}
                   max={todayDateOnlyNY()}
                 />
@@ -2078,12 +2127,7 @@ function NewJobInner() {
                 <div className="mt-4" />
 
                 <SchemaLabel>TOTAL CHARGED (REQUIRED)</SchemaLabel>
-                <SchemaInput
-                  value={totalCharged}
-                  onChange={(e) => setTotalCharged(e.target.value.replace(/[^0-9.]/g, ""))}
-                  placeholder="300"
-                  inputMode="decimal"
-                />
+                <SchemaInput value={totalCharged} onChange={(e) => setTotalCharged(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="300" inputMode="decimal" />
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   {quickTotals.map((t) => (
@@ -2107,6 +2151,7 @@ function NewJobInner() {
                   <SchemaButton variant="ghost" onClick={() => setStep(4)} disabled={busy} className="w-full">
                     ← BACK
                   </SchemaButton>
+
                   <SchemaButton variant="primary" onClick={onSave} disabled={busy} className="w-full">
                     {busy ? "SAVING…" : "SAVE JOB"}
                   </SchemaButton>
@@ -2147,10 +2192,17 @@ function SchemaLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-[11px] font-semibold text-slate-300/80 mb-2">{children}</div>;
 }
 
-function SchemaInput(props: React.InputHTMLAttributes<HTMLInputElement> & { className?: string }) {
+/**
+* ✅ UPDATED: forwardRef so we can focus VIN input after Save
+*/
+const SchemaInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { className?: string }>(function SchemaInput(
+  props,
+  ref
+) {
   const { className, ...rest } = props;
   return (
     <input
+      ref={ref}
       {...rest}
       className={[
         "h-12 w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 text-base text-white/90 placeholder:text-slate-400/70",
@@ -2159,7 +2211,7 @@ function SchemaInput(props: React.InputHTMLAttributes<HTMLInputElement> & { clas
       ].join(" ")}
     />
   );
-}
+});
 
 function SchemaSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   const { className, ...rest } = props;
