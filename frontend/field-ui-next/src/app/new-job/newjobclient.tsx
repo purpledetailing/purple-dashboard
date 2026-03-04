@@ -1403,6 +1403,11 @@ function NewJobInner() {
 
     const serviceDateClean = normalizeServiceDateInput(serviceDate);
 
+    if (!serviceDateClean) {
+      savingRef.current = false;
+      return setMsg("PLEASE SELECT A SERVICE DATE.");
+    }
+
     /** ✅ single idempotency key used for live save + any retries/queue */
     const requestId = jobRequestIdRef.current;
 
@@ -1484,7 +1489,7 @@ function NewJobInner() {
    * ========================= */
   const resetForm = () => {
     jobRequestIdRef.current = uuidv4(); // ✅ add THIS line first 
-    
+
     resetPhotos();
     setStep(1);
     setVin("");
