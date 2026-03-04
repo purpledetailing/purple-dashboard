@@ -934,7 +934,7 @@ function NewJobInner() {
     const { error } = await supabase.from("customer_jobs_legacy").upsert(payload, { onConflict: "client_request_id" });
 
     // ✅ IMPORTANT: if legacy unique constraint is on (vin, service_date) or similar,
-    // we treat that as a WARNING (already logged) instead of a “fail”.
+    // we treat that as a WARNING (Already Logged) instead of a “fail”.
     if (error) {
       const msg = String(error.message ?? "").toLowerCase();
       if (msg.includes("customer_jobs_legacy_unique_visit") || msg.includes("duplicate key value")) {
@@ -1483,7 +1483,7 @@ function NewJobInner() {
       if (res.legacyWasDuplicate) {
         // warning is fine
         showToast("ALREADY LOGGED ✅");
-        setMsg("ALREADY LOGGED FOR THAT VIN + DATE ✅ (NO DUPLICATE CREATED)");
+        setMsg("Record LOGGED FOR THAT VIN + DATE ✅ (NO DUPLICATE CREATED)");
       } else {
         showToast("SAVED ✅");
         setMsg("SAVED ✅");
