@@ -1263,13 +1263,17 @@ function NewJobInner() {
       if (customerId && vehicleId) {
         const totalCents = dollarsToCents(payload.total_charged);
 
-        const jobRes = await supabase
+        const serviceDateClean = 
+          payload.service_date || new Date().toISOString().slice(0, 10);       
+          
+          const jobRes = await supabase
           .from("jobs")
           .insert({
             business_id: businessId,
             customer_id: customerId,
             vehicle_id: vehicleId,
             status: "completed",
+            service_date: serviceDateClean,
             performed_at: performedAtIso,
             notes: capsTrim(payload.notes) || null,
             total_price_cents: totalCents,
