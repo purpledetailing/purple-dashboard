@@ -554,7 +554,7 @@ function NewJobInner() {
   const [notes, setNotes] = useState("");
 
   /** optional backfill date (YYYY-MM-DD) */
-  const [serviceDate, setServiceDate] = useState<string>(() => todayDateOnlyNY()); 
+  const [serviceDate, setServiceDate] = useState<string>(() => todayDateOnlyNY());
 
   const quickTotals = useMemo(() => ["200", "250", "300", "350", "400"], []);
 
@@ -905,13 +905,13 @@ function NewJobInner() {
     service_date: normalizedDate,
     client_request_id: safeId, // ✅ guaranteed
   };
-  
+ 
   console.log("LEGACY WRIETE", {
       rawServiceDate:params.serviceDate,
       normalizedDate,
       safeId,
     });
-    
+   
   const { error } = await supabase
     .from("customer_jobs_legacy")
     .upsert(payload, { onConflict: "client_request_id" });
@@ -919,7 +919,7 @@ function NewJobInner() {
   if (error) throw error;
 
   return safeId;
-} 
+}
 
   async function autofillCustomerFromLegacy(vin17: string) {
     const v = normalizeVin(vin17);
@@ -1171,7 +1171,7 @@ function NewJobInner() {
       serviceDescription: description,
       serviceDate: serviceDateFinal,
       clientRequestId: reqId, // ✅ USE reqId here
-}); 
+});
     // Normalized mirror best-effort
     try {
       let vehicleId: string | null = null;
@@ -1270,9 +1270,9 @@ function NewJobInner() {
       if (customerId && vehicleId) {
         const totalCents = dollarsToCents(payload.total_charged);
 
-        const serviceDateClean = 
-          payload.service_date || new Date().toISOString().slice(0, 10);       
-          
+        const serviceDateClean =
+          payload.service_date || new Date().toISOString().slice(0, 10);      
+         
           const jobRes = await supabase
           .from("jobs")
           .insert({
@@ -1499,7 +1499,7 @@ function NewJobInner() {
    * Reset
    * ========================= */
   const resetForm = () => {
-    jobRequestIdRef.current = uuidv4(); // ✅ add THIS line first 
+    jobRequestIdRef.current = uuidv4(); // ✅ add THIS line first
 
     resetPhotos();
     setStep(1);
