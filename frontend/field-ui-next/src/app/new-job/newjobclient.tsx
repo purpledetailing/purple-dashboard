@@ -510,6 +510,9 @@ function NewJobInner() {
   /** ✅ hard lock to prevent double-save even if button is tapped twice fast */
   const savingRef = useRef(false);
 
+  // ✅ stable idempotency key for the current job (prevents duplicates)
+  const jobRequestIdRef = useRef<string>(uuidv4());
+
   const [online, setOnline] = useState(true);
   const [queuedCount, setQueuedCount] = useState(0);
   const [syncingQueue, setSyncingQueue] = useState(false);
@@ -1401,7 +1404,7 @@ function NewJobInner() {
     const serviceDateClean = normalizeServiceDateInput(serviceDate);
 
     /** ✅ single idempotency key used for live save + any retries/queue */
-    const requestId = uuidv4();
+    const requestId = jobRequestIdRef.current;
 
     const payloadBase: Omit<PendingJob, "id" | "created_at" | "attempt_count"> = {
       client_request_id: requestId,
@@ -1480,6 +1483,8 @@ function NewJobInner() {
    * Reset
    * ========================= */
   const resetForm = () => {
+    jobRequestIdRef.current = uuidv4(); // ✅ add THIS line first 
+    
     resetPhotos();
     setStep(1);
     setVin("");
