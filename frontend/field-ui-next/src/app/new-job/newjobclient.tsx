@@ -55,7 +55,7 @@ type PendingJob = {
   total_charged: string;
   notes: string;
 
-  /** date-only for backfill, format YYYY-MM-DD */
+  /** date-only for backfill, format YYYY-MM-DD (may be null) */
   service_date: string | null;
 
   performed_at: string;
@@ -182,6 +182,7 @@ function buildServiceDescription(serviceName: string, addonNames: string[]) {
   const key = (serviceName || "").trim().toUpperCase();
   const baseLines = PACKAGE_DETAILS[key] ?? [];
   const lines: string[] = [];
+
   for (const l of baseLines) lines.push(l);
 
   if (addonNames.length > 0) {
@@ -191,6 +192,7 @@ function buildServiceDescription(serviceName: string, addonNames: string[]) {
   }
 
   if (lines.length === 0) return "";
+
   return lines
     .map((l) => {
       const t = (l || "").trim();
@@ -312,6 +314,7 @@ function uuidv4(): string {
   bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant
 
   const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0"));
+
   return (
     hex.slice(0, 4).join("") +
     "-" +
@@ -370,11 +373,13 @@ function normalizeZipString(raw: string): string {
   return digits.slice(0, 10);
 }
 
-/** service_date helpers */
-function normalizeServiceDateInput(raw: string) {
+/** ✅ service_date helpers
+* IMPORTANT: return null (NOT "") so we never send empty string to Postgres date columns
+*/
+function normalizeServiceDateInput(raw: string): string | null {
   const v = (raw || "").trim();
-  if (!v) return "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return "";
+  if (!v) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
   return v;
 }
 
@@ -386,9 +391,11 @@ function todayDateOnlyNY(): string {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(new Date());
+
   const y = parts.find((p) => p.type === "year")?.value;
   const m = parts.find((p) => p.type === "month")?.value;
   const d = parts.find((p) => p.type === "day")?.value;
+
   if (!y || !m || !d) return new Date().toISOString().slice(0, 10);
   return `${y}-${m}-${d}`;
 }
@@ -409,9 +416,11 @@ function isoToDateOnlyNY(iso: string): string {
       month: "2-digit",
       day: "2-digit",
     }).formatToParts(new Date(iso));
+
     const y = parts.find((p) => p.type === "year")?.value;
     const m = parts.find((p) => p.type === "month")?.value;
     const d = parts.find((p) => p.type === "day")?.value;
+
     if (!y || !m || !d) return "";
     return `${y}-${m}-${d}`;
   } catch {
@@ -427,6 +436,7 @@ function extractCityState(address: string): { city: string | null; state: string
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean);
+
   if (parts.length < 2) return { city: null, state: null };
   const last = parts[parts.length - 1];
   const stateMatch = last.match(/\b([A-Z]{2})\b/i);
@@ -454,7 +464,6 @@ async function compressImageFile(file: File, opts?: { maxDim?: number; quality?:
     const canvas = document.createElement("canvas");
     canvas.width = outW;
     canvas.height = outH;
-
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
 
@@ -517,6 +526,24 @@ function NewJobInner() {
   const [queuedCount, setQueuedCount] = useState(0);
   const [syncingQueue, setSyncingQueue] = useState(false);
 
+  // ✅ NEW: refs + state for “Saved ✅ -> auto reset back to step 1”
+  const vinInputRef = useRef<HTMLInputElement | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = (text: string, ms = 1100) => {
+    setToast(text);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), ms);
+  };
+
+  const goToFreshJob = (delayMs = 650) => {
+    window.setTimeout(() => {
+      resetForm();
+      window.setTimeout(() => vinInputRef.current?.focus(), 50);
+    }, delayMs);
+  };
+
   const [vin, setVin] = useState("");
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [vinStatus, setVinStatus] = useState<string>("");
@@ -532,7 +559,6 @@ function NewJobInner() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerZip, setCustomerZip] = useState("");
-
   const [zipSuggestions, setZipSuggestions] = useState<string[]>([]);
   const zipLookupTimer = useRef<number | null>(null);
 
@@ -545,7 +571,6 @@ function NewJobInner() {
 
   const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">("full");
   const [selectedPackageId, setSelectedPackageId] = useState<string>("");
-
   const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>({});
   const [addonQuery, setAddonQuery] = useState("");
   const [addonsOpen, setAddonsOpen] = useState(false);
@@ -553,7 +578,11 @@ function NewJobInner() {
   const [totalCharged, setTotalCharged] = useState("");
   const [notes, setNotes] = useState("");
 
-  /** optional backfill date (YYYY-MM-DD) */
+  /**
+   * ✅ OPTIONAL backfill date (YYYY-MM-DD)
+   * Store raw value from <input type="date"> (it will already be YYYY-MM-DD or "")
+   * We normalize only at save time.
+   */
   const [serviceDate, setServiceDate] = useState<string>(() => todayDateOnlyNY());
 
   const quickTotals = useMemo(() => ["200", "250", "300", "350", "400"], []);
@@ -574,7 +603,6 @@ function NewJobInner() {
 
     if (linkErr) throw linkErr;
     if (!link?.business_id) throw new Error("NO BUSINESS LINK FOUND FOR THIS USER.");
-
     return link.business_id as string;
   }
 
@@ -601,12 +629,7 @@ function NewJobInner() {
   }, []);
 
   const packageCategory = SERVICE_TYPE_TO_CATEGORY[serviceType];
-
-  const packages = useMemo(
-    () => services.filter((s) => s.category === packageCategory),
-    [services, packageCategory]
-  );
-
+  const packages = useMemo(() => services.filter((s) => s.category === packageCategory), [services, packageCategory]);
   const addons = useMemo(() => services.filter((s) => s.category === "addon"), [services]);
 
   useEffect(() => {
@@ -619,10 +642,7 @@ function NewJobInner() {
     }
   }, [packages, selectedPackageId]);
 
-  const selectedAddons = useMemo(
-    () => addons.filter((a) => selectedAddonIds[a.id]),
-    [addons, selectedAddonIds]
-  );
+  const selectedAddons = useMemo(() => addons.filter((a) => selectedAddonIds[a.id]), [addons, selectedAddonIds]);
 
   const filteredAddons = useMemo(() => {
     const q = addonQuery.trim().toLowerCase();
@@ -632,8 +652,7 @@ function NewJobInner() {
 
   const suggestedRangeText = (s: Service) => {
     if (s.pricing_type === "fixed" && s.price_cents != null) return `$${centsToDollars(s.price_cents)}`;
-    if (s.pricing_type === "starting" && s.price_cents != null)
-      return `from $${centsToDollars(s.price_cents)}`;
+    if (s.pricing_type === "starting" && s.price_cents != null) return `from $${centsToDollars(s.price_cents)}`;
     if (s.pricing_type === "range" && s.price_cents != null && s.price_cents_max != null) {
       return `$${centsToDollars(s.price_cents)}–$${centsToDollars(s.price_cents_max)}`;
     }
@@ -674,6 +693,7 @@ function NewJobInner() {
 
   function addIncomingPhotos(incoming: File[]) {
     if (!incoming || incoming.length === 0) return;
+
     setPhotos((prev) => {
       const remaining = Math.max(0, 8 - prev.length);
       const slice = incoming.slice(0, remaining);
@@ -682,8 +702,10 @@ function NewJobInner() {
         file,
         previewUrl: URL.createObjectURL(file),
       }));
+
       if (incoming.length > remaining) setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
       else setPhotoMsg(null);
+
       return [...prev, ...mapped];
     });
   }
@@ -718,6 +740,7 @@ function NewJobInner() {
       fd.append("vin", v);
 
       setPhotoMsg("PREPARING PHOTOS…");
+
       const prepared = await Promise.all(
         selected.slice(0, 8).map(async (p) => {
           const compressed = await compressImageFile(p.file, { maxDim: 1600, quality: 0.82 });
@@ -731,6 +754,7 @@ function NewJobInner() {
       prepared.forEach((f) => fd.append("photos", f, f.name));
 
       setPhotoMsg("UPLOADING…");
+
       const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
@@ -766,6 +790,7 @@ function NewJobInner() {
           URL.revokeObjectURL(p.previewUrl);
         } catch {}
       });
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -800,6 +825,7 @@ function NewJobInner() {
 
   useEffect(() => {
     if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
+
     if (!customerAddress.trim()) {
       setZipSuggestions([]);
       return;
@@ -881,45 +907,44 @@ function NewJobInner() {
    * ✅ idempotent via client_request_id (prevents duplicates permanently)
    * ========================= */
   async function insertCustomerJobLegacy(params: {
-  businessId: string;
-  vin: string;
-  serviceName: string;
-  serviceDescription?: string;
-  serviceDate?: string;
-  clientRequestId?: string;
-}) {
-  const safeId =
-    typeof params.clientRequestId === "string" && params.clientRequestId.trim()
-      ? params.clientRequestId.trim()
-      : uuidv4();
+    businessId: string;
+    vin: string;
+    serviceName: string;
+    serviceDescription?: string;
+    serviceDate?: string | null;
+    clientRequestId?: string;
+  }) {
+    const safeId =
+      typeof params.clientRequestId === "string" && params.clientRequestId.trim()
+        ? params.clientRequestId.trim()
+        : uuidv4();
 
-  const normalizedDate =
-    normalizeServiceDateInput(params.serviceDate || "") || todayDateOnlyNY() ||
-    new Date().toISOString().slice(0, 10);
+    // ✅ NEVER allow empty string / invalid → always fallback to today
+    const normalizedDate = normalizeServiceDateInput(params.serviceDate || "") ?? todayDateOnlyNY();
 
-  const payload = {
-    business_id: params.businessId,
-    vin: normalizeVin(params.vin),
-    service_name: capsTrim(params.serviceName),
-    service_description: params.serviceDescription ?? null,
-    service_date: normalizedDate,
-    client_request_id: safeId, // ✅ guaranteed
-  };
- 
-  console.log("LEGACY WRIETE", {
-      rawServiceDate:params.serviceDate,
-      normalizedDate,
-      safeId,
-    });
-   
-  const { error } = await supabase
-    .from("customer_jobs_legacy")
-    .upsert(payload, { onConflict: "client_request_id" });
+    const payload = {
+      business_id: params.businessId,
+      vin: normalizeVin(params.vin),
+      service_name: capsTrim(params.serviceName),
+      service_description: params.serviceDescription ?? null,
+      service_date: normalizedDate, // ✅ guaranteed YYYY-MM-DD
+      client_request_id: safeId, // ✅ guaranteed
+    };
 
-  if (error) throw error;
+    const { error } = await supabase.from("customer_jobs_legacy").upsert(payload, { onConflict: "client_request_id" });
 
-  return safeId;
-}
+    // ✅ IMPORTANT: if legacy unique constraint is on (vin, service_date) or similar,
+    // we treat that as a WARNING (already logged) instead of a “fail”.
+    if (error) {
+      const msg = String(error.message ?? "").toLowerCase();
+      if (msg.includes("customer_jobs_legacy_unique_visit") || msg.includes("duplicate key value")) {
+        return { client_request_id: safeId, wasDuplicate: true as const };
+      }
+      throw error;
+    }
+
+    return { client_request_id: safeId, wasDuplicate: false as const };
+  }
 
   async function autofillCustomerFromLegacy(vin17: string) {
     const v = normalizeVin(vin17);
@@ -933,6 +958,7 @@ function NewJobInner() {
       .maybeSingle();
 
     if (error || !data) return;
+
     const d: any = data;
 
     if (!customerName.trim() && d.customer_name) setCustomerName(capsTrim(String(d.customer_name)));
@@ -940,6 +966,7 @@ function NewJobInner() {
     if (!customerEmail.trim() && d.email) setCustomerEmail(String(d.email));
     if (!customerAddress.trim() && d.address) setCustomerAddress(capsTrim(String(d.address)));
     if (!customerZip.trim() && d.zip_code != null) setCustomerZip(String(d.zip_code));
+
     if (!vehMake.trim() && d.make) setVehMake(capsTrim(String(d.make)));
     if (!vehModel.trim() && d.model) setVehModel(capsTrim(String(d.model)));
     if (!vehYearText.trim() && d.year != null) setVehYearText(String(d.year));
@@ -955,7 +982,6 @@ function NewJobInner() {
       .maybeSingle();
 
     if (error) return;
-
     const cust = (data as any)?.customers as any;
     if (!cust) return;
 
@@ -983,11 +1009,7 @@ function NewJobInner() {
         return;
       }
 
-      const patch = {
-        year: decoded.year ?? null,
-        make: decoded.make ?? null,
-        model: decoded.model ?? null,
-      };
+      const patch = { year: decoded.year ?? null, make: decoded.make ?? null, model: decoded.model ?? null };
 
       const { data, error } = await supabase
         .from("vehicles")
@@ -1016,6 +1038,7 @@ function NewJobInner() {
 
   const lookupVin = async () => {
     if (vinBusy) return;
+
     setMsg(null);
     setVinStatus("");
     setVehicle(null);
@@ -1041,12 +1064,7 @@ function NewJobInner() {
     setVinBusy(true);
 
     try {
-      const { data, error } = await supabase
-        .from("vehicles")
-        .select("id,vin,year,make,model")
-        .eq("vin", v)
-        .limit(1)
-        .maybeSingle();
+      const { data, error } = await supabase.from("vehicles").select("id,vin,year,make,model").eq("vin", v).limit(1).maybeSingle();
 
       if (error) {
         setMsg(error.message);
@@ -1093,10 +1111,13 @@ function NewJobInner() {
   const canGoStep2 = () => {
     const v = normalizeVin(vin);
     if (!isValidVin(v)) return false;
+
     const yearNum = yearToNumberOrNull(vehYearText);
     if (!yearNum) return false;
+
     if (!vehMake.trim()) return false;
     if (!vehModel.trim()) return false;
+
     return true;
   };
 
@@ -1108,14 +1129,14 @@ function NewJobInner() {
    * Save job
    * ========================= */
   const saveJobToSupabase = async (payload: PendingJob) => {
-  // ✅ ALWAYS guarantee idempotency key exists (covers old offline queue items too)
-  const reqId =
-    typeof (payload as any).client_request_id === "string" && (payload as any).client_request_id.trim()
-      ? (payload as any).client_request_id.trim()
-      : uuidv4();
+    // ✅ ALWAYS guarantee idempotency key exists (covers old offline queue items too)
+    const reqId =
+      typeof (payload as any).client_request_id === "string" && (payload as any).client_request_id.trim()
+        ? (payload as any).client_request_id.trim()
+        : uuidv4();
 
-  // ✅ important: write it back so later code never sees undefined
-  (payload as any).client_request_id = reqId;
+    // ✅ important: write it back so later code never sees undefined
+    (payload as any).client_request_id = reqId;
 
     const v = normalizeVin(payload.vin);
     if (!isValidVin(v)) throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
@@ -1127,16 +1148,11 @@ function NewJobInner() {
 
     const businessId = await getActiveBusinessId();
 
-    const performedAtIso =
-      payload.service_date && normalizeServiceDateInput(payload.service_date)
-        ? dateOnlyToIsoMidday(payload.service_date)
-        : payload.performed_at || new Date().toISOString();
+    // ✅ Decide final date-only for this job (never empty, never null)
+    const serviceDateFinal = normalizeServiceDateInput(payload.service_date || "") ?? todayDateOnlyNY();
 
-    // ✅ GUARANTEE legacy date-only even if tech leaves it blank
-    const serviceDateFinal =
-      payload.service_date && normalizeServiceDateInput(payload.service_date)
-        ? payload.service_date
-        : isoToDateOnlyNY(performedAtIso) || todayDateOnlyNY();
+    // ✅ performed_at ISO uses date-only (midday) if available
+    const performedAtIso = serviceDateFinal ? dateOnlyToIsoMidday(serviceDateFinal) : payload.performed_at || new Date().toISOString();
 
     const pkg = services.find((s) => s.id === payload.selected_package_id);
     const pkgNameRaw = pkg?.name ?? "SERVICE";
@@ -1163,43 +1179,31 @@ function NewJobInner() {
       work_done: description ? `${pkgName}\n${description}` : pkgName,
     });
 
-    // ✅ ALWAYS write legacy job history with NON-DUPLICATING request id
-    await insertCustomerJobLegacy({
+    // ✅ ALWAYS write legacy job history with NON-NULL service_date
+    const legacyRes = await insertCustomerJobLegacy({
       businessId,
       vin: v,
       serviceName: pkgName,
       serviceDescription: description,
       serviceDate: serviceDateFinal,
       clientRequestId: reqId, // ✅ USE reqId here
-});
+    });
+
     // Normalized mirror best-effort
     try {
       let vehicleId: string | null = null;
 
-      const foundVeh = await supabase
-        .from("vehicles")
-        .select("id,vin,year,make,model")
-        .eq("vin", v)
-        .limit(1)
-        .maybeSingle();
+      const foundVeh = await supabase.from("vehicles").select("id,vin,year,make,model").eq("vin", v).limit(1).maybeSingle();
 
       if (!foundVeh.error && foundVeh.data?.id) {
         vehicleId = foundVeh.data.id as string;
       } else {
-        const createdVeh = await supabase
-          .from("vehicles")
-          .insert({ vin: v, business_id: businessId })
-          .select("id")
-          .single();
+        const createdVeh = await supabase.from("vehicles").insert({ vin: v, business_id: businessId }).select("id").single();
         if (!createdVeh.error && createdVeh.data?.id) vehicleId = createdVeh.data.id as string;
       }
 
       if (vehicleId) {
-        await supabase
-          .from("vehicles")
-          .update({ year: yearNum, make: makeCaps, model: modelCaps, business_id: businessId })
-          .eq("id", vehicleId);
-
+        await supabase.from("vehicles").update({ year: yearNum, make: makeCaps, model: modelCaps, business_id: businessId }).eq("id", vehicleId);
         if (isOnline()) {
           try {
             await decodeVinAndUpdateVehicle(vehicleId, v);
@@ -1249,6 +1253,7 @@ function NewJobInner() {
             })
             .select("id")
             .single();
+
           if (!createdCust.error && createdCust.data?.id) customerId = createdCust.data.id as string;
         }
       } else {
@@ -1264,23 +1269,24 @@ function NewJobInner() {
           })
           .select("id")
           .single();
+
         if (!createdCust.error && createdCust.data?.id) customerId = createdCust.data.id as string;
       }
 
       if (customerId && vehicleId) {
         const totalCents = dollarsToCents(payload.total_charged);
 
-        const serviceDateClean =
-          payload.service_date || new Date().toISOString().slice(0, 10);      
-         
-          const jobRes = await supabase
+        // ✅ jobs.service_date should also never be "" / null if your column is NOT NULL
+        const serviceDateClean = normalizeServiceDateInput(payload.service_date || "") ?? serviceDateFinal;
+
+        const jobRes = await supabase
           .from("jobs")
           .insert({
             business_id: businessId,
             customer_id: customerId,
             vehicle_id: vehicleId,
             status: "completed",
-            service_date: serviceDateClean,
+            service_date: serviceDateClean, // ✅ always YYYY-MM-DD
             performed_at: performedAtIso,
             notes: capsTrim(payload.notes) || null,
             total_price_cents: totalCents,
@@ -1306,7 +1312,8 @@ function NewJobInner() {
       console.error("Normalized mirror failed (legacy saved):", e);
     }
 
-    return v;
+    // ✅ surface to caller whether this was a duplicate legacy insert
+    return { vin: v, legacyWasDuplicate: legacyRes.wasDuplicate };
   };
 
   const flushQueue = async () => {
@@ -1320,21 +1327,23 @@ function NewJobInner() {
     }
 
     setSyncingQueue(true);
+
     try {
       const ordered = [...q].reverse();
       for (const item of ordered) {
         try {
           bumpAttempt(item.id);
 
-          // ✅ upgrade any older queued items that might be missing the key
+          // ✅ upgrade any older queued items that might be missing the key or date
           const upgraded: PendingJob = {
             ...item,
             client_request_id: item.client_request_id || uuidv4(),
-            // also guarantee performed_at
             performed_at: item.performed_at || new Date().toISOString(),
+            service_date: normalizeServiceDateInput(item.service_date || "") ?? todayDateOnlyNY(),
           };
 
           await saveJobToSupabase(upgraded);
+
           removeFromQueue(item.id);
           setQueuedCount(getQueue().length);
         } catch (e) {
@@ -1360,6 +1369,7 @@ function NewJobInner() {
       refresh();
       flushQueue();
     };
+
     const onOffline = () => refresh();
 
     window.addEventListener("online", onOnline);
@@ -1412,12 +1422,8 @@ function NewJobInner() {
       return setMsg("TOTAL CHARGED MUST BE > $0.");
     }
 
-    const serviceDateClean = normalizeServiceDateInput(serviceDate);
-
-    if (!serviceDateClean) {
-      savingRef.current = false;
-      return setMsg("PLEASE SELECT A SERVICE DATE.");
-    }
+    // ✅ OPTIONAL: allow blank → fallback to today
+    const serviceDateClean = normalizeServiceDateInput(serviceDate) ?? todayDateOnlyNY();
 
     /** ✅ single idempotency key used for live save + any retries/queue */
     const requestId = jobRequestIdRef.current;
@@ -1444,15 +1450,19 @@ function NewJobInner() {
       total_charged: totalCharged,
       notes: capsTrim(notes),
 
-      service_date: serviceDateClean ? serviceDateClean : null,
-      performed_at: serviceDateClean ? dateOnlyToIsoMidday(serviceDateClean) : new Date().toISOString(),
+      // ✅ ALWAYS store a valid date-only for the DB layer (no "", no null)
+      service_date: serviceDateClean,
+      performed_at: dateOnlyToIsoMidday(serviceDateClean),
     };
 
     if (!isOnline()) {
       enqueueJob(payloadBase);
       setQueuedCount(getQueue().length);
+
+      showToast("OFFLINE ✅ SAVED TO QUEUE");
       setMsg("OFFLINE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY WHEN YOU’RE BACK ONLINE.");
-      resetForm();
+
+      goToFreshJob(450);
       savingRef.current = false;
       return;
     }
@@ -1467,25 +1477,38 @@ function NewJobInner() {
         ...payloadBase,
       };
 
-      await saveJobToSupabase(tempPending);
-      setMsg("SAVED ✅ (LEGACY IS SOURCE OF TRUTH)");
-      resetForm();
+      const res = await saveJobToSupabase(tempPending);
+
+      // ✅ New: clear, visible outcome
+      if (res.legacyWasDuplicate) {
+        // warning is fine
+        showToast("ALREADY LOGGED ✅");
+        setMsg("ALREADY LOGGED FOR THAT VIN + DATE ✅ (NO DUPLICATE CREATED)");
+      } else {
+        showToast("SAVED ✅");
+        setMsg("SAVED ✅");
+      }
+
+      // ✅ New: automatically go back to step 1 after a short beat
+      goToFreshJob(650);
+
+      // keep queue moving
       flushQueue();
     } catch (e: any) {
       console.error(e);
+
       const message = String(e?.message ?? "").toLowerCase();
       const likelyNetwork =
-        !isOnline() ||
-        message.includes("failed to fetch") ||
-        message.includes("fetch") ||
-        message.includes("network") ||
-        message.includes("timeout");
+        !isOnline() || message.includes("failed to fetch") || message.includes("fetch") || message.includes("network") || message.includes("timeout");
 
       if (likelyNetwork) {
         enqueueJob(payloadBase);
         setQueuedCount(getQueue().length);
+
+        showToast("SAVED TO QUEUE ✅");
         setMsg("CONNECTION ISSUE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY.");
-        resetForm();
+
+        goToFreshJob(450);
       } else {
         setMsg((e?.message ?? "ERROR SAVING JOB.").toUpperCase());
       }
@@ -1499,10 +1522,12 @@ function NewJobInner() {
    * Reset
    * ========================= */
   const resetForm = () => {
-    jobRequestIdRef.current = uuidv4(); // ✅ add THIS line first
+    jobRequestIdRef.current = uuidv4(); // ✅ new idempotency key for next job
 
     resetPhotos();
+
     setStep(1);
+
     setVin("");
     setVehicle(null);
     setVinStatus("");
@@ -1525,7 +1550,9 @@ function NewJobInner() {
 
     setTotalCharged("");
     setNotes("");
-    setServiceDate("");
+
+    // ✅ IMPORTANT: never reset to "" (that can later become NULL)
+    setServiceDate(todayDateOnlyNY());
 
     if (packages[0]?.id) setSelectedPackageId(packages[0].id);
   };
@@ -1588,6 +1615,15 @@ function NewJobInner() {
    * ========================= */
   return (
     <div className="min-h-[100dvh] text-slate-100 overscroll-contain">
+      {/* ✅ Toast (visible confirmation, independent from msg) */}
+      {toast && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[60]">
+          <div className="rounded-full bg-slate-950/90 backdrop-blur px-4 py-2 text-xs font-extrabold ring-1 ring-white/10 shadow">
+            {toast}
+          </div>
+        </div>
+      )}
+
       <div className="fixed inset-0 -z-10 bg-slate-950">
         <div
           className="absolute inset-0 opacity-[0.08]"
@@ -1635,11 +1671,7 @@ function NewJobInner() {
                 </button>
               </div>
 
-              {msg && (
-                <div className="mt-3 rounded-2xl bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs text-slate-200">
-                  {msg}
-                </div>
-              )}
+              {msg && <div className="mt-3 rounded-2xl bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs text-slate-200">{msg}</div>}
             </div>
           </div>
         </div>
@@ -1662,6 +1694,7 @@ function NewJobInner() {
 
                 <div className="flex gap-2">
                   <SchemaInput
+                    ref={vinInputRef} // ✅ focus after save/reset
                     value={vin}
                     onChange={(e) => {
                       const cleaned = normalizeVin(e.target.value).slice(0, 17);
@@ -1674,12 +1707,7 @@ function NewJobInner() {
                     maxLength={17}
                   />
 
-                  <SchemaButton
-                    onClick={lookupVin}
-                    disabled={vinBusy || !normalizeVin(vin).length}
-                    variant="primary"
-                    className="w-[120px]"
-                  >
+                  <SchemaButton onClick={lookupVin} disabled={vinBusy || !normalizeVin(vin).length} variant="primary" className="w-[120px]">
                     {vinBusy ? "…" : "LOOKUP"}
                   </SchemaButton>
                 </div>
@@ -1690,6 +1718,7 @@ function NewJobInner() {
 
                 <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
                   <div className="text-xs font-extrabold text-white/90">YEAR / MAKE / MODEL (REQUIRED)</div>
+
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     <div className="col-span-1">
                       <SchemaLabel>YEAR</SchemaLabel>
@@ -1700,23 +1729,15 @@ function NewJobInner() {
                         inputMode="numeric"
                       />
                     </div>
+
                     <div className="col-span-2">
                       <SchemaLabel>MAKE</SchemaLabel>
-                      <SchemaInput
-                        value={vehMake}
-                        onChange={(e) => setVehMake(toCaps(e.target.value))}
-                        placeholder="NISSAN"
-                        inputMode="text"
-                      />
+                      <SchemaInput value={vehMake} onChange={(e) => setVehMake(toCaps(e.target.value))} placeholder="NISSAN" inputMode="text" />
                     </div>
+
                     <div className="col-span-3">
                       <SchemaLabel>MODEL</SchemaLabel>
-                      <SchemaInput
-                        value={vehModel}
-                        onChange={(e) => setVehModel(toCaps(e.target.value))}
-                        placeholder="KICKS"
-                        inputMode="text"
-                      />
+                      <SchemaInput value={vehModel} onChange={(e) => setVehModel(toCaps(e.target.value))} placeholder="KICKS" inputMode="text" />
                     </div>
                   </div>
 
@@ -1732,9 +1753,7 @@ function NewJobInner() {
                     <div className="text-sm font-semibold text-white/90 truncate">
                       {vehicleLabelParts(yearToNumberOrNull(vehYearText), vehMake, vehModel)}
                     </div>
-                    <div className="text-xs text-slate-300/70">
-                      {normalizeVin(vin).length ? maskVin(vin) : "ENTER VIN TO BEGIN"}
-                    </div>
+                    <div className="text-xs text-slate-300/70">{normalizeVin(vin).length ? maskVin(vin) : "ENTER VIN TO BEGIN"}</div>
                   </div>
 
                   <button
@@ -1756,22 +1775,14 @@ function NewJobInner() {
             {step === 2 && (
               <SchemaCard title="CUSTOMER">
                 <SchemaLabel>FULL NAME (REQUIRED)</SchemaLabel>
-                <SchemaInput
-                  value={customerName}
-                  onChange={(e) => setCustomerName(toCaps(e.target.value))}
-                  placeholder="CUSTOMER NAME"
-                />
+                <SchemaInput value={customerName} onChange={(e) => setCustomerName(toCaps(e.target.value))} placeholder="CUSTOMER NAME" />
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div className="col-span-1">
                     <SchemaLabel>PHONE</SchemaLabel>
-                    <SchemaInput
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="(919) 555-1234"
-                      inputMode="tel"
-                    />
+                    <SchemaInput value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="(919) 555-1234" inputMode="tel" />
                   </div>
+
                   <div className="col-span-1">
                     <SchemaLabel>EMAIL</SchemaLabel>
                     <SchemaInput
@@ -1785,22 +1796,12 @@ function NewJobInner() {
 
                 <div className="mt-3">
                   <SchemaLabel>ADDRESS</SchemaLabel>
-                  <SchemaInput
-                    value={customerAddress}
-                    onChange={(e) => setCustomerAddress(toCaps(e.target.value))}
-                    placeholder="123 MAIN ST, ZEBULON, NC"
-                  />
+                  <SchemaInput value={customerAddress} onChange={(e) => setCustomerAddress(toCaps(e.target.value))} placeholder="123 MAIN ST, ZEBULON, NC" />
                 </div>
 
                 <div className="mt-3">
                   <SchemaLabel>ZIP</SchemaLabel>
-                  <SchemaInput
-                    value={customerZip}
-                    onChange={(e) => setCustomerZip(normalizeZipString(e.target.value))}
-                    placeholder="27597"
-                    inputMode="numeric"
-                  />
-
+                  <SchemaInput value={customerZip} onChange={(e) => setCustomerZip(normalizeZipString(e.target.value))} placeholder="27597" inputMode="numeric" />
                   {zipSuggestions.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {zipSuggestions.map((z) => (
@@ -1818,11 +1819,7 @@ function NewJobInner() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => setStep(1)}
-                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
-                  >
+                  <button type="button" onClick={() => setStep(1)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
                     ← BACK
                   </button>
 
@@ -1947,9 +1944,7 @@ function NewJobInner() {
                     disabled={photoBusy || photos.length === 0}
                     className={[
                       "w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3 text-sm font-extrabold transition",
-                      photoBusy || photos.length === 0
-                        ? "text-slate-500 cursor-not-allowed"
-                        : "text-slate-200 hover:ring-white/20 hover:text-white",
+                      photoBusy || photos.length === 0 ? "text-slate-500 cursor-not-allowed" : "text-slate-200 hover:ring-white/20 hover:text-white",
                     ].join(" ")}
                   >
                     CLEAR PHOTOS
@@ -1957,11 +1952,7 @@ function NewJobInner() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => setStep(2)}
-                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
-                  >
+                  <button type="button" onClick={() => setStep(2)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
                     ← BACK
                   </button>
 
@@ -2042,20 +2033,14 @@ function NewJobInner() {
                       </div>
 
                       {selectedAddons.length > 0 && (
-                        <div className="mt-3 text-[11px] text-slate-300/80">
-                          Selected: {selectedAddons.map((x) => x.name).join(", ")}
-                        </div>
+                        <div className="mt-3 text-[11px] text-slate-300/80">Selected: {selectedAddons.map((x) => x.name).join(", ")}</div>
                       )}
                     </div>
                   )}
                 </div>
 
                 <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => setStep(3)}
-                    className="text-sm font-semibold text-slate-200 hover:text-white transition"
-                  >
+                  <button type="button" onClick={() => setStep(3)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
                     ← BACK
                   </button>
 
@@ -2081,7 +2066,8 @@ function NewJobInner() {
                 <SchemaInput
                   type="date"
                   value={serviceDate}
-                  onChange={(e) => setServiceDate(normalizeServiceDateInput(e.target.value))}
+                  // ✅ store raw. normalize at save time. allow clearing.
+                  onChange={(e) => setServiceDate(e.target.value)}
                   max={todayDateOnlyNY()}
                 />
                 <div className="mt-2 text-[11px] text-slate-300/80">
@@ -2091,12 +2077,7 @@ function NewJobInner() {
                 <div className="mt-4" />
 
                 <SchemaLabel>TOTAL CHARGED (REQUIRED)</SchemaLabel>
-                <SchemaInput
-                  value={totalCharged}
-                  onChange={(e) => setTotalCharged(e.target.value.replace(/[^0-9.]/g, ""))}
-                  placeholder="300"
-                  inputMode="decimal"
-                />
+                <SchemaInput value={totalCharged} onChange={(e) => setTotalCharged(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="300" inputMode="decimal" />
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   {quickTotals.map((t) => (
@@ -2120,6 +2101,7 @@ function NewJobInner() {
                   <SchemaButton variant="ghost" onClick={() => setStep(4)} disabled={busy} className="w-full">
                     ← BACK
                   </SchemaButton>
+
                   <SchemaButton variant="primary" onClick={onSave} disabled={busy} className="w-full">
                     {busy ? "SAVING…" : "SAVE JOB"}
                   </SchemaButton>
@@ -2160,10 +2142,17 @@ function SchemaLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-[11px] font-semibold text-slate-300/80 mb-2">{children}</div>;
 }
 
-function SchemaInput(props: React.InputHTMLAttributes<HTMLInputElement> & { className?: string }) {
+/**
+* ✅ UPDATED: forwardRef so we can focus VIN input after Save
+*/
+const SchemaInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { className?: string }>(function SchemaInput(
+  props,
+  ref
+) {
   const { className, ...rest } = props;
   return (
     <input
+      ref={ref}
       {...rest}
       className={[
         "h-12 w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 text-base text-white/90 placeholder:text-slate-400/70",
@@ -2172,7 +2161,7 @@ function SchemaInput(props: React.InputHTMLAttributes<HTMLInputElement> & { clas
       ].join(" ")}
     />
   );
-}
+});
 
 function SchemaSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   const { className, ...rest } = props;
@@ -2207,6 +2196,7 @@ function SchemaButton({
 }) {
   const base = "h-12 rounded-2xl font-extrabold text-sm transition ring-1 touch-manipulation";
   const width = className?.includes("w-") ? "" : "w-full";
+
   const cls =
     variant === "primary"
       ? disabled
@@ -2215,12 +2205,7 @@ function SchemaButton({
       : "bg-white/3 text-slate-200 ring-white/10 hover:ring-white/20 hover:text-white";
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!!disabled}
-      className={[base, width, cls, className ?? ""].join(" ")}
-    >
+    <button type="button" onClick={onClick} disabled={!!disabled} className={[base, width, cls, className ?? ""].join(" ")}>
       {children}
     </button>
   );
