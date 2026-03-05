@@ -1242,8 +1242,10 @@ function NewJobInner() {
     });
 
     // ✅ ALWAYS write legacy job history with NON-NULL service_date
+    const resolvedBusinessId = await getActiveBusinessId();
+
     const legacyRes = await insertCustomerJobLegacy({
-      businessId: businessId,
+      businessId: resolvedBusinessId,
       vin: v,
       serviceName: pkgName,
       serviceDescription: description,
