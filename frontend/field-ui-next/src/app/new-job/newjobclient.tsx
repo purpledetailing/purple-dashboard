@@ -606,38 +606,38 @@ function NewJobInner() {
   }
 
   async function getActiveBusinessId(): Promise<string> {
-    // ✅ return cached if already resolved
-    if (businessIdRef.current && isUuid(businessIdRef.current)) return businessIdRef.current;
+  if (businessIdRef.current && isUuid(businessIdRef.current)) return businessIdRef.current;
 
-    // ✅ collapse concurrent calls into one promise
-    if (resolvingBusinessIdRef.current) return resolvingBusinessIdRef.current;
+  if (resolvingBusinessIdRef.current) return resolvingBusinessIdRef.current;
 
-    resolvingBusinessIdRef.current = (async () => {
+  resolvingBusinessIdRef.current = (async () => {
+    try {
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) throw new Error("NOT LOGGED IN.");
+      if (userErr || !userRes?.user) throw new Error("NOT LOGGED IN");
 
-      const { data: link, error: linkErr } = await supabase
-        .from("business_users")
+      const userId = userRes.user.id;
+
+      // EXAMPLE: replace with your actual mapping table/query
+      const { data, error } = await supabase
+        .from("user_businesses")
         .select("business_id")
-        .eq("user_id", userRes.user.id)
-        .limit(1)
+        .eq("user_id", userId)
         .maybeSingle();
 
-      if (linkErr) throw linkErr;
+      if (error) throw error;
 
-      const bid = String((link as any)?.business_id || "").trim();
-      if (!bid || !isUuid(bid)) throw new Error("NO BUSINESS LINK FOUND (OR INVALID BUSINESS_ID).");
+      const found = data?.business_id ?? null;
+      if (!found || !isUuid(found)) throw new Error("NO BUSINESS ID FOUND FOR USER");
 
-      businessIdRef.current = bid;
-      return bid;
-    })();
-
-    try {
-      return await resolvingBusinessIdRef.current;
+      businessIdRef.current = found;     // ✅ cache it
+      return found;                      // ✅ return it
     } finally {
-      resolvingBusinessIdRef.current = null;
+      resolvingBusinessIdRef.current = null; // ✅ always clear
     }
-  }
+  })();
+
+  return resolvingBusinessIdRef.current;
+} 
 
   // ✅ pre-resolve once so you find out immediately if user is not linked
   useEffect(() => {
