@@ -606,33 +606,50 @@ function NewJobInner() {
   }
 
   async function getActiveBusinessId(): Promise<string> {
-  if (businessIdRef.current && isUuid(businessIdRef.current)) return businessIdRef.current;
+  if (businessIdRef.current && isUuid(businessIdRef.current)) {
+    return businessIdRef.current;
+  }
 
-  if (resolvingBusinessIdRef.current) return resolvingBusinessIdRef.current;
+  if (resolvingBusinessIdRef.current) {
+    return resolvingBusinessIdRef.current;
+  }
 
   resolvingBusinessIdRef.current = (async () => {
     try {
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes?.user) throw new Error("NOT LOGGED IN");
+
+      if (userErr || !userRes?.user) {
+        console.error("[getActiveBusinessId] auth error:", userErr);
+        throw new Error("NOT LOGGED IN");
+      }
 
       const userId = userRes.user.id;
 
-      // Resolve business_id for the logged-in user
-  const { data, error } = await supabase
-  .from("business_users")          // ✅ correct table name
-  .select("business_id")
-  .eq("user_id", userId)
-  .maybeSingle();
+      const { data, error } = await supabase
+        .from("business_users")
+        .select("business_id")
+        .eq("user_id", userId)
+        .limit(1)
+        .maybeSingle();
 
-  if (error) throw error;
+      if (error) {
+        console.error("[getActiveBusinessId] query error:", error);
+        throw error;
+      }
 
-  const found = data?.business_id ?? null;
-  if (!found || !isUuid(found)) throw new Error("NO BUSINESS ID FOUND FOR USER");
+      console.log("[getActiveBusinessId] row:", data);
 
-  businessIdRef.current = found; // cache it
-  return found;                       // ✅ return it
+      const found = data?.business_id ?? null;
+
+      if (!found || !isUuid(found)) {
+        throw new Error("NO BUSINESS ID FOUND FOR USER (business_users)");
+      }
+
+      businessIdRef.current = found;
+
+      return found;
     } finally {
-      resolvingBusinessIdRef.current = null; // ✅ always clear
+      resolvingBusinessIdRef.current = null;
     }
   })();
 
@@ -1189,6 +1206,7 @@ function NewJobInner() {
    * Save job
    * ========================= */
   const saveJobToSupabase = async (payload: PendingJob) => {
+  
     // ✅ ALWAYS guarantee idempotency key exists (covers old offline queue items too)
     const reqId =
       typeof (payload as any).client_request_id === "string" && (payload as any).client_request_id.trim()
@@ -1241,17 +1259,31 @@ function NewJobInner() {
       work_done: description ? `${pkgName}\n${description}` : pkgName,
     });
 
-    // ✅ ALWAYS write legacy job history with NON-NULL service_date
-    const resolvedBusinessId = await getActiveBusinessId();
-    console.log("Resolved Business ID:", resolvedBusinessId);
-    const legacyRes = await insertCustomerJobLegacy({
-      businessId: resolvedBusinessId,
-      vin: v,
-      serviceName: pkgName,
-      serviceDescription: description,
-      serviceDate: serviceDateFinal,
-      clientRequestId: reqId, // ✅ USE reqId here
-    });
+// ... later ...
+
+await upsertLegacyByVin({
+  businessId,
+  vin: v,
+  customerName: payload.customer_name,
+  customerPhone: payload.customer_phone,
+  customerEmail: payload.customer_email,
+  customerAddress: payload.customer_address,
+  customerZip: payload.customer_zip,
+  vehicle: { year: yearNum, make: makeCaps, model: modelCaps },
+  notes: payload.notes,
+  status: "active",
+  work_done: description ? `${pkgName}\n${description}` : pkgName,
+});
+
+// ✅ legacy job history uses the SAME businessId
+const legacyRes = await insertCustomerJobLegacy({
+  businessId,               // ✅ same one
+  vin: v,
+  serviceName: pkgName,
+  serviceDescription: description,
+  serviceDate: serviceDateFinal,
+  clientRequestId: reqId,
+}); 
 
     // Normalized mirror best-effort
     try {
