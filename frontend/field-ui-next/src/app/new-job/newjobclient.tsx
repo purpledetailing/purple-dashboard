@@ -1348,7 +1348,6 @@ function NewJobInner() {
             customer_id: customerId,
             vehicle_id: vehicleId,
             status: "completed",
-            service_date: serviceDateClean, // ✅ always YYYY-MM-DD
             performed_at: performedAtIso,
             notes: capsTrim(payload.notes) || null,
             total_price_cents: totalCents,
