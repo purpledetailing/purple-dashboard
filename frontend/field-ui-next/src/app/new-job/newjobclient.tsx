@@ -1018,7 +1018,25 @@ const { error } = await supabase
   .from("customer_jobs_legacy")
   .upsert(payload, { onConflict: "client_request_id" });
 
-if (error) throw error; 
+if (error) {
+  const anyErr = error as unknown as { code?: string; message?: string | null };
+
+  const code = String(anyErr.code ?? "");
+  const msg = String(anyErr.message ?? "").toLowerCase();
+
+  const isDuplicate =
+    code === "23505" ||
+    msg.includes("duplicate") ||
+    msg.includes("already exists") ||
+    msg.includes("unique constraint");
+
+  if (isDuplicate) {
+    console.log("Duplicate visit detected — treating as saved.");
+    return { client_request_id: safeId, wasDuplicate: true as const };
+  }
+
+  throw error;
+} 
 
     return { client_request_id: safeId, wasDuplicate: false as const };
   }
