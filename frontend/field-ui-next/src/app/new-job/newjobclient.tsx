@@ -1208,6 +1208,7 @@ function NewJobInner() {
 
     // ✅ cached + validated
     const businessId = requireBusinessId(await getActiveBusinessId());
+    console.log("Resolved Business ID:", businessId);
 
     // ✅ Decide final date-only for this job (never empty, never null)
     const serviceDateFinal = normalizeServiceDateInput(payload.service_date || "") ?? todayDateOnlyNY();
