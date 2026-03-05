@@ -619,7 +619,7 @@ function NewJobInner() {
 
       // EXAMPLE: replace with your actual mapping table/query
       const { data, error } = await supabase
-        .from("user_businesses")
+        .from("business_users")
         .select("business_id")
         .eq("user_id", userId)
         .maybeSingle();
