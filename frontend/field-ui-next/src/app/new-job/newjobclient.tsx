@@ -988,26 +988,37 @@ function NewJobInner() {
     // ✅ NEVER allow empty string / invalid → always fallback to today
     const normalizedDate = normalizeServiceDateInput(params.serviceDate || "") ?? todayDateOnlyNY();
 
-    const payload = {
-      business_id: businessId,
-      vin: normalizeVin(params.vin),
-      service_name: capsTrim(params.serviceName),
-      service_description: params.serviceDescription ?? null,
-      service_date: normalizedDate, // ✅ guaranteed YYYY-MM-DD
-      client_request_id: safeId, // ✅ guaranteed
-    };
+    // ✅ Validate businessId BEFORE building payload (prevents undefined -> dropped field -> NULL insert)
+console.log("[insertCustomerJobLegacy] businessId raw =", businessId);
 
-    const { error } = await supabase.from("customer_jobs_legacy").upsert(payload, { onConflict: "client_request_id" });
+if (typeof businessId !== "string" || businessId.trim().length === 0) {
+  console.error("[insertCustomerJobLegacy] INVALID businessId:", businessId);
+  throw new Error("MISSING businessId before legacy upsert");
+}
 
-    // ✅ IMPORTANT: if legacy unique constraint is on (vin, service_date) or similar,
-    // we treat that as a WARNING (already logged) instead of a “fail”.
-    if (error) {
-      const msg = String((error as any).message ?? "").toLowerCase();
-      if (msg.includes("customer_jobs_legacy_unique_visit") || msg.includes("duplicate key value")) {
-        return { client_request_id: safeId, wasDuplicate: true as const };
-      }
-      throw error;
-    }
+const businessIdSafe = businessId.trim();
+
+// (optional but helpful)
+// if (!isUuid(businessIdSafe)) throw new Error("businessId is not a UUID");
+
+// ✅ NOW build payload using the safe value
+const payload = {
+  business_id: businessIdSafe,
+  vin: normalizeVin(params.vin),
+  service_name: capsTrim(params.serviceName),
+  service_description: params.serviceDescription ?? null,
+  service_date: normalizedDate,
+  client_request_id: safeId,
+};
+
+console.log("[insertCustomerJobLegacy] payload =", payload);
+
+// ✅ Upsert
+const { error } = await supabase
+  .from("customer_jobs_legacy")
+  .upsert(payload, { onConflict: "client_request_id" });
+
+if (error) throw error; 
 
     return { client_request_id: safeId, wasDuplicate: false as const };
   }
