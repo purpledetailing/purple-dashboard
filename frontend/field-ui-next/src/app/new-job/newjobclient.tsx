@@ -617,20 +617,20 @@ function NewJobInner() {
 
       const userId = userRes.user.id;
 
-      // EXAMPLE: replace with your actual mapping table/query
-      const { data, error } = await supabase
-        .from("business_users")
-        .select("business_id")
-        .eq("user_id", userId)
-        .maybeSingle();
+      // Resolve business_id for the logged-in user
+  const { data, error } = await supabase
+  .from("business_users")          // ✅ correct table name
+  .select("business_id")
+  .eq("user_id", userId)
+  .maybeSingle();
 
-      if (error) throw error;
+  if (error) throw error;
 
-      const found = data?.business_id ?? null;
-      if (!found || !isUuid(found)) throw new Error("NO BUSINESS ID FOUND FOR USER");
+  const found = data?.business_id ?? null;
+  if (!found || !isUuid(found)) throw new Error("NO BUSINESS ID FOUND FOR USER");
 
-      businessIdRef.current = found;     // ✅ cache it
-      return found;                      // ✅ return it
+  businessIdRef.current = found; // cache it
+  return found;                       // ✅ return it
     } finally {
       resolvingBusinessIdRef.current = null; // ✅ always clear
     }
