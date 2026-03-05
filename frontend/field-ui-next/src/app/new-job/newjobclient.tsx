@@ -1124,10 +1124,21 @@ function NewJobInner() {
       let veh: Vehicle | null = (data as Vehicle) ?? null;
 
       if (!veh) {
-        const createdVeh = await supabase.from("vehicles").insert({ vin: v }).select("id,vin,year,make,model").single();
-        if (!createdVeh.error && createdVeh.data?.id) veh = createdVeh.data as Vehicle;
-      }
+  const businessId = await getActiveBusinessId();
 
+  const createdVeh = await supabase
+    .from("vehicles")
+    .insert({
+      vin: v,
+      business_id: businessId,
+    })
+    .select("id,vin,year,make,model")
+    .single();
+
+  if (!createdVeh.error && createdVeh.data?.id) {
+    veh = createdVeh.data as Vehicle;
+  }
+} 
       if (veh) {
         setVehicle(veh);
         setVehYearText(veh.year ? String(veh.year) : "");
