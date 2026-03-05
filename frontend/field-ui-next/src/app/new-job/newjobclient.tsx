@@ -1243,7 +1243,7 @@ function NewJobInner() {
 
     // ✅ ALWAYS write legacy job history with NON-NULL service_date
     const resolvedBusinessId = await getActiveBusinessId();
-
+    console.log("Resolved Business ID:", resolvedBusinessId);
     const legacyRes = await insertCustomerJobLegacy({
       businessId: resolvedBusinessId,
       vin: v,
