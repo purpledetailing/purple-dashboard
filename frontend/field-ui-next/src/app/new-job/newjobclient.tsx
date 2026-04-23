@@ -1,961 +1,2336 @@
-from flask import Flask, request, jsonify, render_template, redirect, make_response
-from flask_cors import CORS
-import sqlite3
-import os
-import re
-import requests
-import traceback
-from datetime import datetime, date
-from functools import wraps
-from urllib.parse import quote
+"use client";
 
-app = Flask(__name__, template_folder="templates", static_folder="../static")
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Protected } from "@/components/Protected";
+import { useAuth } from "@/components/AuthProvider";
+import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
 
-# If you want CORS only for /vin + /search API later, we can tighten it.
-CORS(app)
+/** =========================
+* Types
+* ========================= */
+type Service = {
+  id: string;
+  name: string;
+  category: "full_service" | "interior_service" | "exterior_service" | "ceramic_service" | "addon";
+  pricing_type: "none" | "fixed" | "starting" | "range";
+  price_cents: number | null;
+  price_cents_max: number | null;
+  price_note: string | null;
+};
 
-# ============================================================
-# DEBUG: confirm which file is running in production
-# ============================================================
-APP_VERSION = "2026-02-20-secure-login-v4-elephant-png-bg"
+type Vehicle = {
+  id: string;
+  vin: string;
+  year: number | null;
+  make: string | null;
+  model: string | null;
+};
 
-@app.route("/version")
-def version():
-    return jsonify({
-        "version": APP_VERSION,
-        "running_file": __file__,
-        "cwd": os.getcwd(),
+type Step = 1 | 2 | 3 | 4 | 5;
+
+type PendingJob = {
+  id: string;
+  created_at: string;
+  attempt_count: number;
+
+  /** ✅ idempotency key to prevent duplicates in customer_jobs_legacy */
+  client_request_id: string;
+
+  vin: string;
+  vehicle_year: number | null;
+  vehicle_make: string;
+  vehicle_model: string;
+
+  customer_name: string;
+  customer_phone: string;
+  customer_email: string;
+  customer_address: string;
+  customer_zip: string;
+
+  service_type: "full" | "interior" | "exterior" | "ceramic";
+  selected_package_id: string;
+  addon_ids: string[];
+
+  total_charged: string;
+  notes: string;
+
+  /** date-only for backfill, format YYYY-MM-DD (may be null) */
+  service_date: string | null;
+
+  performed_at: string;
+};
+
+type PendingPhoto = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
+
+/** =========================
+* Config / Constants
+* ========================= */
+const SERVICE_TYPE_TO_CATEGORY: Record<string, Service["category"]> = {
+  full: "full_service",
+  interior: "interior_service",
+  exterior: "exterior_service",
+  ceramic: "ceramic_service",
+};
+
+const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
+
+/** =========================
+* Package descriptions
+* ========================= */
+const PACKAGE_DETAILS: Record<string, string[]> = {
+  "PURPLE RAIN": [
+    "Gentle Exterior Wash",
+    "Gentle Microfiber Towel Dry",
+    "Interior and Exterior Window Clean",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents & Door Jambs)",
+    "High Pressure Air Blowout (Eliminate Interior Contamination)",
+    "Pet Hair Removal",
+    "Interior Vacuum Including Trunk",
+    "Hand Polish Wax",
+    "Clean Tires & Rims Face",
+    "Tire Shine",
+  ],
+  "PURPLE THUNDER": [
+    "Gentle Exterior Wash",
+    "Gentle Microfiber Towel Dry",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, All Cracks & Crevices)",
+    "Deep Interior Vacuum Including Trunk",
+    "Bug Removal",
+    "High Pressure Air Blowout (Eliminate Interior Contamination)",
+    "Shampoo Upholstery & Deep Clean Floorboard",
+    "Leather Interior Cleaned & Conditioned",
+    "Pet Hair Removal",
+    "Clay Bar Treatment For Paint Decontamination",
+    "Hand Polish Wax",
+    "Clean Tires & Rims (Face & Barrel)",
+    "Tire Shine",
+  ],
+  "PURPLE HURRICANE": [
+    "Gentle Exterior Wash & Decontamination",
+    "Gentle Microfiber Towel Dry",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, Headliner, All Cracks & Crevices)",
+    "Deep Interior Vacuum Including Trunk",
+    "High Pressure Air Blowout",
+    "Shampoo Upholstery & Deep Clean Floorboard",
+    "Leather Interior Cleaned & Conditioned",
+    "Clay Bar Treatment For Paint Decontamination",
+    "Ceramic Wax (3 to 6 months of Paint Protection)",
+    "Repair Light Paint Scratches",
+    "Engine Bay Cleaning",
+    "Clean Tires & Rims (Face & Barrel)",
+    "Tire Shine",
+  ],
+  "PURPLE RAIN INTERIOR": [
+    "Interior Window Clean",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, All Cracks & Crevices)",
+    "High Pressure Air Blowout (Eliminate Interior Contamination)",
+    "Interior Vacuum Including Trunk",
+    "Pet Hair Removal",
+  ],
+  "PURPLE THUNDER INTERIOR": [
+    "Interior Window Clean",
+    "Supreme Interior Clean (Dash, Console, Cup Holders, Vents, Doors, All Cracks & Crevices)",
+    "Deep Interior Vacuum Including Trunk",
+    "High Pressure Air Blowout (Eliminate Interior Contamination)",
+    "Shampoo Upholstery & Deep Clean Floorboard",
+    "Leather Interior Cleaned & Conditioned",
+    "Pet Hair Removal",
+    "Sand Removal",
+  ],
+  "PURPLE RAIN EXTERIOR": [
+    "Gentle Exterior Wash",
+    "Gentle Microfiber Towel Dry",
+    "Hand Polish Wax",
+    "Clean Tires & Rims Face",
+    "Tire Shine",
+  ],
+  "PURPLE THUNDER EXTERIOR": [
+    "Gentle Exterior Wash & Decontamination",
+    "Gentle Microfiber Towel Dry",
+    "Hand Polish Ceramic Wax Up to 3 Month Protection",
+    "Clean Tires & Rims (Face & Barrel)",
+    "Tire Shine",
+  ],
+  "PURPLE CERAMIC": [
+    "Gentle Exterior Wash & Decontamination",
+    "Ceramic Coating Application - Up to 2 Years Of Protection",
+    "Interior and Exterior Window Clean",
+    "Interior Wipe Down (Dash, Console, Cup Holders, Vents, Doors)",
+    "High Pressure Air Blowout",
+    "Interior Vacuum",
+    "Clean Tires & Rims Face and Barrel",
+    "Tire Shine",
+  ],
+  "PURPLE CERAMIC PLUS": [
+    "Gentle Exterior Wash & Decontamination",
+    "Ceramic Coating Application - Up to 7 Years Of Protection",
+    "Interior and Exterior Window Clean",
+    "Interior Wipe Down (Dash, Console, Cup Holders, Vents, Doors)",
+    "High Pressure Air Blowout",
+    "Interior Vacuum",
+    "Clean Tires & Rims Face and Barrel",
+    "Tire Shine",
+  ],
+};
+
+function buildServiceDescription(serviceName: string, addonNames: string[]) {
+  const key = (serviceName || "").trim().toUpperCase();
+  const baseLines = PACKAGE_DETAILS[key] ?? [];
+  const lines: string[] = [];
+
+  for (const l of baseLines) lines.push(l);
+
+  if (addonNames.length > 0) {
+    lines.push("");
+    lines.push("Add-ons:");
+    for (const a of addonNames) lines.push(`• ${a}`);
+  }
+
+  if (lines.length === 0) return "";
+
+  return lines
+    .map((l) => {
+      const t = (l || "").trim();
+      if (!t) return "";
+      if (t === "Add-ons:") return t;
+      if (t.startsWith("•")) return t;
+      return `- ${t}`;
     })
+    .filter(Boolean)
+    .join("\n");
+}
 
-# ---------------------------
-# SQLite (legacy token support ONLY)
-# ---------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "Customer_Data.db")
+/** =========================
+* Helpers
+* ========================= */
+function centsToDollars(cents: number | null) {
+  if (cents === null || cents === undefined) return "";
+  return (cents / 100).toFixed(2);
+}
 
-PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
-if not PUBLIC_BASE_URL:
-    # local dev default (no markdown links)
-    PUBLIC_BASE_URL = "http://localhost:5000"
+function dollarsToCents(input: string): number {
+  const cleaned = input.replace(/[^0-9.]/g, "");
+  if (!cleaned) return 0;
+  const num = Number(cleaned);
+  if (!Number.isFinite(num)) return 0;
+  return Math.round(num * 100);
+}
 
-# ---------------------------
-# Supabase config (data reads use SERVICE ROLE, auth uses ANON)
-# ---------------------------
-def env_flag(name: str, default: str = "1") -> bool:
-    v = str(os.environ.get(name, default)).strip().lower()
-    return v in ("1", "true", "yes", "y", "on")
+function toCaps(raw: string) {
+  return (raw || "").toUpperCase();
+}
 
-USE_SUPABASE = env_flag("USE_SUPABASE", "1")
-SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
-SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
-SUPABASE_ANON_KEY = (os.environ.get("SUPABASE_ANON_KEY") or "").strip()  # ✅ REQUIRED for /login validation
+function capsTrim(raw: string) {
+  return toCaps(raw).trim();
+}
 
-LEGACY_TABLE = (os.environ.get("LEGACY_TABLE", "customer_data_legacy") or "").strip()
-JOBS_LEGACY_TABLE = (os.environ.get("JOBS_LEGACY_TABLE", "customer_jobs_legacy") or "").strip()
-PHOTO_BUCKET = (os.environ.get("PHOTO_BUCKET", "vehicle-photos") or "").strip()
+function normalizeEmailForDb(raw: string) {
+  return (raw || "").trim().toLowerCase();
+}
 
-# ---------------------------
-# Secure auth cookie
-# ---------------------------
-AUTH_COOKIE_NAME = (os.environ.get("SECURE_AUTH_COOKIE", "purple_secure_at") or "").strip()
-COOKIE_SECURE = env_flag("COOKIE_SECURE", "1")  # set 1 in prod (https)
-COOKIE_SAMESITE = (os.environ.get("COOKIE_SAMESITE") or "Lax").strip()  # Lax fine for normal login
-COOKIE_DOMAIN = (os.environ.get("COOKIE_DOMAIN") or "").strip()  # optional: "secure.purplevin.com" or ".purplevin.com"
+function normalizeYearInput(raw: string) {
+  const digits = (raw || "").replace(/\D/g, "").slice(0, 4);
+  return digits;
+}
 
-def supabase_headers_service_role():
-    return {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
+function yearToNumberOrNull(y: string) {
+  const n = Number((y || "").trim());
+  if (!Number.isFinite(n)) return null;
+  if (n < 1900 || n > 2100) return null;
+  return n;
+}
 
-def supabase_headers_anon():
-    # For auth endpoints & /auth/v1/user validation
-    return {
-        "apikey": SUPABASE_ANON_KEY,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
+function normalizeVin(raw: string) {
+  return (raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
 
-def supabase_ready():
-    return USE_SUPABASE and bool(SUPABASE_URL) and bool(SUPABASE_SERVICE_ROLE_KEY)
+function isValidVin(vin: string) {
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(vin);
+}
 
-def supabase_auth_ready():
-    return USE_SUPABASE and bool(SUPABASE_URL) and bool(SUPABASE_ANON_KEY)
+function normalizePhone(raw: string) {
+  const digits = (raw || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  return digits;
+}
 
-# ---------------------------
-# Helpers
-# ---------------------------
-def get_db():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
+function maskVin(vin17: string) {
+  const v = normalizeVin(vin17);
+  if (v.length !== 17) return vin17;
+  return `•••• ${v.slice(-6)}`;
+}
 
-def normalize_vin(vin: str) -> str:
-    return (vin or "").strip().upper()
+function vehicleLabelParts(year: number | null, make: string, model: string) {
+  const parts = [year || "", make, model]
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
+  return parts.join(" ") || "Vehicle";
+}
 
-def normalize_token(token: str) -> str:
-    return (token or "").strip().lower()
+function vehicleLabel(v: Vehicle) {
+  const parts = [v.year, v.make, v.model].filter(Boolean).join(" ");
+  return parts || "Vehicle";
+}
 
-def drive_embed_from_folder(url):
-    if not url:
-        return None
-    m = re.search(r"/folders/([a-zA-Z0-9_\-]+)", str(url))
-    if not m:
-        return None
-    fid = m.group(1)
-    return f"https://drive.google.com/embeddedfolderview?id={fid}#grid"
+function isOnline() {
+  return typeof navigator === "undefined" ? true : navigator.onLine;
+}
 
-def fmt_date(iso_str: str) -> str:
-    if not iso_str:
-        return ""
-    try:
-        s = str(iso_str).replace("Z", "+00:00")
-        dt = datetime.fromisoformat(s)
-        # windows vs linux strftime differences
-        return dt.strftime("%#m/%#d/%Y") if os.name == "nt" else dt.strftime("%-m/%-d/%Y")
-    except Exception:
-        return str(iso_str)
+function safeParse<T>(raw: string | null, fallback: T): T {
+  try {
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
 
-def _date_to_str(v):
-    """
-    Accepts date, datetime, or ISO-like strings and returns a friendly date string.
-    Falls back to raw string if it can't parse.
-    """
-    if v is None:
-        return ""
-    if isinstance(v, date) and not isinstance(v, datetime):
-        return v.isoformat()
-    if isinstance(v, datetime):
-        return v.date().isoformat()
-    s = str(v).strip()
-    if not s:
-        return ""
-    try:
-        s2 = s.replace("Z", "+00:00")
-        dt = datetime.fromisoformat(s2)
-        return dt.date().isoformat()
-    except Exception:
-        return s
+function getQueue(): PendingJob[] {
+  if (typeof window === "undefined") return [];
+  return safeParse<PendingJob[]>(localStorage.getItem(OFFLINE_QUEUE_KEY), []);
+}
 
-def first_truthy(*vals):
-    for v in vals:
-        if v is None:
-            continue
-        s = str(v).strip()
-        if s:
-            return s
-    return ""
+function setQueue(items: PendingJob[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items));
+}
 
-def scrub_empty_history_rows(history_rows):
-    """
-    Remove rows that have no meaningful service_type/description/notes.
-    Prevents blank cards in UI.
-    """
-    out = []
-    for r in history_rows or []:
-        st = (r.get("service_type") or "").strip()
-        sd = (r.get("service_description") or "").strip()
-        sn = (r.get("service_notes") or "").strip()
-        if st or sd or sn:
-            out.append(r)
-    return out
+/** ✅ UUID v4 generator (Supabase uuid column requires valid uuid format) */
+function uuidv4(): string {
+  const c: any = typeof crypto !== "undefined" ? crypto : null;
+  if (c?.randomUUID) return c.randomUUID();
 
-def wants_json():
-    accept = (request.headers.get("Accept") or "").lower()
-    if "application/json" in accept:
-        return True
-    return request.path.startswith("/search") or request.path.startswith("/api/")
+  // v4 polyfill
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  // eslint-disable-next-line no-bitwise
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  // eslint-disable-next-line no-bitwise
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant
 
-def safe_next_path(next_url: str) -> str:
-    """
-    Only allow local redirects like "/".
-    Prevent open redirect.
-    """
-    nxt = (next_url or "").strip()
-    if not nxt.startswith("/"):
-        return "/"
-    if nxt.startswith("//"):
-        return "/"
-    return nxt
+  const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0"));
 
-# ---------------------------
-# Supabase REST helpers (PostgREST uses SERVICE ROLE)
-# ---------------------------
-def sb_get(path: str, params: dict, timeout: int = 20):
-    url = f"{SUPABASE_URL}/rest/v1/{path.lstrip('/')}"
-    r = requests.get(url, headers=supabase_headers_service_role(), params=params, timeout=timeout)
-    if r.status_code != 200:
-        raise RuntimeError(f"Supabase GET {path} failed: {r.status_code} {r.text}")
-    return r.json() or []
+  return (
+    hex.slice(0, 4).join("") +
+    "-" +
+    hex.slice(4, 6).join("") +
+    "-" +
+    hex.slice(6, 8).join("") +
+    "-" +
+    hex.slice(8, 10).join("") +
+    "-" +
+    hex.slice(10, 16).join("")
+  );
+}
 
-def sb_post(path: str, json_body: dict, timeout: int = 20):
-    url = f"{SUPABASE_URL}/rest/v1/{path.lstrip('/')}"
-    r = requests.post(url, headers=supabase_headers_service_role(), json=json_body, timeout=timeout)
-    if r.status_code not in (200, 201, 204):
-        raise RuntimeError(f"Supabase POST {path} failed: {r.status_code} {r.text}")
-    try:
-        return r.json()
-    except Exception:
-        return None
+/** keep old safeUuid usage for non-db ids (photos, etc) */
+function safeUuid() {
+  const c: any = typeof crypto !== "undefined" ? crypto : null;
+  if (c?.randomUUID) return c.randomUUID();
+  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
 
-# ---------------------------
-# Supabase Auth helpers (ANON KEY)
-# ---------------------------
-def sb_auth_password_login(email: str, password: str, timeout: int = 20):
-    """
-    Uses Supabase Auth password grant.
-    Returns dict with access_token / refresh_token on success.
-    """
-    if not supabase_auth_ready():
-        raise RuntimeError("Supabase auth not configured (SUPABASE_ANON_KEY missing).")
-    url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
-    payload = {"email": (email or "").strip(), "password": (password or "").strip()}
-    headers = supabase_headers_anon()
-    headers["Authorization"] = f"Bearer {SUPABASE_ANON_KEY}"
-    r = requests.post(url, headers=headers, json=payload, timeout=timeout)
-    if r.status_code != 200:
-        raise RuntimeError(f"LOGIN FAILED: {r.status_code} {r.text}")
-    return r.json() or {}
+/** ✅ enforce business_id at runtime so it can never silently become NULL */
+function requireBusinessId(businessId: string) {
+  const bid = String(businessId || "").trim();
+  const ok = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(bid);
+  if (!ok) throw new Error("BUSINESS_ID MISSING/INVALID — CANNOT SAVE.");
+  return bid;
+}
 
-def sb_auth_user(access_token: str, timeout: int = 15):
-    """
-    Validate an access token by calling /auth/v1/user.
-    Returns user json on success, None on failure.
-    """
-    if not supabase_auth_ready():
-        return None
-    at = (access_token or "").strip()
-    if not at:
-        return None
-    url = f"{SUPABASE_URL}/auth/v1/user"
-    headers = supabase_headers_anon()
-    headers["Authorization"] = f"Bearer {at}"
-    r = requests.get(url, headers=headers, timeout=timeout)
-    if r.status_code != 200:
-        return None
-    return r.json() or None
+function enqueueJob(item: Omit<PendingJob, "id" | "created_at" | "attempt_count">) {
+  const q = getQueue();
+  const newItem: PendingJob = {
+    id: safeUuid(),
+    created_at: new Date().toISOString(),
+    attempt_count: 0,
+    ...item,
+    // ✅ ensure idempotency even for older callers
+    client_request_id: item.client_request_id || uuidv4(),
+  };
+  q.unshift(newItem);
+  setQueue(q);
+  return newItem;
+}
 
-def set_auth_cookie(resp, access_token: str):
-    cookie_kwargs = {
-        "httponly": True,
-        "secure": bool(COOKIE_SECURE),
-        "samesite": COOKIE_SAMESITE,
-        "path": "/",
-    }
-    if COOKIE_DOMAIN:
-        cookie_kwargs["domain"] = COOKIE_DOMAIN
-    # Supabase access token typically ~1 hour
-    resp.set_cookie(AUTH_COOKIE_NAME, access_token, max_age=60 * 60, **cookie_kwargs)
-    return resp
+function removeFromQueue(id: string) {
+  const q = getQueue().filter((x) => x.id !== id);
+  setQueue(q);
+}
 
-def clear_auth_cookie(resp):
-    cookie_kwargs = {"path": "/"}
-    if COOKIE_DOMAIN:
-        cookie_kwargs["domain"] = COOKIE_DOMAIN
-    resp.delete_cookie(AUTH_COOKIE_NAME, **cookie_kwargs)
-    return resp
+function bumpAttempt(id: string) {
+  const q = getQueue().map((x) => (x.id === id ? { ...x, attempt_count: x.attempt_count + 1 } : x));
+  setQueue(q);
+}
 
-def current_access_token():
-    return (request.cookies.get(AUTH_COOKIE_NAME) or "").strip()
+function normalizeZipToBigint(raw: string): number | null {
+  const digits = (raw || "").trim().replace(/\D/g, "");
+  if (!digits) return null;
+  const n = Number(digits);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
 
-def require_auth(fn):
-    """
-    Protect internal pages. Public VIN report stays untouched.
-    - If JSON/API request -> 401
-    - If browser -> redirect to /login
-    """
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        at = current_access_token()
-        user = None
-        try:
-            user = sb_auth_user(at) if at else None
-        except Exception:
-            user = None
+function normalizeZipString(raw: string): string {
+  const digits = (raw || "").replace(/\D/g, "");
+  return digits.slice(0, 10);
+}
 
-        if user:
-            request.supabase_user = user
-            return fn(*args, **kwargs)
+/** ✅ service_date helpers
+* IMPORTANT: return null (NOT "") so we never send empty string to Postgres date columns
+*/
+function normalizeServiceDateInput(raw: string): string | null {
+  const v = (raw || "").trim();
+  if (!v) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  return v;
+}
 
-        if wants_json():
-            return jsonify({"error": "AUTH REQUIRED"}), 401
+/** YYYY-MM-DD for "today" in America/New_York (fixes EST/EDT vs UTC) */
+function todayDateOnlyNY(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
 
-        nxt = request.full_path if request.query_string else request.path
-        return redirect(f"/login?next={safe_next_path(nxt)}")
-    return wrapper
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
 
-# ============================================================
-# Photos (Supabase Storage)
-# ============================================================
-def sb_latest_batch_id_for_vin(vin: str):
-    vin = normalize_vin(vin)
-    rows = sb_get("vehicle_photos", {
-        "select": "batch_id,created_at",
-        "vin": f"eq.{vin}",
-        "order": "created_at.desc",
-        "limit": "1",
-    })
-    return rows[0]["batch_id"] if rows else None
+  if (!y || !m || !d) return new Date().toISOString().slice(0, 10);
+  return `${y}-${m}-${d}`;
+}
 
-def sb_photos_for_vin_batch(vin: str, batch_id: str, limit: int = 8):
-    vin = normalize_vin(vin)
-    rows = sb_get("vehicle_photos", {
-        "select": "storage_path,sort_order,created_at",
-        "vin": f"eq.{vin}",
-        "batch_id": f"eq.{batch_id}",
-        "order": "sort_order.asc,created_at.asc",
-        "limit": str(limit),
-    })
-    return rows or []
+/** ISO timestamp for a date-only. We use midday to avoid timezone edge cases. */
+function dateOnlyToIsoMidday(dateOnly: string) {
+  const d = (dateOnly || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return new Date().toISOString();
+  return new Date(`${d}T12:00:00`).toISOString();
+}
 
-def sb_sign_storage_url(storage_path: str, expires_in: int = 43200):
-    """
-    Return a signed URL for a storage object path (PHOTO_BUCKET bucket).
-    Uses SERVICE ROLE because it's server-side.
-    """
-    if not storage_path:
-        return None
+/** Convert ISO -> YYYY-MM-DD in America/New_York. Used to guarantee legacy service_date is never NULL. */
+function isoToDateOnlyNY(iso: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(iso));
 
-    storage_path = str(storage_path).lstrip("/")
-    url = f"{SUPABASE_URL}/storage/v1/object/sign/{PHOTO_BUCKET}/{storage_path}"
+    const y = parts.find((p) => p.type === "year")?.value;
+    const m = parts.find((p) => p.type === "month")?.value;
+    const d = parts.find((p) => p.type === "day")?.value;
 
-    r = requests.post(
-        url,
-        headers={
-            "apikey": SUPABASE_SERVICE_ROLE_KEY,
-            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-            "Content-Type": "application/json",
+    if (!y || !m || !d) return "";
+    return `${y}-${m}-${d}`;
+  } catch {
+    return "";
+  }
+}
+
+/** Extract city/state from "..., Wake Forest, NC 27587" */
+function extractCityState(address: string): { city: string | null; state: string | null } {
+  const a = (address || "").trim();
+  if (!a) return { city: null, state: null };
+  const parts = a
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (parts.length < 2) return { city: null, state: null };
+  const last = parts[parts.length - 1];
+  const stateMatch = last.match(/\b([A-Z]{2})\b/i);
+  const state = stateMatch?.[1]?.toUpperCase() ?? null;
+  const city = parts[parts.length - 2] ?? null;
+  return { city: city || null, state };
+}
+
+/** =========================
+* Photo compression (client-side)
+* ========================= */
+async function compressImageFile(file: File, opts?: { maxDim?: number; quality?: number }): Promise<File> {
+  const maxDim = opts?.maxDim ?? 1600;
+  const quality = opts?.quality ?? 0.82;
+  if (!file.type?.startsWith("image/")) return file;
+
+  const bitmap = await createImageBitmap(file);
+  try {
+    const w = bitmap.width;
+    const h = bitmap.height;
+    const scale = Math.min(1, maxDim / Math.max(w, h));
+    const outW = Math.max(1, Math.round(w * scale));
+    const outH = Math.max(1, Math.round(h * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+
+    ctx.drawImage(bitmap, 0, 0, outW, outH);
+
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (b) => {
+          if (!b) return reject(new Error("IMAGE COMPRESSION FAILED."));
+          resolve(b);
         },
-        json={"expiresIn": int(expires_in)},
-        timeout=20,
-    )
-    if r.status_code != 200:
-        return None
+        "image/jpeg",
+        quality
+      );
+    });
 
-    data = r.json() or {}
-    signed_path = data.get("signedURL") or data.get("signedUrl") or ""
-    if not signed_path:
-        return None
+    const baseName = (file.name || "photo").replace(/\.[^/.]+$/, "");
+    const newName = `${baseName}.jpg`;
+    return new File([blob], newName, { type: "image/jpeg" });
+  } finally {
+    try {
+      bitmap.close();
+    } catch {}
+  }
+}
 
-    if signed_path.startswith("http"):
-        return signed_path
+/** =========================
+* Export Wrapper
+* ========================= */
+export default function NewJobPage() {
+  return (
+    <Protected>
+      <NewJobInner />
+    </Protected>
+  );
+}
 
-    if signed_path.startswith("/object/"):
-        signed_path = "/storage/v1" + signed_path
+/** =========================
+* Main Component
+* ========================= */
+function NewJobInner() {
+  const router = useRouter();
+  const { signOut } = useAuth();
 
-    if not signed_path.startswith("/storage/v1/"):
-        signed_path = "/storage/v1/" + signed_path.lstrip("/")
+  const [step, setStep] = useState<Step>(1);
 
-    return f"{SUPABASE_URL}{signed_path}"
+  const [services, setServices] = useState<Service[]>([]);
+  const [loadingServices, setLoadingServices] = useState(true);
 
-# ============================================================
-# SQLITE (legacy token route fallback)
-# ============================================================
-def column_exists(table_name, column_name):
-    con = get_db()
-    cur = con.cursor()
-    try:
-        cur.execute(f"PRAGMA table_info({table_name})")
-        cols = [row[1] for row in cur.fetchall()]
-        return column_name in cols
-    finally:
-        con.close()
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-def get_vehicle_by_token_sqlite(token):
-    token = normalize_token(token)
-    if not column_exists("Customer_Data", "access_token"):
-        return None
-    con = get_db()
-    cur = con.cursor()
-    cur.execute(
-        """
-        SELECT *
-        FROM Customer_Data
-        WHERE LOWER(TRIM(access_token)) = ?
-        LIMIT 1
-        """,
-        (token,),
-    )
-    r = cur.fetchone()
-    con.close()
-    return dict(r) if r else None
+  /** ✅ hard lock to prevent double-save even if button is tapped twice fast */
+  const savingRef = useRef(false);
 
-def get_service_history_for_vin_sqlite(vin):
-    con = get_db()
-    cur = con.cursor()
-    try:
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Service_History'")
-        if not cur.fetchone():
-            return []
-        cur.execute(
-            """
-            SELECT
-              COALESCE(date, '') AS date,
-              COALESCE(service_type, '') AS service_type,
-              COALESCE(service_notes, '') AS service_notes,
-              COALESCE(next_recommended_service, '') AS next_recommended_service,
-              COALESCE(photos_link, '') AS photos_link,
-              COALESCE(technician, '') AS technician,
-              COALESCE(price, '') AS price,
-              COALESCE(customer_feedback, '') AS customer_feedback
-            FROM Service_History
-            WHERE UPPER(TRIM(vehicle_vin)) = ?
-            ORDER BY date DESC
-            """,
-            (normalize_vin(vin),),
-        )
-        return [dict(r) for r in cur.fetchall()]
-    finally:
-        con.close()
+  // ✅ stable idempotency key for the current job (prevents duplicates)
+  const jobRequestIdRef = useRef<string>(uuidv4());
 
-# ============================================================
-# SUPABASE: vehicles + legacy merge
-# ============================================================
-def sb_vehicle_by_vin(vin: str):
-    vin = normalize_vin(vin)
-    rows = sb_get("vehicles", {
-        "select": "id,vin,year,make,model,trim,color,notes,nickname,service_history_link,access_token,status",
-        "vin": f"eq.{vin}",
-        "limit": "1",
-    })
-    return rows[0] if rows else None
+  const [online, setOnline] = useState(true);
+  const [queuedCount, setQueuedCount] = useState(0);
+  const [syncingQueue, setSyncingQueue] = useState(false);
 
-def sb_legacy_by_vin(vin: str):
-    vin = normalize_vin(vin)
-    rows = sb_get(LEGACY_TABLE, {
-        "select": "*",
-        "vin": f"eq.{vin}",
-        "limit": "1",
-    })
-    return rows[0] if rows else None
+  // ✅ NEW: refs + state for “Saved ✅ -> auto reset back to step 1”
+  const vinInputRef = useRef<HTMLInputElement | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
-def sb_latest_job_for_vehicle(vehicle_id: str):
-    rows = sb_get("jobs", {
-        "select": "id,performed_at,customer_id",
-        "vehicle_id": f"eq.{vehicle_id}",
-        "order": "performed_at.desc",
-        "limit": "1",
-    })
-    return rows[0] if rows else None
+  const showToast = (text: string, ms = 1100) => {
+    setToast(text);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), ms);
+  };
 
-def sb_customer_by_id(customer_id: str):
-    if not customer_id:
-        return None
-    rows = sb_get("customers", {
-        "select": "id,full_name,phone,phone_norm",
-        "id": f"eq.{customer_id}",
-        "limit": "1",
-    })
-    return rows[0] if rows else None
+  const goToFreshJob = (delayMs = 650) => {
+    window.setTimeout(() => {
+      resetForm();
+      window.setTimeout(() => vinInputRef.current?.focus(), 50);
+    }, delayMs);
+  };
 
-# ============================================================
-# ✅ Pull job history from customer_jobs_legacy
-# ============================================================
-def sb_jobs_legacy_by_vin(vin: str, limit: int = 50):
-    vin = normalize_vin(vin)
-    rows = sb_get(JOBS_LEGACY_TABLE, {
-        "select": "id,vin,created_at,service_date,service_name,service_description,notes",
-        "vin": f"eq.{vin}",
-        "order": "service_date.desc.nullslast,created_at.desc",
-        "limit": str(limit),
-    })
-    return rows or []
+  const [vin, setVin] = useState("");
+  const [vehicle, setVehicle] = useState<Vehicle | null>(null);
+  const [vinStatus, setVinStatus] = useState<string>("");
+  const [vinBusy, setVinBusy] = useState(false);
 
-def build_history_from_jobs_legacy(vin: str):
-    out = []
-    try:
-        rows = sb_jobs_legacy_by_vin(vin, limit=50)
-    except Exception:
-        return out
+  // Required year/make/model before leaving Step 1
+  const [vehYearText, setVehYearText] = useState("");
+  const [vehMake, setVehMake] = useState("");
+  const [vehModel, setVehModel] = useState("");
 
-    for r in rows:
-        out.append({
-            "date": fmt_date((r.get("service_date") or r.get("created_at"))),
-            "service_type": (r.get("service_name") or "").strip(),
-            "service_description": (r.get("service_description") or "").strip(),
-            "service_notes": (r.get("notes") or "").strip(),
-            "next_recommended_service": "",
-            "photos_link": "",
-            "technician": "",
-            "price": "",
-            "customer_feedback": "",
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
+  const [customerZip, setCustomerZip] = useState("");
+  const [zipSuggestions, setZipSuggestions] = useState<string[]>([]);
+  const zipLookupTimer = useRef<number | null>(null);
+
+  // Photos step
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoMsg, setPhotoMsg] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+
+  const [serviceType, setServiceType] = useState<"full" | "interior" | "exterior" | "ceramic">("full");
+  const [selectedPackageId, setSelectedPackageId] = useState<string>("");
+  const [selectedAddonIds, setSelectedAddonIds] = useState<Record<string, boolean>>({});
+  const [addonQuery, setAddonQuery] = useState("");
+  const [addonsOpen, setAddonsOpen] = useState(false);
+
+  const [totalCharged, setTotalCharged] = useState("");
+  const [notes, setNotes] = useState("");
+
+  /**
+   * ✅ OPTIONAL backfill date (YYYY-MM-DD)
+   * Store raw value from <input type="date"> (it will already be YYYY-MM-DD or "")
+   * We normalize only at save time.
+   */
+  const [serviceDate, setServiceDate] = useState<string>(() => todayDateOnlyNY());
+
+  const quickTotals = useMemo(() => ["200", "250", "300", "350", "400"], []);
+
+  /** =========================
+   * business_id resolver (CACHED + CONCURRENT SAFE)
+   * ========================= */
+  const businessIdRef = useRef<string | null>(null);
+  const resolvingBusinessIdRef = useRef<Promise<string> | null>(null);
+
+  function isUuid(val: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val || "");
+  }
+
+  async function getActiveBusinessId(): Promise<string> {
+  if (businessIdRef.current && isUuid(businessIdRef.current)) {
+    return businessIdRef.current;
+  }
+
+  if (resolvingBusinessIdRef.current) {
+    return resolvingBusinessIdRef.current;
+  }
+
+  resolvingBusinessIdRef.current = (async () => {
+    try {
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+
+      if (userErr || !userRes?.user) {
+        console.error("[getActiveBusinessId] auth error:", userErr);
+        throw new Error("NOT LOGGED IN");
+      }
+
+      const userId = userRes.user.id;
+
+      const { data, error } = await supabase
+        .from("business_users")
+        .select("business_id")
+        .eq("user_id", userId)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error("[getActiveBusinessId] query error:", error);
+        throw error;
+      }
+
+      console.log("[getActiveBusinessId] row:", data);
+
+      const found = data?.business_id ?? null;
+
+      if (!found || !isUuid(found)) {
+        throw new Error("NO BUSINESS ID FOUND FOR USER (business_users)");
+      }
+
+      businessIdRef.current = found;
+
+      return found;
+    } finally {
+      resolvingBusinessIdRef.current = null;
+    }
+  })();
+
+  return resolvingBusinessIdRef.current;
+} 
+
+  // ✅ pre-resolve once so you find out immediately if user is not linked
+  useEffect(() => {
+    (async () => {
+      try {
+        await getActiveBusinessId();
+      } catch (e: any) {
+        setMsg(String(e?.message || "FAILED TO RESOLVE BUSINESS ID."));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** =========================
+   * Load services (GLOBAL)
+   * ========================= */
+  useEffect(() => {
+    (async () => {
+      setLoadingServices(true);
+      setMsg(null);
+
+      const { data, error } = await supabase
+        .from("services")
+        .select("id,name,category,pricing_type,price_cents,price_cents_max,price_note")
+        .eq("active", true)
+        .order("category", { ascending: true })
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true });
+
+      if (error) setMsg(error.message);
+      setServices((data ?? []) as Service[]);
+      setLoadingServices(false);
+    })();
+  }, []);
+
+  const packageCategory = SERVICE_TYPE_TO_CATEGORY[serviceType];
+  const packages = useMemo(() => services.filter((s) => s.category === packageCategory), [services, packageCategory]);
+  const addons = useMemo(() => services.filter((s) => s.category === "addon"), [services]);
+
+  useEffect(() => {
+    if (packages.length === 0) {
+      setSelectedPackageId("");
+      return;
+    }
+    if (!selectedPackageId || !packages.some((p) => p.id === selectedPackageId)) {
+      setSelectedPackageId(packages[0].id);
+    }
+  }, [packages, selectedPackageId]);
+
+  const selectedAddons = useMemo(() => addons.filter((a) => selectedAddonIds[a.id]), [addons, selectedAddonIds]);
+
+  const filteredAddons = useMemo(() => {
+    const q = addonQuery.trim().toLowerCase();
+    if (!q) return addons;
+    return addons.filter((a) => a.name.toLowerCase().includes(q));
+  }, [addons, addonQuery]);
+
+  const suggestedRangeText = (s: Service) => {
+    if (s.pricing_type === "fixed" && s.price_cents != null) return `$${centsToDollars(s.price_cents)}`;
+    if (s.pricing_type === "starting" && s.price_cents != null) return `from $${centsToDollars(s.price_cents)}`;
+    if (s.pricing_type === "range" && s.price_cents != null && s.price_cents_max != null) {
+      return `$${centsToDollars(s.price_cents)}–$${centsToDollars(s.price_cents_max)}`;
+    }
+    return "";
+  };
+
+  const toggleAddon = (id: string) => setSelectedAddonIds((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const needsDecode = (veh: Vehicle | null) => {
+    if (!veh) return true;
+    return !veh.year || !veh.make || !veh.model;
+  };
+
+  function phoneToLegacyCustomerId(rawPhone: string) {
+    const d = normalizePhone(rawPhone || "");
+    if (!d) return null;
+    const asNum = Number(d);
+    return Number.isFinite(asNum) ? asNum : null;
+  }
+
+  const canUploadPhotos = useMemo(() => isValidVin(normalizeVin(vin)), [vin]);
+
+  /** =========================
+   * Photos helpers
+   * ========================= */
+  function resetPhotos() {
+    photos.forEach((p) => {
+      try {
+        URL.revokeObjectURL(p.previewUrl);
+      } catch {}
+    });
+    setPhotos([]);
+    setPhotoMsg(null);
+    setPhotoBusy(false);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+  }
+
+  function addIncomingPhotos(incoming: File[]) {
+    if (!incoming || incoming.length === 0) return;
+
+    setPhotos((prev) => {
+      const remaining = Math.max(0, 8 - prev.length);
+      const slice = incoming.slice(0, remaining);
+      const mapped: PendingPhoto[] = slice.map((file) => ({
+        id: safeUuid(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+
+      if (incoming.length > remaining) setPhotoMsg("MAX 8 PHOTOS — SOME WERE NOT ADDED.");
+      else setPhotoMsg(null);
+
+      return [...prev, ...mapped];
+    });
+  }
+
+  /** =========================
+   * Photos Upload
+   * ========================= */
+  async function uploadPhotosForVin(vin17: string, selected: PendingPhoto[]) {
+    const v = normalizeVin(vin17);
+    if (!isValidVin(v)) {
+      setPhotoMsg("ENTER A VALID 17-CHAR VIN FIRST.");
+      return;
+    }
+    if (!selected || selected.length === 0) {
+      setPhotoMsg("ADD PHOTOS FIRST.");
+      return;
+    }
+    if (!isOnline()) {
+      setPhotoMsg("OFFLINE — UPLOAD WHEN BACK ONLINE.");
+      return;
+    }
+    if (selected.length > 8) {
+      setPhotoMsg("MAX 8 PHOTOS.");
+      return;
+    }
+
+    setPhotoBusy(true);
+    setPhotoMsg(null);
+
+    try {
+      const fd = new FormData();
+      fd.append("vin", v);
+
+      setPhotoMsg("PREPARING PHOTOS…");
+
+      const prepared = await Promise.all(
+        selected.slice(0, 8).map(async (p) => {
+          const compressed = await compressImageFile(p.file, { maxDim: 1600, quality: 0.82 });
+          if (compressed.size > 18 * 1024 * 1024) {
+            throw new Error("ONE PHOTO IS TOO LARGE (MAX ~18MB) EVEN AFTER COMPRESS.");
+          }
+          return compressed;
         })
-    return scrub_empty_history_rows(out)
+      );
 
-# ============================================================
-# ✅ Merge profile
-# ============================================================
-def merged_profile_by_vin(vin: str):
-    vin = normalize_vin(vin)
-    veh = sb_vehicle_by_vin(vin)
-    legacy = sb_legacy_by_vin(vin)
+      prepared.forEach((f) => fd.append("photos", f, f.name));
 
-    if not veh and not legacy:
-        return None
+      setPhotoMsg("UPLOADING…");
 
-    make = first_truthy((veh or {}).get("make"), (legacy or {}).get("make"))
-    model = first_truthy((veh or {}).get("model"), (legacy or {}).get("model"))
-    year = (veh or {}).get("year") or (legacy or {}).get("year") or ""
+      const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
 
-    vehicle_nickname = first_truthy((legacy or {}).get("vehicle_nickname"), (veh or {}).get("nickname"), "")
-    service_history_link = first_truthy(
-        (legacy or {}).get("service_history_link"),
-        (veh or {}).get("service_history_link"),
-        ""
-    )
-    status = first_truthy((legacy or {}).get("status"), (veh or {}).get("status"), "")
-    notes = first_truthy((legacy or {}).get("notes"), (veh or {}).get("notes"), "")
+      if (!res.ok) {
+        setPhotoMsg(String(data?.error || `UPLOAD FAILED (${res.status})`));
+        return;
+      }
 
-    # --- Customer fields (legacy primary) ---
-    customer_name = first_truthy((legacy or {}).get("customer_name"), "")
-    phone_number = first_truthy((legacy or {}).get("phone_number"), "")
-    email = first_truthy((legacy or {}).get("email"), "")
+      setPhotoMsg(`UPLOADED ${data.count ?? selected.length} PHOTO(S) ✅`);
 
-    # fallback if legacy missing customer fields
-    latest_customer = None
-    if veh and veh.get("id"):
-        try:
-            latest_job = sb_latest_job_for_vehicle(veh["id"])
-            if latest_job and latest_job.get("customer_id"):
-                latest_customer = sb_customer_by_id(latest_job["customer_id"])
-        except Exception:
-            latest_customer = None
+      selected.forEach((p) => {
+        try {
+          URL.revokeObjectURL(p.previewUrl);
+        } catch {}
+      });
 
-    if not customer_name and latest_customer:
-        customer_name = first_truthy(latest_customer.get("full_name"), "")
-    if not phone_number and latest_customer:
-        phone_number = first_truthy(latest_customer.get("phone"), "")
+      setPhotos([]);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
+    } catch (e: any) {
+      setPhotoMsg(String(e?.message || "UPLOAD FAILED."));
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
 
-    # ✅ Service history
-    service_history = build_history_from_jobs_legacy(vin)
+  /** Cleanup previews if component unmounts */
+  useEffect(() => {
+    return () => {
+      photos.forEach((p) => {
+        try {
+          URL.revokeObjectURL(p.previewUrl);
+        } catch {}
+      });
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    # --- Photos (latest batch only, max 8) ---
-    latest_batch_id = ""
-    photo_urls = []
-    photo_count = 0
-    try:
-        batch_id = sb_latest_batch_id_for_vin(vin)
-        if batch_id:
-            latest_batch_id = batch_id
-            rows = sb_photos_for_vin_batch(vin, batch_id, limit=8)
-            photo_count = len(rows)
-            for r in rows:
-                sp = (r.get("storage_path") or "").strip()
-                if not sp:
-                    continue
-                signed = sb_sign_storage_url(sp, expires_in=43200)
-                if signed:
-                    photo_urls.append(signed)
-    except Exception:
-        latest_batch_id = ""
-        photo_urls = []
-        photo_count = 0
+  /** =========================
+   * ZIP lookup (GLOBAL)
+   * ========================= */
+  async function lookupZipSuggestionsFromAddress(addr: string) {
+    if (!isOnline()) return;
+    const { city, state } = extractCityState(addr);
+    if (!city || !state) return;
+    if (state.toUpperCase() !== "NC") return;
 
-    return {
-        "veh": veh or {},
-        "legacy": legacy or {},
-        "latest_customer": latest_customer or {},
-        "merged": {
-            "vin": vin,
-            "make": make,
-            "model": model,
-            "year": year,
-            "status": status,
-            "notes": notes,
-            "vehicle_nickname": vehicle_nickname,
-            "service_history_link": service_history_link,
-            "customer_name": customer_name or "—",
-            "phone_number": phone_number or "",
-            "email": email or "",
-            "service_history": service_history,
-            "photo_count": photo_count,
-            "latest_batch_id": latest_batch_id,
-            "photo_urls": photo_urls,
-        },
+    const { data, error } = await supabase
+      .from("zip_codes")
+      .select("zip")
+      .eq("state", "NC")
+      .ilike("city", city)
+      .order("zip", { ascending: true })
+      .limit(10);
+
+    if (error) return;
+
+    const zips = (data ?? []).map((r: any) => String(r.zip)).filter(Boolean);
+    setZipSuggestions(zips);
+
+    const currentZipClean = normalizeZipString(customerZip);
+    if (!currentZipClean && zips.length === 1) {
+      setCustomerZip(zips[0]);
+    }
+  }
+
+  useEffect(() => {
+    if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
+
+    if (!customerAddress.trim()) {
+      setZipSuggestions([]);
+      return;
     }
 
-# ============================================================
-# Routes (Public vs Secure)
-# ============================================================
-@app.route("/health")
-def health():
-    return jsonify({
-        "ok": True,
-        "supabase_ready": supabase_ready(),
-        "supabase_auth_ready": supabase_auth_ready(),
-        "photo_bucket": PHOTO_BUCKET,
-        "db_path": DB_PATH,
-        "supabase_url": SUPABASE_URL,
-        "legacy_table": LEGACY_TABLE,
-        "jobs_legacy_table": JOBS_LEGACY_TABLE,
-        "use_supabase": USE_SUPABASE,
-        "cookie_secure": bool(COOKIE_SECURE),
-        "cookie_domain": COOKIE_DOMAIN or None,
+    zipLookupTimer.current = window.setTimeout(() => {
+      lookupZipSuggestionsFromAddress(customerAddress);
+    }, 450);
+
+    return () => {
+      if (zipLookupTimer.current) window.clearTimeout(zipLookupTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerAddress]);
+
+  /** =========================
+   * Legacy writer (customer_data_legacy) - TAGS business_id
+   * ========================= */
+  async function upsertLegacyByVin(params: {
+    businessId: string;
+    vin: string;
+    customerName: string;
+    customerPhone: string;
+    customerEmail?: string;
+    customerAddress?: string;
+    customerZip?: string;
+    vehicle: { year: number | null; make: string; model: string };
+    notes?: string;
+    status?: string;
+    work_done?: string | null;
+  }) {
+    const businessId = requireBusinessId(params.businessId);
+
+    const v = normalizeVin(params.vin);
+    if (!isValidVin(v)) {
+      console.warn("Skipping legacy write for invalid VIN:", v);
+      return;
+    }
+
+    const customer_id = phoneToLegacyCustomerId(params.customerPhone);
+    const address = (params.customerAddress || "").trim() || null;
+    const zip_code = normalizeZipToBigint(params.customerZip || "");
+
+    const payload: any = {
+      business_id: businessId,
+      vin: v,
+      customer_id,
+      customer_name: capsTrim(params.customerName) || null,
+      phone_number: (params.customerPhone || "").trim() || null,
+      email: params.customerEmail ? normalizeEmailForDb(params.customerEmail) : null,
+      address: address ? capsTrim(address) : null,
+      zip_code,
+      status: params.status ?? "active",
+      notes: capsTrim(params.notes || "") || null,
+      make: capsTrim(params.vehicle?.make || "") || null,
+      model: capsTrim(params.vehicle?.model || "") || null,
+      year: params.vehicle?.year ?? null,
+      work_done: params.work_done ?? null,
+    };
+
+    const { data: existing, error: findErr } = await supabase
+      .from("customer_data_legacy")
+      .select("id")
+      .eq("vin", v)
+      .limit(1)
+      .maybeSingle();
+
+    if (findErr) throw findErr;
+
+    if (existing?.id) {
+      const { error: updErr } = await supabase.from("customer_data_legacy").update(payload).eq("id", existing.id);
+      if (updErr) throw updErr;
+    } else {
+      const { error: insErr } = await supabase.from("customer_data_legacy").insert(payload);
+      if (insErr) throw insErr;
+    }
+  }
+
+  /** =========================
+   * Legacy service history writer (customer_jobs_legacy)
+   * ✅ idempotent via client_request_id (prevents duplicates permanently)
+   * ========================= */
+  async function insertCustomerJobLegacy(params: {
+    businessId: string;
+    vin: string;
+    serviceName: string;
+    serviceDescription?: string;
+    serviceDate?: string | null;
+    clientRequestId?: string;
+  }) {
+    const businessId = requireBusinessId(params.businessId);
+
+    const safeId =
+      typeof params.clientRequestId === "string" && params.clientRequestId.trim()
+        ? params.clientRequestId.trim()
+        : uuidv4();
+
+    // ✅ NEVER allow empty string / invalid → always fallback to today
+    const normalizedDate = normalizeServiceDateInput(params.serviceDate || "") ?? todayDateOnlyNY();
+
+    // ✅ Validate businessId BEFORE building payload (prevents undefined -> dropped field -> NULL insert)
+console.log("[insertCustomerJobLegacy] businessId raw =", businessId);
+
+if (typeof businessId !== "string" || businessId.trim().length === 0) {
+  console.error("[insertCustomerJobLegacy] INVALID businessId:", businessId);
+  throw new Error("MISSING businessId before legacy upsert");
+}
+
+const businessIdSafe = businessId.trim();
+
+// (optional but helpful)
+// if (!isUuid(businessIdSafe)) throw new Error("businessId is not a UUID");
+
+// ✅ NOW build payload using the safe value
+const payload = {
+  business_id: businessIdSafe,
+  vin: normalizeVin(params.vin),
+  service_name: capsTrim(params.serviceName),
+  service_description: params.serviceDescription ?? null,
+  service_date: normalizedDate,
+  client_request_id: safeId,
+};
+
+console.log("[insertCustomerJobLegacy] payload =", payload);
+
+// ✅ Upsert
+const { error } = await supabase
+  .from("customer_jobs_legacy")
+  .upsert(payload, { onConflict: "client_request_id" });
+
+if (error) {
+  const anyErr = error as unknown as { code?: string; message?: string | null };
+
+  const code = String(anyErr.code ?? "");
+  const msg = String(anyErr.message ?? "").toLowerCase();
+
+  const isDuplicate =
+    code === "23505" ||
+    msg.includes("duplicate") ||
+    msg.includes("already exists") ||
+    msg.includes("unique constraint");
+
+  if (isDuplicate) {
+    console.log("Duplicate visit detected — treating as saved.");
+    return { client_request_id: safeId, wasDuplicate: true as const };
+  }
+
+  throw error;
+} 
+
+    return { client_request_id: safeId, wasDuplicate: false as const };
+  }
+
+  async function autofillCustomerFromLegacy(vin17: string) {
+    const v = normalizeVin(vin17);
+    if (!isValidVin(v)) return;
+
+    const { data, error } = await supabase
+      .from("customer_data_legacy")
+      .select("customer_name, phone_number, email, address, zip_code, make, model, year")
+      .eq("vin", v)
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return;
+
+    const d: any = data;
+
+    if (!customerName.trim() && d.customer_name) setCustomerName(capsTrim(String(d.customer_name)));
+    if (!customerPhone.trim() && d.phone_number) setCustomerPhone(String(d.phone_number));
+    if (!customerEmail.trim() && d.email) setCustomerEmail(String(d.email));
+    if (!customerAddress.trim() && d.address) setCustomerAddress(capsTrim(String(d.address)));
+    if (!customerZip.trim() && d.zip_code != null) setCustomerZip(String(d.zip_code));
+
+    if (!vehMake.trim() && d.make) setVehMake(capsTrim(String(d.make)));
+    if (!vehModel.trim() && d.model) setVehModel(capsTrim(String(d.model)));
+    if (!vehYearText.trim() && d.year != null) setVehYearText(String(d.year));
+  }
+
+  const autofillCustomerFromVehicle = async (vehicleId: string) => {
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("id, performed_at, customers:customer_id (id, full_name, phone, phone_norm, address, zip_code)")
+      .eq("vehicle_id", vehicleId)
+      .order("performed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return;
+    const cust = (data as any)?.customers as any;
+    if (!cust) return;
+
+    if (!customerName.trim()) setCustomerName(capsTrim(cust.full_name ?? ""));
+    if (!customerPhone.trim() && cust.phone) setCustomerPhone(String(cust.phone));
+    if (!customerAddress.trim() && cust.address) setCustomerAddress(capsTrim(String(cust.address)));
+    if (!customerZip.trim() && cust.zip_code) setCustomerZip(String(cust.zip_code));
+  };
+
+  const decodeVinAndUpdateVehicle = async (vehicleId: string, vin17: string) => {
+    if (!isOnline()) {
+      setVinStatus("OFFLINE — ENTER YEAR/MAKE/MODEL MANUALLY TO CONTINUE.");
+      return;
+    }
+
+    try {
+      setVinBusy(true);
+      setVinStatus("IDENTIFYING VEHICLE…");
+
+      const res = await fetch(`/api/vin-decode?vin=${encodeURIComponent(vin17)}`);
+      const decoded = await res.json();
+
+      if (!res.ok) {
+        setVinStatus(decoded?.error ? `IDENTIFY FAILED: ${decoded.error}` : "IDENTIFY FAILED.");
+        return;
+      }
+
+      const patch = { year: decoded.year ?? null, make: decoded.make ?? null, model: decoded.model ?? null };
+
+      const { data, error } = await supabase
+        .from("vehicles")
+        .update(patch)
+        .eq("id", vehicleId)
+        .select("id,vin,year,make,model")
+        .single();
+
+      if (error) {
+        setVinStatus("VEHICLE IDENTIFIED, BUT FAILED TO SAVE DETAILS.");
+        return;
+      }
+
+      const v = data as Vehicle;
+      setVehicle(v);
+      setVehYearText(v.year ? String(v.year) : "");
+      setVehMake(v.make ? capsTrim(v.make) : "");
+      setVehModel(v.model ? capsTrim(v.model) : "");
+      setVinStatus("VEHICLE IDENTIFIED ✅");
+    } catch {
+      setVinStatus("IDENTIFY ERROR. ENTER YEAR/MAKE/MODEL MANUALLY.");
+    } finally {
+      setVinBusy(false);
+    }
+  };
+
+  const lookupVin = async () => {
+    if (vinBusy) return;
+
+    setMsg(null);
+    setVinStatus("");
+    setVehicle(null);
+    setVehYearText("");
+    setVehMake("");
+    setVehModel("");
+
+    const v = normalizeVin(vin);
+    if (!isValidVin(v)) {
+      setVinStatus("VIN MUST BE 17 CHARACTERS (NO I, O, Q).");
+      return;
+    }
+
+    try {
+      await autofillCustomerFromLegacy(v);
+    } catch {}
+
+    if (!isOnline()) {
+      setVinStatus("OFFLINE — ENTER YEAR/MAKE/MODEL MANUALLY TO CONTINUE.");
+      return;
+    }
+
+    setVinBusy(true);
+
+    try {
+      const { data, error } = await supabase.from("vehicles").select("id,vin,year,make,model").eq("vin", v).limit(1).maybeSingle();
+
+      if (error) {
+        setMsg(error.message);
+        setVinStatus("VIN LOOKUP FAILED — ENTER YEAR/MAKE/MODEL MANUALLY.");
+        return;
+      }
+
+      let veh: Vehicle | null = (data as Vehicle) ?? null;
+
+      if (!veh) {
+  const businessId = await getActiveBusinessId();
+
+  const createdVeh = await supabase
+    .from("vehicles")
+    .insert({
+      vin: v,
+      business_id: businessId,
     })
+    .select("id,vin,year,make,model")
+    .single();
 
-@app.route("/health/supabase")
-def health_supabase():
-    try:
-        if not supabase_ready():
-            return jsonify({"ok": False, "error": "Supabase env vars not set", "supabase_url": SUPABASE_URL}), 500
-        rows = sb_get("vehicles", {"select": "vin", "limit": "1"})
-        return jsonify({"ok": True, "status_code": 200, "body": rows}), 200
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+  if (!createdVeh.error && createdVeh.data?.id) {
+    veh = createdVeh.data as Vehicle;
+  }
+} 
+      if (veh) {
+        setVehicle(veh);
+        setVehYearText(veh.year ? String(veh.year) : "");
+        setVehMake(veh.make ? capsTrim(veh.make) : "");
+        setVehModel(veh.model ? capsTrim(veh.model) : "");
+        setVinStatus("VIN LINKED ✅");
 
-# ---------------------------
-# ✅ Secure login (server cookie auth)
-# ---------------------------
+        try {
+          await autofillCustomerFromVehicle(veh.id);
+        } catch {}
 
-# ✅ IMPORTANT:
-# Put the PNG here:
-#   ../static/img/elephant-bg.png
-# Because your Flask app serves static at /static from static_folder="../static"
-LOGIN_BG_URL = "/static/img/elephant-bg.png"
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if not supabase_auth_ready():
-        return ("Supabase auth not configured. Set SUPABASE_ANON_KEY on server.", 500)
-
-    next_url = safe_next_path(request.args.get("next") or "/")
-
-    if request.method == "GET":
-        # If already logged in, go where they wanted
-        try:
-            if sb_auth_user(current_access_token()):
-                return redirect(next_url)
-        except Exception:
-            pass
-
-        bg_url = LOGIN_BG_URL
-
-        # IMPORTANT:
-        # This is an f-string (because we insert next_url + bg_url),
-        # so ALL CSS braces must be doubled {{ }}.
-        return f"""
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Secure Login · PurpleVin</title>
-  <style>
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin:0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      min-height:100vh;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:24px;
-      color:#0f172a;
-
-      /* base */
-      background:
-        radial-gradient(1200px 800px at 25% 20%, rgba(156,108,255,0.25), transparent 55%),
-        radial-gradient(900px 700px at 80% 70%, rgba(91,31,166,0.22), transparent 55%),
-        #0b1020;
-
-      position:relative;
-      overflow:hidden;
-    }}
-
-    /* ✅ EXACT PNG overlay (matches the image I shared) */
-    body::before {{
-      content:"";
-      position:absolute;
-      inset:-40px;
-      pointer-events:none;
-      opacity:0.28;    
-
-      background-image: url("{bg_url}");
-      background-repeat: repeat;
-      background-size: 360px 360px;
-      background-position: 0px 0px; 
-
-      transform: rotate(0deg);
-      filter: none;
-    }}
-
-    /* subtle grain (very light) */
-    body::after {{
-      content:"";
-      position:absolute;
-      inset:0;
-      pointer-events:none;
-      opacity:0.05;
-      background-image: radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px);
-      background-size: 4px 4px;
-      mix-blend-mode: overlay;
-    }}
-
-    .card {{
-      width:100%;
-      max-width:460px;
-      background:#ffffff;           /* ✅ not transparent */
-      border:1px solid rgba(15,23,42,0.10);
-      border-radius:18px;
-      padding:22px 22px 18px;
-      box-shadow: 0 18px 50px rgba(2,6,23,0.35);
-      position:relative;
-      z-index:1;
-    }}
-
-    h1 {{
-      margin:0 0 6px;
-      font-size:20px;
-      letter-spacing:0.02em;
-    }}
-    p {{
-      margin:0 0 14px;
-      color:#475569;
-      font-size:13px;
-      line-height:1.35;
-    }}
-
-    label {{
-      display:block;
-      font-size:12px;
-      color:#64748b;
-      margin:10px 0 6px;
-      text-transform:uppercase;
-      letter-spacing:0.12em;
-    }}
-
-    input {{
-      width:100%;
-      max-width:100%;
-      height:46px;
-      border-radius:12px;
-      border:1px solid rgba(15,23,42,0.14);
-      background:#f8fafc;
-      color:#0f172a;
-      padding:0 12px;
-      outline:none;
-      transition: border .12s ease, box-shadow .12s ease, background .12s ease;
-    }}
-    input:focus {{
-      border-color: rgba(91,31,166,0.45);
-      box-shadow: 0 0 0 3px rgba(156,108,255,0.18);
-      background:#ffffff;
-    }}
-
-    button {{
-      width:100%;
-      max-width:100%;
-      height:46px;
-      border-radius:12px;
-      border:0;
-      background: linear-gradient(135deg, #0f172a, #5b1fa6);
-      color:#ffffff;
-      font-weight:900;
-      cursor:pointer;
-      margin-top:14px;
-      box-shadow: 0 12px 24px rgba(2,6,23,0.25);
-    }}
-    button:hover {{ filter: brightness(1.04); }}
-    button:active {{ transform: translateY(1px); }}
-
-    .small {{
-      margin-top:12px;
-      font-size:12px;
-      color:#64748b;
-    }}
-    code {{
-      background:#f1f5f9;
-      border:1px solid rgba(15,23,42,0.10);
-      padding:2px 6px;
-      border-radius:8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 11px;
-      color:#0f172a;
-    }}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Secure Login</h1>
-    <p>Internal access for <b>secure.purplevin.com</b></p>
-    <form method="POST" action="/login?next={next_url}">
-      <label>Email</label>
-      <input name="email" type="email" autocomplete="email" required />
-      <label>Password</label>
-      <input name="password" type="password" autocomplete="current-password" required />
-      <button type="submit">Sign in</button>
-    </form>
-    <div class="small">Public VIN reports remain accessible at <code>/vin/&lt;VIN&gt;</code>.</div>
-  </div>
-</body>
-</html>
-""".strip()
-
-    # POST: attempt login
-    email = (request.form.get("email") or "").strip()
-    password = (request.form.get("password") or "").strip()
-    if not email or not password:
-        return ("Missing email or password.", 400)
-
-    try:
-        data = sb_auth_password_login(email, password)
-        access_token = (data.get("access_token") or "").strip()
-        if not access_token:
-            raise RuntimeError("No access_token returned.")
-
-        resp = make_response(redirect(next_url))
-        resp = set_auth_cookie(resp, access_token)
-        return resp
-    except Exception as e:
-        return (f"Login failed. {str(e)}", 401)
-
-@app.route("/logout")
-def logout():
-    # ✅ SERVER logout: clears our cookie and forces /login
-    resp = make_response(redirect("/login"))
-    resp = clear_auth_cookie(resp)
-    return resp
-
-# ---------------------------
-# ✅ Secure home + secure vin search (internal)
-# ---------------------------
-@app.route("/")
-@require_auth
-def home():
-    # index.html uses:
-    # - {{ supabase_url }}
-    # - {{ supabase_anon_key }}
-    # - {{ logout_url }}
-    return render_template(
-        "index.html",
-        supabase_url=SUPABASE_URL,
-        supabase_anon_key=SUPABASE_ANON_KEY,
-        logout_url="/logout",
-    )
-
-@app.route("/search", methods=["GET"])
-@require_auth
-def search():
-    vin = normalize_vin(request.args.get("vin"))
-    if len(vin) != 17:
-        return jsonify({"error": "VIN must be 17 characters."}), 400
-    if not supabase_ready():
-        return jsonify({"error": "Supabase not configured on server."}), 500
-
-    try:
-        data = merged_profile_by_vin(vin)
-        if not data:
-            return jsonify({"error": "Vin not found."}), 404
-
-        legacy = data.get("legacy") or {}
-        m = (data.get("merged") or {})
-
-        payload = {
-            "customer_id": legacy.get("customer_id"),
-            "customer_name": m.get("customer_name") or "—",
-            "phone_number": m.get("phone_number") or "",
-            "email": legacy.get("email") or (m.get("email") or ""),
-            "address": legacy.get("address") or "",
-            "zip_code": legacy.get("zip_code") or "",
-            "vehicle_nickname": legacy.get("vehicle_nickname") or "",
-            "vin_number": m.get("vin") or vin,
-            "make": m.get("make") or "",
-            "model": m.get("model") or "",
-            "year": m.get("year") or "",
-            "status": m.get("status") or "",
-            "notes": m.get("notes") or "",
-            "service_history": m.get("service_history") or [],
-            "photo_urls": m.get("photo_urls") or [],
-            "access_token": (data.get("veh") or {}).get("access_token"),
-            "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
+        if (needsDecode(veh)) {
+          try {
+            await decodeVinAndUpdateVehicle(veh.id, v);
+          } catch {
+            setVinStatus("IDENTIFY FAILED — ENTER YEAR/MAKE/MODEL MANUALLY.");
+          }
         }
-        return jsonify(payload), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+      } else {
+        setVinStatus("VIN NOT FOUND — ENTER YEAR/MAKE/MODEL MANUALLY.");
+      }
+    } finally {
+      setVinBusy(false);
+    }
+  };
 
-# ---------------------------
-# ✅ Public report stays PUBLIC and UNTOUCHED
-# ---------------------------
-@app.route("/vin/<value>")
-def public_report(value):
-    """
-    Public:
-      - /vin/<VIN> (17 chars) -> Supabase merge + customer_jobs_legacy history
-      - /vin/<TOKEN> (not 17) -> SQLite token (legacy support)
-    """
-    try:
-        value = (value or "").strip()
+  /** =========================
+   * Step gates
+   * ========================= */
+  const canGoStep2 = () => {
+    const v = normalizeVin(vin);
+    if (!isValidVin(v)) return false;
 
-        # VIN route
-        if len(value) == 17:
-            vin = normalize_vin(value)
-            if not supabase_ready():
-                return render_template("public_report.html", not_found=True, vin=vin), 500
+    const yearNum = yearToNumberOrNull(vehYearText);
+    if (!yearNum) return false;
 
-            data = merged_profile_by_vin(vin)
-            if not data:
-                return render_template("public_report.html", not_found=True, vin=vin), 404
+    if (!vehMake.trim()) return false;
+    if (!vehModel.trim()) return false;
 
-            m = (data.get("merged") or {})
-            vehicle_for_template = {
-                "vin_number": vin,
-                "make": m.get("make") or "",
-                "model": m.get("model") or "",
-                "year": m.get("year") or "",
-            }
-            embed_url = drive_embed_from_folder(m.get("service_history_link") or "")
-            photo_urls = m.get("photo_urls") or []
+    return true;
+  };
 
-            return render_template(
-                "public_report.html",
-                not_found=False,
-                vin=vin,
-                vehicle=vehicle_for_template,
-                service_history=m.get("service_history") or [],
-                embed_url=embed_url,
-                photo_urls=photo_urls,
-            )
+  const canGoStep3 = () => customerName.trim().length > 0;
+  const canGoStep4 = () => true;
+  const canGoStep5 = () => !!selectedPackageId;
 
-        # TOKEN route (legacy)
-        token = normalize_token(value)
-        vehicle = get_vehicle_by_token_sqlite(token)
-        if not vehicle:
-            return render_template("public_report.html", not_found=True, vin="—"), 404
+  /** =========================
+   * Save job
+   * ========================= */
+  const saveJobToSupabase = async (payload: PendingJob) => {
+  
+    // ✅ ALWAYS guarantee idempotency key exists (covers old offline queue items too)
+    const reqId =
+      typeof (payload as any).client_request_id === "string" && (payload as any).client_request_id.trim()
+        ? (payload as any).client_request_id.trim()
+        : uuidv4();
 
-        vin = normalize_vin(vehicle.get("vin_number"))
+    // ✅ important: write it back so later code never sees undefined
+    (payload as any).client_request_id = reqId;
 
-        # ALWAYS HIDE on public
-        vehicle["phone_number"] = ""
-        vehicle["address"] = ""
-        vehicle["zip_code"] = ""
-        vehicle["email"] = ""
+    const v = normalizeVin(payload.vin);
+    if (!isValidVin(v)) throw new Error("INVALID VIN (MUST BE 17 CHARS, NO I/O/Q).");
 
-        history = get_service_history_for_vin_sqlite(vin)
-        embed_url = drive_embed_from_folder(vehicle.get("service_history_link"))
+    const yearNum = payload.vehicle_year;
+    const makeCaps = capsTrim(payload.vehicle_make || "");
+    const modelCaps = capsTrim(payload.vehicle_model || "");
+    if (!yearNum || !makeCaps || !modelCaps) throw new Error("YEAR/MAKE/MODEL REQUIRED (AFTER VIN).");
 
-        return render_template(
-            "public_report.html",
-            not_found=False,
-            vin=vin,
-            vehicle=vehicle,
-            service_history=history,
-            embed_url=embed_url,
-            photo_urls=[],
-        )
+    // ✅ cached + validated
+    const businessId = requireBusinessId(await getActiveBusinessId());
+    console.log("Resolved Business ID:", businessId);
 
-    except Exception as e:
-        tb = traceback.format_exc()
-        print("🔥 ERROR in /vin route:", str(e))
-        print(tb)
-        if request.args.get("debug") == "1":
-            return f"<pre>{tb}</pre>", 500
-        return "Internal Server Error", 500
+    // ✅ Decide final date-only for this job (never empty, never null)
+    const serviceDateFinal = normalizeServiceDateInput(payload.service_date || "") ?? todayDateOnlyNY();
 
-# ============================================================
-# Main
-# ============================================================
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=False) 
+    // ✅ performed_at ISO uses date-only (midday) if available
+    const performedAtIso = serviceDateFinal ? dateOnlyToIsoMidday(serviceDateFinal) : payload.performed_at || new Date().toISOString();
+
+    const pkg = services.find((s) => s.id === payload.selected_package_id);
+    const pkgNameRaw = pkg?.name ?? "SERVICE";
+    const pkgName = capsTrim(pkgNameRaw);
+
+    const addonNames = payload.addon_ids
+      .map((id) => services.find((s) => s.id === id)?.name)
+      .filter(Boolean)
+      .map((n) => capsTrim(String(n))) as string[];
+
+    const description = buildServiceDescription(pkgName, addonNames);
+
+    await upsertLegacyByVin({
+      businessId,
+      vin: v,
+      customerName: payload.customer_name,
+      customerPhone: payload.customer_phone,
+      customerEmail: payload.customer_email,
+      customerAddress: payload.customer_address,
+      customerZip: payload.customer_zip,
+      vehicle: { year: yearNum, make: makeCaps, model: modelCaps },
+      notes: payload.notes,
+      status: "active",
+      work_done: description ? `${pkgName}\n${description}` : pkgName,
+    });
+
+// ... later ...
+
+await upsertLegacyByVin({
+  businessId,
+  vin: v,
+  customerName: payload.customer_name,
+  customerPhone: payload.customer_phone,
+  customerEmail: payload.customer_email,
+  customerAddress: payload.customer_address,
+  customerZip: payload.customer_zip,
+  vehicle: { year: yearNum, make: makeCaps, model: modelCaps },
+  notes: payload.notes,
+  status: "active",
+  work_done: description ? `${pkgName}\n${description}` : pkgName,
+});
+
+// ✅ legacy job history uses the SAME businessId
+const legacyRes = await insertCustomerJobLegacy({
+  businessId,               // ✅ same one
+  vin: v,
+  serviceName: pkgName,
+  serviceDescription: description,
+  serviceDate: serviceDateFinal,
+  clientRequestId: reqId,
+}); 
+
+    // Normalized mirror best-effort
+    try {
+      let vehicleId: string | null = null;
+
+      const foundVeh = await supabase.from("vehicles").select("id,vin,year,make,model").eq("vin", v).limit(1).maybeSingle();
+
+      if (!foundVeh.error && (foundVeh.data as any)?.id) {
+        vehicleId = (foundVeh.data as any).id as string;
+      } else {
+        const createdVeh = await supabase.from("vehicles").insert({ vin: v, business_id: businessId }).select("id").single();
+        if (!createdVeh.error && createdVeh.data?.id) vehicleId = createdVeh.data.id as string;
+      }
+
+      if (vehicleId) {
+        await supabase.from("vehicles").update({ year: yearNum, make: makeCaps, model: modelCaps, business_id: businessId }).eq("id", vehicleId);
+        if (isOnline()) {
+          try {
+            await decodeVinAndUpdateVehicle(vehicleId, v);
+          } catch {}
+        }
+      }
+
+      const phoneNorm = normalizePhone(payload.customer_phone);
+      const typedName = capsTrim(payload.customer_name);
+      const typedPhone = payload.customer_phone.trim();
+      const typedAddress = capsTrim(payload.customer_address || "") || null;
+      const typedZip = normalizeZipString(payload.customer_zip.trim()) || null;
+
+      let customerId: string | null = null;
+
+      if (phoneNorm) {
+        const existingCust = await supabase
+          .from("customers")
+          .select("id, full_name, phone, phone_norm, address, zip_code")
+          .eq("phone_norm", phoneNorm)
+          .limit(1)
+          .maybeSingle();
+
+        if (!existingCust.error && (existingCust.data as any)?.id) {
+          customerId = (existingCust.data as any).id as string;
+          await supabase
+            .from("customers")
+            .update({
+              business_id: businessId,
+              full_name: typedName || (existingCust.data as any).full_name,
+              phone: typedPhone || (existingCust.data as any).phone,
+              phone_norm: phoneNorm,
+              address: typedAddress,
+              zip_code: typedZip,
+            })
+            .eq("id", customerId);
+        } else {
+          const createdCust = await supabase
+            .from("customers")
+            .insert({
+              business_id: businessId,
+              full_name: typedName,
+              phone: typedPhone || null,
+              phone_norm: phoneNorm,
+              address: typedAddress,
+              zip_code: typedZip,
+            })
+            .select("id")
+            .single();
+
+          if (!createdCust.error && createdCust.data?.id) customerId = createdCust.data.id as string;
+        }
+      } else {
+        const createdCust = await supabase
+          .from("customers")
+          .insert({
+            business_id: businessId,
+            full_name: typedName,
+            phone: typedPhone || null,
+            phone_norm: null,
+            address: typedAddress,
+            zip_code: typedZip,
+          })
+          .select("id")
+          .single();
+
+        if (!createdCust.error && createdCust.data?.id) customerId = createdCust.data.id as string;
+      }
+
+      if (customerId && vehicleId) {
+        const totalCents = dollarsToCents(payload.total_charged);
+
+        // ✅ jobs.service_date should also never be "" / null if your column is NOT NULL
+        const serviceDateClean = normalizeServiceDateInput(payload.service_date || "") ?? serviceDateFinal;
+
+        const jobRes = await supabase
+          .from("jobs")
+          .insert({
+            business_id: businessId,
+            customer_id: customerId,
+            vehicle_id: vehicleId,
+            status: "completed",
+            performed_at: performedAtIso,
+            notes: capsTrim(payload.notes) || null,
+            total_price_cents: totalCents,
+            currency: "USD",
+          })
+          .select("id")
+          .single();
+
+        if (!jobRes.error && jobRes.data?.id) {
+          const serviceRows = [payload.selected_package_id, ...payload.addon_ids].map((sid) => ({
+            business_id: businessId,
+            job_id: jobRes.data!.id,
+            service_id: sid,
+            quantity: 1,
+            final_price_cents: null,
+            price_note: null,
+          }));
+
+          await supabase.from("job_services").insert(serviceRows);
+        }
+      }
+    } catch (e) {
+      console.error("Normalized mirror failed (legacy saved):", e);
+    }
+
+    // ✅ surface to caller whether this was a duplicate legacy insert
+    return { vin: v, legacyWasDuplicate: legacyRes.wasDuplicate };
+  };
+
+  const flushQueue = async () => {
+    if (!isOnline()) return;
+    if (syncingQueue) return;
+
+    const q = getQueue();
+    if (q.length === 0) {
+      setQueuedCount(0);
+      return;
+    }
+
+    setSyncingQueue(true);
+
+    try {
+      const ordered = [...q].reverse();
+      for (const item of ordered) {
+        try {
+          bumpAttempt(item.id);
+
+          // ✅ upgrade any older queued items that might be missing the key or date
+          const upgraded: PendingJob = {
+            ...item,
+            client_request_id: item.client_request_id || uuidv4(),
+            performed_at: item.performed_at || new Date().toISOString(),
+            service_date: normalizeServiceDateInput(item.service_date || "") ?? todayDateOnlyNY(),
+          };
+
+          await saveJobToSupabase(upgraded);
+
+          removeFromQueue(item.id);
+          setQueuedCount(getQueue().length);
+        } catch (e) {
+          console.error("Queue sync failed:", e);
+          break;
+        }
+      }
+    } finally {
+      setSyncingQueue(false);
+      setQueuedCount(getQueue().length);
+    }
+  };
+
+  useEffect(() => {
+    const refresh = () => {
+      setOnline(isOnline());
+      setQueuedCount(getQueue().length);
+    };
+
+    refresh();
+
+    const onOnline = () => {
+      refresh();
+      flushQueue();
+    };
+
+    const onOffline = () => refresh();
+
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+
+    const interval = window.setInterval(() => {
+      refresh();
+      if (isOnline()) flushQueue();
+    }, 20000);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      window.clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onSave = async () => {
+    if (savingRef.current) return; // ✅ double-tap protection
+    savingRef.current = true;
+
+    setMsg(null);
+
+    const v = normalizeVin(vin);
+    if (!isValidVin(v)) {
+      savingRef.current = false;
+      return setMsg("VIN MUST BE 17 CHARACTERS (NO I, O, Q).");
+    }
+
+    const yearNum = yearToNumberOrNull(vehYearText);
+    if (!yearNum || !vehMake.trim() || !vehModel.trim()) {
+      savingRef.current = false;
+      return setMsg("YEAR / MAKE / MODEL REQUIRED (AFTER VIN).");
+    }
+
+    if (!customerName.trim()) {
+      savingRef.current = false;
+      return setMsg("CUSTOMER NAME IS REQUIRED.");
+    }
+
+    if (!selectedPackageId) {
+      savingRef.current = false;
+      return setMsg("SELECT A PACKAGE.");
+    }
+
+    const totalCents = dollarsToCents(totalCharged);
+    if (totalCents <= 0) {
+      savingRef.current = false;
+      return setMsg("TOTAL CHARGED MUST BE > $0.");
+    }
+
+    // ✅ OPTIONAL: allow blank → fallback to today
+    const serviceDateClean = normalizeServiceDateInput(serviceDate) ?? todayDateOnlyNY();
+
+    /** ✅ single idempotency key used for live save + any retries/queue */
+    const requestId = jobRequestIdRef.current;
+
+    const payloadBase: Omit<PendingJob, "id" | "created_at" | "attempt_count"> = {
+      client_request_id: requestId,
+      vin: v,
+      vehicle_year: yearNum,
+      vehicle_make: capsTrim(vehMake),
+      vehicle_model: capsTrim(vehModel),
+
+      customer_name: capsTrim(customerName),
+      customer_phone: customerPhone,
+      customer_email: normalizeEmailForDb(customerEmail),
+      customer_address: capsTrim(customerAddress),
+      customer_zip: normalizeZipString(customerZip),
+
+      service_type: serviceType,
+      selected_package_id: selectedPackageId,
+      addon_ids: Object.entries(selectedAddonIds)
+        .filter(([, on]) => on)
+        .map(([id]) => id),
+
+      total_charged: totalCharged,
+      notes: capsTrim(notes),
+
+      // ✅ ALWAYS store a valid date-only for the DB layer (no "", no null)
+      service_date: serviceDateClean,
+      performed_at: dateOnlyToIsoMidday(serviceDateClean),
+    };
+
+    if (!isOnline()) {
+      enqueueJob(payloadBase);
+      setQueuedCount(getQueue().length);
+
+      showToast("OFFLINE ✅ SAVED TO QUEUE");
+      setMsg("OFFLINE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY WHEN YOU’RE BACK ONLINE.");
+
+      goToFreshJob(450);
+      savingRef.current = false;
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      const tempPending: PendingJob = {
+        id: "live",
+        created_at: new Date().toISOString(),
+        attempt_count: 0,
+        ...payloadBase,
+      };
+
+      const res = await saveJobToSupabase(tempPending);
+
+      // ✅ New: clear, visible outcome
+      if (res.legacyWasDuplicate) {
+        // warning is fine
+        showToast("ALREADY LOGGED ✅");
+        setMsg("LOGGED FOR THAT VIN + DATE ✅");
+      } else {
+        showToast("SAVED ✅");
+        setMsg("SAVED ✅");
+      }
+
+      // ✅ New: automatically go back to step 1 after a short beat
+      goToFreshJob(650);
+
+      // keep queue moving
+      flushQueue();
+    } catch (e: any) {
+      console.error(e);
+
+      const message = String(e?.message ?? "").toLowerCase();
+      const likelyNetwork =
+        !isOnline() || message.includes("failed to fetch") || message.includes("fetch") || message.includes("network") || message.includes("timeout");
+
+      if (likelyNetwork) {
+        enqueueJob(payloadBase);
+        setQueuedCount(getQueue().length);
+
+        showToast("SAVED TO QUEUE ✅");
+        setMsg("CONNECTION ISSUE ✅ SAVED TO QUEUE. IT WILL SYNC AUTOMATICALLY.");
+
+        goToFreshJob(450);
+      } else {
+        setMsg((e?.message ?? "ERROR SAVING JOB.").toUpperCase());
+      }
+    } finally {
+      setBusy(false);
+      savingRef.current = false;
+    }
+  };
+
+  /** =========================
+   * Reset
+   * ========================= */
+  const resetForm = () => {
+    jobRequestIdRef.current = uuidv4(); // ✅ new idempotency key for next job
+
+    resetPhotos();
+
+    setStep(1);
+
+    setVin("");
+    setVehicle(null);
+    setVinStatus("");
+
+    setVehYearText("");
+    setVehMake("");
+    setVehModel("");
+
+    setCustomerName("");
+    setCustomerPhone("");
+    setCustomerEmail("");
+    setCustomerAddress("");
+    setCustomerZip("");
+    setZipSuggestions([]);
+
+    setServiceType("full");
+    setSelectedAddonIds({});
+    setAddonQuery("");
+    setAddonsOpen(false);
+
+    setTotalCharged("");
+    setNotes("");
+
+    // ✅ IMPORTANT: never reset to "" (that can later become NULL)
+    setServiceDate(todayDateOnlyNY());
+
+    if (packages[0]?.id) setSelectedPackageId(packages[0].id);
+  };
+
+  /** =========================
+   * Header / UI
+   * ========================= */
+  const headerSubtitle = useMemo(() => {
+    const yearNum = yearToNumberOrNull(vehYearText);
+    const label = vehicle ? vehicleLabel(vehicle) : vehicleLabelParts(yearNum, vehMake, vehModel);
+    const v = normalizeVin(vin);
+    if (!v) return "FAST CAPTURE WHILE YOU’RE ONSITE.";
+    return `${label} • ${maskVin(v)}`;
+  }, [vehicle, vin, vehYearText, vehMake, vehModel]);
+
+  function StepPill({ n, label, active = false }: { n: number; label: string; active?: boolean }) {
+    return (
+      <div
+        className={[
+          "w-full rounded-2xl px-2 py-2",
+          "flex flex-col items-center justify-center gap-1",
+          "ring-1 transition",
+          active ? "bg-purple-600 text-white ring-purple-300/30 shadow" : "bg-zinc-900/40 text-zinc-200 ring-zinc-700/70",
+        ].join(" ")}
+      >
+        <div
+          className={[
+            "h-7 w-7 rounded-full flex items-center justify-center",
+            "text-[12px] font-extrabold",
+            active ? "bg-white text-purple-700" : "bg-zinc-700 text-zinc-100",
+          ].join(" ")}
+        >
+          {n}
+        </div>
+        <div className="text-[10px] font-extrabold tracking-wide leading-none text-center">{label}</div>
+      </div>
+    );
+  }
+
+  const topStatus = !online ? (
+    <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/20 px-3 py-1 text-[11px] font-semibold">
+      OFFLINE • QUEUE {queuedCount}
+    </div>
+  ) : queuedCount > 0 ? (
+    <button
+      type="button"
+      onClick={flushQueue}
+      className="inline-flex items-center gap-2 rounded-full bg-purple-500/10 text-purple-200 ring-1 ring-purple-400/20 px-3 py-1 text-[11px] font-semibold hover:bg-purple-500/15 transition touch-manipulation"
+    >
+      QUEUED {queuedCount} {syncingQueue ? "• SYNCING…" : "• TAP TO SYNC"}
+    </button>
+  ) : (
+    <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 px-3 py-1 text-[11px] font-semibold">
+      ONLINE
+    </div>
+  );
+
+  /** =========================
+   * Render
+   * ========================= */
+  return (
+    <div className="min-h-[100dvh] text-slate-100 overscroll-contain">
+      {/* ✅ Toast (visible confirmation, independent from msg) */}
+      {toast && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[60]">
+          <div className="rounded-full bg-slate-950/90 backdrop-blur px-4 py-2 text-xs font-extrabold ring-1 ring-white/10 shadow">
+            {toast}
+          </div>
+        </div>
+      )}
+
+      <div className="fixed inset-0 -z-10 bg-slate-950">
+        <div
+          className="absolute inset-0 opacity-[0.08]"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+          }}
+        />
+        <div className="absolute -top-40 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-purple-600/20 blur-[90px]" />
+      </div>
+
+      <div className="sticky top-0 z-20">
+        {/* This keeps the header centered and the same width as the form */}
+        <div className="mx-auto max-w-md px-4 pt-3">
+          <div className="rounded-3xl bg-slate-950/80 backdrop-blur ring-1 ring-white/10">
+            <div className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="text-lg font-extrabold tracking-tight">
+                      <span className="text-purple-300">Purple</span> Field
+                    </div>
+                    {topStatus}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-300/80 truncate">{headerSubtitle}</div>
+                  <div className="mt-3 grid grid-cols-5 gap-2">
+                    <StepPill n={1} label="VIN" active={step === 1} />
+                    <StepPill n={2} label="Customer" active={step === 2} />
+                    <StepPill n={3} label="Photos" active={step === 3} />
+                    <StepPill n={4} label="Services" active={step === 4} />
+                    <StepPill n={5} label="Total" active={step === 5} />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await signOut();
+                    router.replace("/login");
+                  }}
+                  className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 ring-white/10 text-slate-200 hover:ring-white/20 hover:text-white transition touch-manipulation"
+                >
+                  SIGN OUT
+                </button>
+              </div>
+
+              {msg && <div className="mt-3 rounded-2xl bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs text-slate-200">{msg}</div>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* =========================
+          BODY (Steps 1-5)
+      ========================= */}
+      <div className="mx-auto max-w-md px-4 pt-3 pb-[calc(7rem+env(safe-area-inset-bottom))]">
+        {loadingServices ? (
+          <SchemaCard title="LOADING">
+            <div className="text-sm text-slate-300">LOADING SERVICES…</div>
+          </SchemaCard>
+        ) : (
+          <div className="space-y-6">
+            {/* STEP 1: VIN */}
+            {step === 1 && (
+              <SchemaCard title="VEHICLE VIN">
+                <SchemaLabel>VIN</SchemaLabel>
+
+                <div className="flex gap-2">
+                  <SchemaInput
+                    ref={vinInputRef} // ✅ focus after save/reset
+                    value={vin}
+                    onChange={(e) => {
+                      const cleaned = normalizeVin(e.target.value).slice(0, 17);
+                      setVin(cleaned);
+                    }}
+                    placeholder="17-character VIN"
+                    inputMode="text"
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    maxLength={17}
+                  />
+
+                  <SchemaButton onClick={lookupVin} disabled={vinBusy || !normalizeVin(vin).length} variant="primary" className="w-[120px]">
+                    {vinBusy ? "…" : "LOOKUP"}
+                  </SchemaButton>
+                </div>
+
+                <div className="mt-2 min-h-[18px] text-[11px] text-slate-300/80">
+                  {vinStatus ? vinStatus : "TIP: LOOKUP LINKS VIN AND IDENTIFIES VEHICLE (ONLINE)."}
+                </div>
+
+                <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
+                  <div className="text-xs font-extrabold text-white/90">YEAR / MAKE / MODEL (REQUIRED)</div>
+
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="col-span-1">
+                      <SchemaLabel>YEAR</SchemaLabel>
+                      <SchemaInput
+                        value={vehYearText}
+                        onChange={(e) => setVehYearText(normalizeYearInput(e.target.value))}
+                        placeholder="2019"
+                        inputMode="numeric"
+                      />
+                    </div>
+
+                    <div className="col-span-2">
+                      <SchemaLabel>MAKE</SchemaLabel>
+                      <SchemaInput value={vehMake} onChange={(e) => setVehMake(toCaps(e.target.value))} placeholder="NISSAN" inputMode="text" />
+                    </div>
+
+                    <div className="col-span-3">
+                      <SchemaLabel>MODEL</SchemaLabel>
+                      <SchemaInput value={vehModel} onChange={(e) => setVehModel(toCaps(e.target.value))} placeholder="KICKS" inputMode="text" />
+                    </div>
+                  </div>
+
+                  {!online && (
+                    <div className="mt-3 text-[11px] text-amber-200/90">
+                      OFFLINE NOTE: ENTER YEAR/MAKE/MODEL MANUALLY — VIN DECODE RESUMES WHEN BACK ONLINE.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-white/90 truncate">
+                      {vehicleLabelParts(yearToNumberOrNull(vehYearText), vehMake, vehModel)}
+                    </div>
+                    <div className="text-xs text-slate-300/70">{normalizeVin(vin).length ? maskVin(vin) : "ENTER VIN TO BEGIN"}</div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setStep(2)}
+                    disabled={!canGoStep2()}
+                    className={[
+                      "text-sm font-semibold transition touch-manipulation",
+                      canGoStep2() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                    ].join(" ")}
+                  >
+                    CONTINUE →
+                  </button>
+                </div>
+              </SchemaCard>
+            )}
+
+            {/* STEP 2: CUSTOMER */}
+            {step === 2 && (
+              <SchemaCard title="CUSTOMER">
+                <SchemaLabel>FULL NAME (REQUIRED)</SchemaLabel>
+                <SchemaInput value={customerName} onChange={(e) => setCustomerName(toCaps(e.target.value))} placeholder="CUSTOMER NAME" />
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="col-span-1">
+                    <SchemaLabel>PHONE</SchemaLabel>
+                    <SchemaInput value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="(919) 555-1234" inputMode="tel" />
+                  </div>
+
+                  <div className="col-span-1">
+                    <SchemaLabel>EMAIL</SchemaLabel>
+                    <SchemaInput
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(toCaps(e.target.value))}
+                      placeholder="EMAIL@DOMAIN.COM"
+                      inputMode="email"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <SchemaLabel>ADDRESS</SchemaLabel>
+                  <SchemaInput value={customerAddress} onChange={(e) => setCustomerAddress(toCaps(e.target.value))} placeholder="123 MAIN ST, ZEBULON, NC" />
+                </div>
+
+                <div className="mt-3">
+                  <SchemaLabel>ZIP</SchemaLabel>
+                  <SchemaInput value={customerZip} onChange={(e) => setCustomerZip(normalizeZipString(e.target.value))} placeholder="27597" inputMode="numeric" />
+                  {zipSuggestions.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {zipSuggestions.map((z) => (
+                        <button
+                          key={z}
+                          type="button"
+                          onClick={() => setCustomerZip(z)}
+                          className="rounded-full px-3 py-1 text-[11px] font-extrabold bg-white/5 ring-1 ring-white/10 text-slate-200 hover:text-white hover:ring-white/20 transition"
+                        >
+                          {z}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
+                  <button type="button" onClick={() => setStep(1)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
+                    ← BACK
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStep(3)}
+                    disabled={!canGoStep3()}
+                    className={[
+                      "text-sm font-semibold transition",
+                      canGoStep3() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                    ].join(" ")}
+                  >
+                    CONTINUE →
+                  </button>
+                </div>
+              </SchemaCard>
+            )}
+
+            {/* STEP 3: PHOTOS */}
+            {step === 3 && (
+              <SchemaCard title="PHOTOS">
+                <div className="text-[11px] text-slate-300/80">Upload photos tied to this VIN. Max 8.</div>
+
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (!files || files.length === 0) return;
+                    addIncomingPhotos(Array.from(files));
+                    e.currentTarget.value = "";
+                  }}
+                />
+
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (!files || files.length === 0) return;
+                    addIncomingPhotos(Array.from(files));
+                    e.currentTarget.value = "";
+                  }}
+                />
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <SchemaButton
+                    variant="ghost"
+                    disabled={!canUploadPhotos || photoBusy}
+                    onClick={() => {
+                      setPhotoMsg(null);
+                      photoInputRef.current?.click();
+                    }}
+                    className="w-full"
+                  >
+                    {canUploadPhotos ? "GALLERY" : "ENTER VIN FIRST"}
+                  </SchemaButton>
+
+                  <SchemaButton
+                    variant="ghost"
+                    disabled={!canUploadPhotos || photoBusy}
+                    onClick={() => {
+                      setPhotoMsg(null);
+                      cameraInputRef.current?.click();
+                    }}
+                    className="w-full"
+                  >
+                    CAMERA
+                  </SchemaButton>
+                </div>
+
+                <div className="mt-2">
+                  <SchemaButton
+                    variant="primary"
+                    disabled={!online || !canUploadPhotos || photoBusy || photos.length === 0}
+                    onClick={() => uploadPhotosForVin(vin, photos)}
+                    className="w-full"
+                  >
+                    {photoBusy ? "UPLOADING…" : !online ? "OFFLINE" : `UPLOAD (${photos.length})`}
+                  </SchemaButton>
+                </div>
+
+                {photos.length > 0 && (
+                  <div className="mt-4 grid grid-cols-4 gap-2">
+                    {photos.map((p) => (
+                      <div key={p.id} className="relative overflow-hidden rounded-xl ring-1 ring-white/10">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p.previewUrl} alt="preview" className="h-20 w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPhotos((prev) => {
+                              const next = prev.filter((x) => x.id !== p.id);
+                              try {
+                                URL.revokeObjectURL(p.previewUrl);
+                              } catch {}
+                              return next;
+                            });
+                          }}
+                          className="absolute top-1 right-1 rounded-full bg-black/60 px-2 py-1 text-[10px] font-extrabold text-white ring-1 ring-white/10"
+                        >
+                          X
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-3 text-[11px] text-slate-300/80">{photoMsg ? photoMsg : `Selected: ${photos.length}/8`}</div>
+
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={resetPhotos}
+                    disabled={photoBusy || photos.length === 0}
+                    className={[
+                      "w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3 text-sm font-extrabold transition",
+                      photoBusy || photos.length === 0 ? "text-slate-500 cursor-not-allowed" : "text-slate-200 hover:ring-white/20 hover:text-white",
+                    ].join(" ")}
+                  >
+                    CLEAR PHOTOS
+                  </button>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
+                  <button type="button" onClick={() => setStep(2)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
+                    ← BACK
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStep(4)}
+                    disabled={!canGoStep4()}
+                    className={[
+                      "text-sm font-semibold transition",
+                      canGoStep4() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                    ].join(" ")}
+                  >
+                    CONTINUE →
+                  </button>
+                </div>
+              </SchemaCard>
+            )}
+
+            {/* STEP 4: SERVICES */}
+            {step === 4 && (
+              <SchemaCard title="SERVICES">
+                <SchemaLabel>SERVICE TYPE</SchemaLabel>
+                <SchemaSelect value={serviceType} onChange={(e) => setServiceType(e.target.value as any)}>
+                  <option value="full">FULL</option>
+                  <option value="interior">INTERIOR</option>
+                  <option value="exterior">EXTERIOR</option>
+                  <option value="ceramic">CERAMIC</option>
+                </SchemaSelect>
+
+                <div className="mt-4">
+                  <SchemaLabel>PACKAGE</SchemaLabel>
+                  <SchemaSelect value={selectedPackageId} onChange={(e) => setSelectedPackageId(e.target.value)}>
+                    {packages.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} {suggestedRangeText(p) ? `• ${suggestedRangeText(p)}` : ""}
+                      </option>
+                    ))}
+                  </SchemaSelect>
+                </div>
+
+                <div className="mt-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-extrabold text-white/90">ADD-ONS</div>
+                    <button
+                      type="button"
+                      onClick={() => setAddonsOpen((v) => !v)}
+                      className="text-[11px] font-extrabold text-purple-200 hover:text-purple-100 transition"
+                    >
+                      {addonsOpen ? "CLOSE" : "OPEN"}
+                    </button>
+                  </div>
+
+                  {addonsOpen && (
+                    <div className="mt-3">
+                      <SchemaInput value={addonQuery} onChange={(e) => setAddonQuery(e.target.value)} placeholder="Search add-ons…" />
+                      <div className="mt-3 space-y-2">
+                        {filteredAddons.map((a) => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => toggleAddon(a.id)}
+                            className={[
+                              "w-full rounded-2xl px-4 py-3 text-left ring-1 transition",
+                              selectedAddonIds[a.id]
+                                ? "bg-purple-500/15 ring-purple-400/30 text-purple-100"
+                                : "bg-white/5 ring-white/10 text-slate-200 hover:ring-white/20",
+                            ].join(" ")}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-extrabold truncate">{a.name}</div>
+                                {a.price_note ? <div className="text-[11px] text-slate-300/80 mt-1">{a.price_note}</div> : null}
+                              </div>
+                              <div className="text-[11px] font-extrabold opacity-80 whitespace-nowrap">{suggestedRangeText(a)}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+
+                      {selectedAddons.length > 0 && (
+                        <div className="mt-3 text-[11px] text-slate-300/80">Selected: {selectedAddons.map((x) => x.name).join(", ")}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3">
+                  <button type="button" onClick={() => setStep(3)} className="text-sm font-semibold text-slate-200 hover:text-white transition">
+                    ← BACK
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStep(5)}
+                    disabled={!canGoStep5()}
+                    className={[
+                      "text-sm font-semibold transition",
+                      canGoStep5() ? "text-purple-200 hover:text-purple-100" : "text-slate-500 cursor-not-allowed",
+                    ].join(" ")}
+                  >
+                    CONTINUE →
+                  </button>
+                </div>
+              </SchemaCard>
+            )}
+
+            {/* STEP 5: TOTAL */}
+            {step === 5 && (
+              <SchemaCard title="TOTAL">
+                <SchemaLabel>SERVICE DATE (OPTIONAL)</SchemaLabel>
+                <SchemaInput
+                  type="date"
+                  value={serviceDate}
+                  // ✅ store raw. normalize at save time. allow clearing.
+                  onChange={(e) => setServiceDate(e.target.value)}
+                  max={todayDateOnlyNY()}
+                />
+                <div className="mt-2 text-[11px] text-slate-300/80">
+                  Leave blank to use today. Set a past date to backfill legacy maintenance history for this VIN.
+                </div>
+
+                <div className="mt-4" />
+
+                <SchemaLabel>TOTAL CHARGED (REQUIRED)</SchemaLabel>
+                <SchemaInput value={totalCharged} onChange={(e) => setTotalCharged(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="300" inputMode="decimal" />
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {quickTotals.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTotalCharged(t)}
+                      className="rounded-full px-3 py-1 text-[11px] font-extrabold bg-white/5 ring-1 ring-white/10 text-slate-200 hover:text-white hover:ring-white/20 transition"
+                    >
+                      ${t}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-4">
+                  <SchemaLabel>NOTES</SchemaLabel>
+                  <SchemaInput value={notes} onChange={(e) => setNotes(toCaps(e.target.value))} placeholder="OPTIONAL NOTES" />
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <SchemaButton variant="ghost" onClick={() => setStep(4)} disabled={busy} className="w-full">
+                    ← BACK
+                  </SchemaButton>
+
+                  <SchemaButton variant="primary" onClick={onSave} disabled={busy} className="w-full">
+                    {busy ? "SAVING…" : "SAVE JOB"}
+                  </SchemaButton>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="mt-4 w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-3 text-sm font-extrabold text-slate-200 hover:ring-white/20 hover:text-white transition"
+                >
+                  RESET
+                </button>
+              </SchemaCard>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** =========================
+* Schema UI components
+* ========================= */
+function SchemaCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-3xl bg-white/[0.03] ring-1 ring-white/10 overflow-hidden">
+      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+        <div className="text-sm font-extrabold tracking-tight text-white/90">{title}</div>
+        <div className="h-2 w-2 rounded-full bg-purple-400/70 shadow-[0_0_16px_rgba(168,85,247,0.35)]" />
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
+  );
+}
+
+function SchemaLabel({ children }: { children: React.ReactNode }) {
+  return <div className="text-[11px] font-semibold text-slate-300/80 mb-2">{children}</div>;
+}
+
+/**
+* ✅ UPDATED: forwardRef so we can focus VIN input after Save
+*/
+const SchemaInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { className?: string }>(function SchemaInput(
+  props,
+  ref
+) {
+  const { className, ...rest } = props;
+  return (
+    <input
+      ref={ref}
+      {...rest}
+      className={[
+        "h-12 w-full rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 text-base text-white/90 placeholder:text-slate-400/70",
+        "focus:outline-none focus:ring-2 focus:ring-purple-400/30",
+        className ?? "",
+      ].join(" ")}
+    />
+  );
+});
+
+function SchemaSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const { className, ...rest } = props;
+  return (
+    <select
+      {...rest}
+      className={[
+        "h-12 w-full rounded-2xl px-4 text-base",
+        "bg-slate-900 text-white ring-1 ring-white/10",
+        "focus:outline-none focus:ring-2 focus:ring-purple-400/30",
+        "[&>option]:bg-slate-900 [&>option]:text-white",
+        "[&>optgroup]:bg-slate-900 [&>optgroup]:text-white",
+        "shadow-sm",
+        className ?? "",
+      ].join(" ")}
+    />
+  );
+}
+
+function SchemaButton({
+  children,
+  onClick,
+  disabled,
+  variant,
+  className,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  variant: "primary" | "ghost";
+  className?: string;
+}) {
+  const base = "h-12 rounded-2xl font-extrabold text-sm transition ring-1 touch-manipulation";
+  const width = className?.includes("w-") ? "" : "w-full";
+
+  const cls =
+    variant === "primary"
+      ? disabled
+        ? "bg-white/5 text-slate-500 cursor-not-allowed ring-white/10"
+        : "bg-purple-500/15 text-purple-100 ring-purple-400/25 hover:bg-purple-500/20"
+      : "bg-white/3 text-slate-200 ring-white/10 hover:ring-white/20 hover:text-white";
+
+  return (
+    <button type="button" onClick={onClick} disabled={!!disabled} className={[base, width, cls, className ?? ""].join(" ")}>
+      {children}
+    </button>
+  );
+} 
