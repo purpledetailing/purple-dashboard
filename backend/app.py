@@ -853,7 +853,7 @@ def search():
         m = (data.get("merged") or {})
 
         payload = {
-            "customer_id": legacy.get("customer_id"),
+            "customer_id": (data.get("latest_customer") or {}).get("id"),
             "customer_name": m.get("customer_name") or "—",
             "phone_number": m.get("phone_number") or "",
             "email": legacy.get("email") or (m.get("email") or ""),
