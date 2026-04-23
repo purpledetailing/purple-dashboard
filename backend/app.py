@@ -211,6 +211,8 @@ ADMIN_EMAILS = {
     if x.strip()
 }
 
+print("ADMIN EMAILS:", ADMIN_EMAILS)
+
 def current_user_email():
     user = getattr(request, "supabase_user", None) or {}
     return (user.get("email") or "").strip().lower()
