@@ -502,6 +502,17 @@
       .edit-status.error {
         color: #b91c1c;
       }
+      .readonly-note {
+        display: none;
+        margin-top: 12px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        border: 1px dashed var(--border-soft);
+        background: #f9fafb;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        line-height: 1.35;
+      }
     </style>
   </head>
 
@@ -598,6 +609,10 @@
                 </button>
               </div>
 
+              <div id="readOnlyNote" class="readonly-note">
+                Read-only customer record. You can view this VIN, but only the owning business or an admin can edit the customer information.
+              </div>
+
               <div id="editCustomerSection" class="edit-section">
                 <div class="panel-title" style="margin-bottom:8px;">Edit Customer</div>
                 <div class="hint">Only customer contact information can be edited here.</div>
@@ -688,6 +703,7 @@
       const PUBLIC_BASE_URL = "";
 
       let currentCustomerId = null;
+      let currentCanEditCustomer = false;
       let originalCustomer = {
         full_name: "",
         phone: "",
@@ -712,6 +728,7 @@
 
       const editCustomerBtn = document.getElementById("editCustomerBtn");
       const editCustomerSection = document.getElementById("editCustomerSection");
+      const readOnlyNote = document.getElementById("readOnlyNote");
       const editName = document.getElementById("editName");
       const editPhone = document.getElementById("editPhone");
       const editEmail = document.getElementById("editEmail");
@@ -843,7 +860,26 @@
         editZip.value = originalCustomer.zip_code;
       }
 
+      function applyEditPermission(canEdit) {
+        currentCanEditCustomer = Boolean(canEdit);
+
+        if (currentCanEditCustomer) {
+          editCustomerBtn.style.display = "inline-flex";
+          readOnlyNote.style.display = "none";
+        } else {
+          editCustomerBtn.style.display = "none";
+          editCustomerSection.style.display = "none";
+          readOnlyNote.style.display = "block";
+        }
+      }
+
       function openEditSection() {
+        if (!currentCanEditCustomer) {
+          editCustomerSection.style.display = "none";
+          readOnlyNote.style.display = "block";
+          return;
+        }
+
         editCustomerSection.style.display = "block";
         editCustomerBtn.textContent = "Editing";
         setSaveStatus("");
@@ -867,6 +903,8 @@
 
       editCustomerBtn.addEventListener("click", () => {
         if (!resultsSection.style.display || resultsSection.style.display === "none") return;
+        if (!currentCanEditCustomer) return;
+
         if (editCustomerSection.style.display === "block") {
           closeEditSection();
         } else {
@@ -879,6 +917,11 @@
       });
 
       saveCustomerBtn.addEventListener("click", async () => {
+        if (!currentCanEditCustomer) {
+          setSaveStatus("You do not have permission to edit this record.", "error");
+          return;
+        }
+
         if (!currentCustomerId) {
           setSaveStatus("No customer record found for editing.", "error");
           return;
@@ -950,7 +993,10 @@
         resultsSection.style.display = "none";
         editCustomerSection.style.display = "none";
         editCustomerBtn.textContent = "Edit Customer";
+        editCustomerBtn.style.display = "inline-flex";
+        readOnlyNote.style.display = "none";
         currentCustomerId = null;
+        currentCanEditCustomer = false;
 
         try {
           const r = await fetchWithAuth(`/search?vin=${encodeURIComponent(vin)}`);
@@ -971,6 +1017,8 @@
 
           currentCustomerId = payload.customer_id || null;
           fillEditFields(payload);
+
+          applyEditPermission(payload.can_edit_customer === true);
 
           statusBadgeEl.innerHTML = makeStatusBadge(payload.status || "");
 
