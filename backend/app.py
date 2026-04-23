@@ -8,6 +8,8 @@ import traceback
 from datetime import datetime, date
 from functools import wraps
 from urllib.parse import quote
+from dotenv import load_dotenv
+load_dotenv()
 
 app = Flask(__name__, template_folder="templates", static_folder="../static")
 
@@ -199,7 +201,7 @@ def sb_post(path: str, json_body: dict, timeout: int = 20):
         return r.json()
     except Exception:
         return None
-        
+
 # ============================================================
 # 🔒 AUTHORIZATION HELPERS (NEW)
 # ============================================================
