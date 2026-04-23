@@ -56,7 +56,6 @@
         opacity: 0.95;
       }
 
-      /* ✅ Logout button */
       .logout-btn {
         position: absolute;
         right: 0;
@@ -151,6 +150,7 @@
         cursor: pointer;
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 6px;
         box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
         transition: transform 0.1s ease, box-shadow 0.15s ease,
@@ -385,7 +385,6 @@
         color: var(--text-muted);
       }
 
-      /* Service history display helpers */
       .history-card {
         border-radius: 10px;
         border: 1px solid rgba(209, 213, 219, 1);
@@ -433,6 +432,49 @@
         font-size: 0.85rem;
         color: #111827;
         line-height: 1.45;
+      }
+
+      .edit-divider {
+        height: 1px;
+        width: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--border-soft),
+          transparent
+        );
+        margin: 16px 0;
+      }
+      .edit-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 10px 14px;
+        margin-top: 8px;
+      }
+      @media (max-width: 700px) {
+        .edit-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .edit-item.full {
+        grid-column: 1 / -1;
+      }
+      .edit-save-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+      }
+      .edit-status {
+        min-height: 1.2em;
+        font-size: 0.85rem;
+      }
+      .edit-status.ok {
+        color: #15803d;
+      }
+      .edit-status.error {
+        color: #b91c1c;
       }
     </style>
   </head>
@@ -524,6 +566,49 @@
                 </div>
               </div>
 
+              <div class="edit-divider"></div>
+
+              <div>
+                <div class="panel-title">Edit Customer</div>
+                <div class="hint" style="margin-top:6px;">
+                  Only customer contact information can be edited here.
+                </div>
+
+                <div class="edit-grid">
+                  <div class="edit-item">
+                    <label class="info-label" for="editName">Full Name</label>
+                    <input type="text" id="editName" class="search-input" placeholder="Full Name" />
+                  </div>
+
+                  <div class="edit-item">
+                    <label class="info-label" for="editPhone">Phone</label>
+                    <input type="text" id="editPhone" class="search-input" placeholder="Phone" />
+                  </div>
+
+                  <div class="edit-item">
+                    <label class="info-label" for="editEmail">Email</label>
+                    <input type="text" id="editEmail" class="search-input" placeholder="Email" />
+                  </div>
+
+                  <div class="edit-item">
+                    <label class="info-label" for="editZip">Zip</label>
+                    <input type="text" id="editZip" class="search-input" placeholder="Zip Code" />
+                  </div>
+
+                  <div class="edit-item full">
+                    <label class="info-label" for="editAddress">Address</label>
+                    <input type="text" id="editAddress" class="search-input" placeholder="Address" />
+                  </div>
+                </div>
+
+                <div class="edit-save-row">
+                  <button type="button" id="saveCustomerBtn" class="search-button">
+                    Save Customer
+                  </button>
+                  <div id="saveStatus" class="edit-status"></div>
+                </div>
+              </div>
+
               <details class="notes" id="notesBlock" style="display:none;">
                 <summary>
                   <span class="label">Notes</span>
@@ -567,15 +652,15 @@
     </div>
 
     <script>
-      // ✅ Logout uses server cookie-based auth
       document.getElementById("logoutBtn")?.addEventListener("click", () => {
         window.location.href = "/logout";
       });
     </script>
 
     <script>
-      // Optional: set to "https://secure.purplevin.com" if you want to force it.
       const PUBLIC_BASE_URL = "";
+
+      let currentCustomerId = null;
 
       const form = document.getElementById("vinForm");
       const vinInput = document.getElementById("vinInput");
@@ -590,6 +675,14 @@
       const mmYearEl = document.getElementById("mmYear");
       const vinNumberEl = document.getElementById("vinNumber");
       const statusBadgeEl = document.getElementById("statusBadge");
+
+      const editNameEl = document.getElementById("editName");
+      const editPhoneEl = document.getElementById("editPhone");
+      const editEmailEl = document.getElementById("editEmail");
+      const editAddressEl = document.getElementById("editAddress");
+      const editZipEl = document.getElementById("editZip");
+      const saveCustomerBtn = document.getElementById("saveCustomerBtn");
+      const saveStatusEl = document.getElementById("saveStatus");
 
       const notesBlock = document.getElementById("notesBlock");
       const notesText = document.getElementById("notesText");
@@ -617,6 +710,12 @@
         statusMessage.textContent = message || "";
         statusMessage.className = "status";
         if (type) statusMessage.classList.add(type);
+      }
+
+      function setSaveStatus(message, type = "") {
+        saveStatusEl.textContent = message || "";
+        saveStatusEl.className = "edit-status";
+        if (type) saveStatusEl.classList.add(type);
       }
 
       function makeStatusBadge(status) {
@@ -683,7 +782,6 @@
         }
       }
 
-      // ✅ IMPORTANT: always include credentials so cookies are sent
       async function fetchWithAuth(url) {
         const r = await fetch(url, { credentials: "include" });
         if (r.status === 401) {
@@ -692,6 +790,53 @@
         }
         return r;
       }
+
+      async function saveCustomer() {
+        if (!currentCustomerId) {
+          setSaveStatus("No customer loaded.", "error");
+          return;
+        }
+
+        setSaveStatus("Saving...");
+
+        const payload = {
+          customer_id: currentCustomerId,
+          full_name: editNameEl.value,
+          phone: editPhoneEl.value,
+          email: editEmailEl.value,
+          address: editAddressEl.value,
+          zip_code: editZipEl.value,
+        };
+
+        try {
+          const res = await fetch("/api/update-customer", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data?.error || "Save failed.");
+          }
+
+          customerNameEl.textContent = editNameEl.value || "—";
+          phoneNumberEl.textContent = editPhoneEl.value || "";
+          emailAddressEl.textContent = editEmailEl.value || "";
+          addressEl.textContent = editAddressEl.value || "";
+          zipCodeEl.textContent = editZipEl.value || "";
+
+          setSaveStatus("Saved ✅", "ok");
+        } catch (err) {
+          setSaveStatus(String(err?.message || err || "Save failed."), "error");
+        }
+      }
+
+      saveCustomerBtn.addEventListener("click", saveCustomer);
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -703,7 +848,9 @@
         }
 
         setStatus("Searching...", "");
+        setSaveStatus("");
         resultsSection.style.display = "none";
+        currentCustomerId = null;
 
         try {
           const r = await fetchWithAuth(`/search?vin=${encodeURIComponent(vin)}`);
@@ -714,7 +861,6 @@
             return;
           }
 
-          // Fill fields
           customerNameEl.textContent = payload.customer_name || "—";
           phoneNumberEl.textContent = payload.phone_number || "";
           addressEl.textContent = payload.address || "";
@@ -723,9 +869,16 @@
           mmYearEl.textContent = `${payload.make || ""} ${payload.model || ""} ${payload.year || ""}`.trim();
           vinNumberEl.textContent = payload.vin_number || vin;
 
+          editNameEl.value = payload.customer_name || "";
+          editPhoneEl.value = payload.phone_number || "";
+          editEmailEl.value = payload.email || "";
+          editAddressEl.value = payload.address || "";
+          editZipEl.value = payload.zip_code || "";
+
+          currentCustomerId = payload.customer_id || null;
+
           statusBadgeEl.innerHTML = makeStatusBadge(payload.status || "");
 
-          // Notes
           const notes = (payload.notes || "").trim();
           if (notes) {
             notesText.textContent = notes;
@@ -735,20 +888,15 @@
             notesText.textContent = "";
           }
 
-          // Share link
           shareLinkEl.value = payload.customer_portal_url || `${getPublicBaseUrl()}/vin/${vin}`;
 
-          // Copy
           copyShareBtn.onclick = async () => {
             const ok = await copyToClipboard(shareLinkEl.value);
             setStatus(ok ? "Copied portal link." : "Copy failed.", ok ? "ok" : "error");
           };
 
-          // Photos
           renderPhotos(payload);
 
-          // Service history (leave your existing logic below if you have it)
-          // For now: just show count + basic list if present
           const history = Array.isArray(payload.service_history) ? payload.service_history : [];
           if (history.length) {
             historyCountLabel.textContent = `${history.length} record(s)`;
@@ -784,11 +932,10 @@
 
           resultsSection.style.display = "block";
           setStatus("Loaded.", "ok");
-
         } catch (err) {
           setStatus(String(err?.message || err || "Error"), "error");
         }
       });
     </script>
   </body>
-</html> 
+</html>
