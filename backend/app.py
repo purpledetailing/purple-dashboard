@@ -8,8 +8,6 @@ import traceback
 from datetime import datetime, date
 from functools import wraps
 from urllib.parse import quote
-from dotenv import load_dotenv
-load_dotenv()
 
 app = Flask(__name__, template_folder="templates", static_folder="../static")
 
