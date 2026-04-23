@@ -199,6 +199,45 @@ def sb_post(path: str, json_body: dict, timeout: int = 20):
         return r.json()
     except Exception:
         return None
+        
+# ============================================================
+# 🔒 AUTHORIZATION HELPERS (NEW)
+# ============================================================
+ADMIN_EMAILS = {
+    x.strip().lower()
+    for x in (os.environ.get("ADMIN_EMAILS") or "").split(",")
+    if x.strip()
+}
+
+def current_user_email():
+    user = getattr(request, "supabase_user", None) or {}
+    return (user.get("email") or "").strip().lower()
+
+def current_user_id():
+    user = getattr(request, "supabase_user", None) or {}
+    return (user.get("id") or "").strip()
+
+def is_admin_user():
+    return current_user_email() in ADMIN_EMAILS
+
+def user_business_ids():
+    uid = current_user_id()
+    if not uid:
+        return []
+
+    try:
+        rows = sb_get("business_users", {
+            "select": "business_id",
+            "user_id": f"eq.{uid}",
+        })
+        return [str(r.get("business_id")) for r in rows if r.get("business_id")]
+    except Exception:
+        return []
+
+def can_edit_business_record(business_id):
+    if is_admin_user():
+        return True
+    return str(business_id) in user_business_ids()
 
 # ---------------------------
 # Supabase Auth helpers (ANON KEY)
@@ -841,8 +880,6 @@ def search():
     vin = normalize_vin(request.args.get("vin"))
     if len(vin) != 17:
         return jsonify({"error": "VIN must be 17 characters."}), 400
-    if not supabase_ready():
-        return jsonify({"error": "Supabase not configured on server."}), 500
 
     try:
         data = merged_profile_by_vin(vin)
@@ -851,9 +888,18 @@ def search():
 
         legacy = data.get("legacy") or {}
         m = (data.get("merged") or {})
+        latest_customer = data.get("latest_customer") or {}
+        veh = data.get("veh") or {}
+
+        # 🔒 determine ownership
+        record_business_id = (
+            legacy.get("business_id")
+            or veh.get("business_id")
+            or ""
+        )
 
         payload = {
-            "customer_id": (data.get("latest_customer") or {}).get("id"),
+            "customer_id": latest_customer.get("id"),
             "customer_name": m.get("customer_name") or "—",
             "phone_number": m.get("phone_number") or "",
             "email": legacy.get("email") or (m.get("email") or ""),
@@ -868,10 +914,15 @@ def search():
             "notes": m.get("notes") or "",
             "service_history": m.get("service_history") or [],
             "photo_urls": m.get("photo_urls") or [],
-            "access_token": (data.get("veh") or {}).get("access_token"),
             "customer_portal_url": f"{request.host_url.rstrip('/')}/vin/{vin}",
+
+            # 🔒 NEW FLAGS
+            "can_edit_customer": can_edit_business_record(record_business_id),
+            "is_admin": is_admin_user(),
         }
+
         return jsonify(payload), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -890,8 +941,23 @@ def update_customer():
         if not customer_id:
             return jsonify({"error": "Missing customer_id"}), 400
 
+        # 🔒 GET BUSINESS OWNER
+        legacy_rows = sb_get(LEGACY_TABLE, {
+            "select": "business_id",
+            "vin": f"eq.{vin}",
+            "limit": "1",
+        })
+
+        record_business_id = ""
+        if legacy_rows:
+            record_business_id = legacy_rows[0].get("business_id")
+
+        # 🔒 SECURITY CHECK
+        if not can_edit_business_record(record_business_id):
+            return jsonify({"error": "Unauthorized"}), 403
+
         # -------------------------
-        # values from form
+        # values
         # -------------------------
         full_name = (data.get("full_name") or "").strip().upper() or None
         email = (data.get("email") or "").strip().lower() or None
@@ -901,7 +967,7 @@ def update_customer():
         zip_code = re.sub(r"\D", "", data.get("zip_code") or "") or None
 
         # -------------------------
-        # update customers table
+        # update customers
         # -------------------------
         customer_payload = {
             "full_name": full_name,
@@ -915,39 +981,23 @@ def update_customer():
 
         if customer_payload:
             url = f"{SUPABASE_URL}/rest/v1/customers?id=eq.{quote(customer_id)}"
-            r = requests.patch(
-                url,
-                headers=supabase_headers_service_role(),
-                json=customer_payload,
-                timeout=20,
-            )
-            if r.status_code not in (200, 204):
-                return jsonify({"error": f"customers update failed: {r.text}"}), 500
+            requests.patch(url, headers=supabase_headers_service_role(), json=customer_payload)
 
         # -------------------------
-        # update legacy table too
-        # dashboard currently reads from here
+        # update legacy
         # -------------------------
-        if vin:
-            legacy_payload = {
-                "customer_name": full_name,
-                "email": email,
-                "phone_number": phone,
-                "address": address,
-                "zip_code": zip_code,
-            }
-            legacy_payload = {k: v for k, v in legacy_payload.items() if v is not None}
+        legacy_payload = {
+            "customer_name": full_name,
+            "email": email,
+            "phone_number": phone,
+            "address": address,
+            "zip_code": zip_code,
+        }
+        legacy_payload = {k: v for k, v in legacy_payload.items() if v is not None}
 
-            if legacy_payload:
-                legacy_url = f"{SUPABASE_URL}/rest/v1/{LEGACY_TABLE}?vin=eq.{quote(vin)}"
-                r2 = requests.patch(
-                    legacy_url,
-                    headers=supabase_headers_service_role(),
-                    json=legacy_payload,
-                    timeout=20,
-                )
-                if r2.status_code not in (200, 204):
-                    return jsonify({"error": f"legacy update failed: {r2.text}"}), 500
+        if legacy_payload:
+            legacy_url = f"{SUPABASE_URL}/rest/v1/{LEGACY_TABLE}?vin=eq.{quote(vin)}"
+            requests.patch(legacy_url, headers=supabase_headers_service_role(), json=legacy_payload)
 
         return jsonify({"success": True})
 
