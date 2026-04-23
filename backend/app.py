@@ -882,44 +882,77 @@ def search():
 @require_auth
 def update_customer():
     try:
-        data = request.get_json(force=True)
+        data = request.get_json(force=True) or {}
 
         customer_id = str(data.get("customer_id") or "").strip()
+        vin = normalize_vin(data.get("vin") or "")
+
         if not customer_id:
             return jsonify({"error": "Missing customer_id"}), 400
 
-        payload = {
-            "full_name": (data.get("full_name") or "").strip().upper() or None,
-            "email": (data.get("email") or "").strip().lower() or None,
-            "phone": (data.get("phone") or "").strip() or None,
-            "phone_norm": re.sub(r"\D", "", data.get("phone") or "") or None,
-            "address": (data.get("address") or "").strip().upper() or None,
-            "zip_code": re.sub(r"\D", "", data.get("zip_code") or "") or None,
+        # -------------------------
+        # values from form
+        # -------------------------
+        full_name = (data.get("full_name") or "").strip().upper() or None
+        email = (data.get("email") or "").strip().lower() or None
+        phone = (data.get("phone") or "").strip() or None
+        phone_norm = re.sub(r"\D", "", data.get("phone") or "") or None
+        address = (data.get("address") or "").strip().upper() or None
+        zip_code = re.sub(r"\D", "", data.get("zip_code") or "") or None
+
+        # -------------------------
+        # update customers table
+        # -------------------------
+        customer_payload = {
+            "full_name": full_name,
+            "email": email,
+            "phone": phone,
+            "phone_norm": phone_norm,
+            "address": address,
+            "zip_code": zip_code,
         }
+        customer_payload = {k: v for k, v in customer_payload.items() if v is not None}
 
-        # remove empty values so we don’t overwrite with null
-        payload = {k: v for k, v in payload.items() if v is not None}
+        if customer_payload:
+            url = f"{SUPABASE_URL}/rest/v1/customers?id=eq.{quote(customer_id)}"
+            r = requests.patch(
+                url,
+                headers=supabase_headers_service_role(),
+                json=customer_payload,
+                timeout=20,
+            )
+            if r.status_code not in (200, 204):
+                return jsonify({"error": f"customers update failed: {r.text}"}), 500
 
-        if not payload:
-            return jsonify({"error": "No valid fields provided"}), 400
+        # -------------------------
+        # update legacy table too
+        # dashboard currently reads from here
+        # -------------------------
+        if vin:
+            legacy_payload = {
+                "customer_name": full_name,
+                "email": email,
+                "phone_number": phone,
+                "address": address,
+                "zip_code": zip_code,
+            }
+            legacy_payload = {k: v for k, v in legacy_payload.items() if v is not None}
 
-        url = f"{SUPABASE_URL}/rest/v1/customers?id=eq.{customer_id}"
-
-        r = requests.patch(
-            url,
-            headers=supabase_headers_service_role(),
-            json=payload,
-            timeout=20
-        )
-
-        if r.status_code not in (200, 204):
-            return jsonify({"error": r.text}), 500
+            if legacy_payload:
+                legacy_url = f"{SUPABASE_URL}/rest/v1/{LEGACY_TABLE}?vin=eq.{quote(vin)}"
+                r2 = requests.patch(
+                    legacy_url,
+                    headers=supabase_headers_service_role(),
+                    json=legacy_payload,
+                    timeout=20,
+                )
+                if r2.status_code not in (200, 204):
+                    return jsonify({"error": f"legacy update failed: {r2.text}"}), 500
 
         return jsonify({"success": True})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-        
 # ---------------------------
 # ✅ Public report stays PUBLIC and UNTOUCHED
 # ---------------------------
