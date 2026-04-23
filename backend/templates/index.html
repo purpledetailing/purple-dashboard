@@ -150,7 +150,6 @@
         cursor: pointer;
         display: inline-flex;
         align-items: center;
-        justify-content: center;
         gap: 6px;
         box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
         transition: transform 0.1s ease, box-shadow 0.15s ease,
@@ -434,41 +433,68 @@
         line-height: 1.45;
       }
 
-      .edit-divider {
-        height: 1px;
-        width: 100%;
-        background: linear-gradient(
-          90deg,
-          transparent,
-          var(--border-soft),
-          transparent
-        );
-        margin: 16px 0;
+      .edit-toolbar {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 14px;
+      }
+      .edit-toggle-btn {
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        padding: 7px 12px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        background: #f9fafb;
+        color: var(--text-main);
+        cursor: pointer;
+      }
+      .edit-toggle-btn:hover {
+        background: #f3f4f6;
+      }
+      .edit-section {
+        display: none;
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px dashed var(--border-soft);
+        background: #fafafa;
       }
       .edit-grid {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: 10px 14px;
-        margin-top: 8px;
       }
       @media (max-width: 700px) {
         .edit-grid {
           grid-template-columns: minmax(0, 1fr);
         }
       }
-      .edit-item.full {
+      .edit-full {
         grid-column: 1 / -1;
       }
-      .edit-save-row {
+      .edit-actions {
         display: flex;
         align-items: center;
-        gap: 10px;
-        margin-top: 12px;
+        gap: 8px;
         flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      .secondary-button {
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        padding: 10px 16px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        background: #f9fafb;
+        color: var(--text-main);
+        cursor: pointer;
+      }
+      .secondary-button:hover {
+        background: #f3f4f6;
       }
       .edit-status {
-        min-height: 1.2em;
         font-size: 0.85rem;
+        min-height: 1.2em;
       }
       .edit-status.ok {
         color: #15803d;
@@ -566,44 +592,45 @@
                 </div>
               </div>
 
-              <div class="edit-divider"></div>
+              <div class="edit-toolbar">
+                <button type="button" id="editCustomerBtn" class="edit-toggle-btn">
+                  Edit Customer
+                </button>
+              </div>
 
-              <div>
-                <div class="panel-title">Edit Customer</div>
-                <div class="hint" style="margin-top:6px;">
-                  Only customer contact information can be edited here.
-                </div>
+              <div id="editCustomerSection" class="edit-section">
+                <div class="panel-title" style="margin-bottom:8px;">Edit Customer</div>
+                <div class="hint">Only customer contact information can be edited here.</div>
 
-                <div class="edit-grid">
-                  <div class="edit-item">
+                <div class="edit-grid" style="margin-top:10px;">
+                  <div>
                     <label class="info-label" for="editName">Full Name</label>
                     <input type="text" id="editName" class="search-input" placeholder="Full Name" />
                   </div>
-
-                  <div class="edit-item">
+                  <div>
                     <label class="info-label" for="editPhone">Phone</label>
                     <input type="text" id="editPhone" class="search-input" placeholder="Phone" />
                   </div>
-
-                  <div class="edit-item">
+                  <div>
                     <label class="info-label" for="editEmail">Email</label>
                     <input type="text" id="editEmail" class="search-input" placeholder="Email" />
                   </div>
-
-                  <div class="edit-item">
+                  <div>
                     <label class="info-label" for="editZip">Zip</label>
                     <input type="text" id="editZip" class="search-input" placeholder="Zip Code" />
                   </div>
-
-                  <div class="edit-item full">
+                  <div class="edit-full">
                     <label class="info-label" for="editAddress">Address</label>
                     <input type="text" id="editAddress" class="search-input" placeholder="Address" />
                   </div>
                 </div>
 
-                <div class="edit-save-row">
+                <div class="edit-actions">
                   <button type="button" id="saveCustomerBtn" class="search-button">
                     Save Customer
+                  </button>
+                  <button type="button" id="cancelEditBtn" class="secondary-button">
+                    Cancel
                   </button>
                   <div id="saveStatus" class="edit-status"></div>
                 </div>
@@ -661,6 +688,13 @@
       const PUBLIC_BASE_URL = "";
 
       let currentCustomerId = null;
+      let originalCustomer = {
+        full_name: "",
+        phone: "",
+        email: "",
+        address: "",
+        zip_code: "",
+      };
 
       const form = document.getElementById("vinForm");
       const vinInput = document.getElementById("vinInput");
@@ -676,13 +710,16 @@
       const vinNumberEl = document.getElementById("vinNumber");
       const statusBadgeEl = document.getElementById("statusBadge");
 
-      const editNameEl = document.getElementById("editName");
-      const editPhoneEl = document.getElementById("editPhone");
-      const editEmailEl = document.getElementById("editEmail");
-      const editAddressEl = document.getElementById("editAddress");
-      const editZipEl = document.getElementById("editZip");
+      const editCustomerBtn = document.getElementById("editCustomerBtn");
+      const editCustomerSection = document.getElementById("editCustomerSection");
+      const editName = document.getElementById("editName");
+      const editPhone = document.getElementById("editPhone");
+      const editEmail = document.getElementById("editEmail");
+      const editAddress = document.getElementById("editAddress");
+      const editZip = document.getElementById("editZip");
       const saveCustomerBtn = document.getElementById("saveCustomerBtn");
-      const saveStatusEl = document.getElementById("saveStatus");
+      const cancelEditBtn = document.getElementById("cancelEditBtn");
+      const saveStatus = document.getElementById("saveStatus");
 
       const notesBlock = document.getElementById("notesBlock");
       const notesText = document.getElementById("notesText");
@@ -713,9 +750,9 @@
       }
 
       function setSaveStatus(message, type = "") {
-        saveStatusEl.textContent = message || "";
-        saveStatusEl.className = "edit-status";
-        if (type) saveStatusEl.classList.add(type);
+        saveStatus.textContent = message || "";
+        saveStatus.className = "edit-status";
+        if (type) saveStatus.classList.add(type);
       }
 
       function makeStatusBadge(status) {
@@ -782,6 +819,43 @@
         }
       }
 
+      function fillEditFields(payload) {
+        originalCustomer = {
+          full_name: payload.customer_name || "",
+          phone: payload.phone_number || "",
+          email: payload.email || "",
+          address: payload.address || "",
+          zip_code: payload.zip_code || "",
+        };
+
+        editName.value = originalCustomer.full_name;
+        editPhone.value = originalCustomer.phone;
+        editEmail.value = originalCustomer.email;
+        editAddress.value = originalCustomer.address;
+        editZip.value = originalCustomer.zip_code;
+      }
+
+      function resetEditFields() {
+        editName.value = originalCustomer.full_name;
+        editPhone.value = originalCustomer.phone;
+        editEmail.value = originalCustomer.email;
+        editAddress.value = originalCustomer.address;
+        editZip.value = originalCustomer.zip_code;
+      }
+
+      function openEditSection() {
+        editCustomerSection.style.display = "block";
+        editCustomerBtn.textContent = "Editing";
+        setSaveStatus("");
+      }
+
+      function closeEditSection() {
+        editCustomerSection.style.display = "none";
+        editCustomerBtn.textContent = "Edit Customer";
+        setSaveStatus("");
+        resetEditFields();
+      }
+
       async function fetchWithAuth(url) {
         const r = await fetch(url, { credentials: "include" });
         if (r.status === 401) {
@@ -791,9 +865,22 @@
         return r;
       }
 
-      async function saveCustomer() {
+      editCustomerBtn.addEventListener("click", () => {
+        if (!resultsSection.style.display || resultsSection.style.display === "none") return;
+        if (editCustomerSection.style.display === "block") {
+          closeEditSection();
+        } else {
+          openEditSection();
+        }
+      });
+
+      cancelEditBtn.addEventListener("click", () => {
+        closeEditSection();
+      });
+
+      saveCustomerBtn.addEventListener("click", async () => {
         if (!currentCustomerId) {
-          setSaveStatus("No customer loaded.", "error");
+          setSaveStatus("No customer record found for editing.", "error");
           return;
         }
 
@@ -801,11 +888,11 @@
 
         const payload = {
           customer_id: currentCustomerId,
-          full_name: editNameEl.value,
-          phone: editPhoneEl.value,
-          email: editEmailEl.value,
-          address: editAddressEl.value,
-          zip_code: editZipEl.value,
+          full_name: editName.value,
+          phone: editPhone.value,
+          email: editEmail.value,
+          address: editAddress.value,
+          zip_code: editZip.value,
         };
 
         try {
@@ -824,19 +911,29 @@
             throw new Error(data?.error || "Save failed.");
           }
 
-          customerNameEl.textContent = editNameEl.value || "—";
-          phoneNumberEl.textContent = editPhoneEl.value || "";
-          emailAddressEl.textContent = editEmailEl.value || "";
-          addressEl.textContent = editAddressEl.value || "";
-          zipCodeEl.textContent = editZipEl.value || "";
+          customerNameEl.textContent = editName.value || "—";
+          phoneNumberEl.textContent = editPhone.value || "";
+          addressEl.textContent = editAddress.value || "";
+          zipCodeEl.textContent = editZip.value || "";
+          emailAddressEl.textContent = editEmail.value || "";
+
+          originalCustomer = {
+            full_name: editName.value || "",
+            phone: editPhone.value || "",
+            email: editEmail.value || "",
+            address: editAddress.value || "",
+            zip_code: editZip.value || "",
+          };
 
           setSaveStatus("Saved ✅", "ok");
+
+          setTimeout(() => {
+            closeEditSection();
+          }, 700);
         } catch (err) {
           setSaveStatus(String(err?.message || err || "Save failed."), "error");
         }
-      }
-
-      saveCustomerBtn.addEventListener("click", saveCustomer);
+      });
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -850,6 +947,8 @@
         setStatus("Searching...", "");
         setSaveStatus("");
         resultsSection.style.display = "none";
+        editCustomerSection.style.display = "none";
+        editCustomerBtn.textContent = "Edit Customer";
         currentCustomerId = null;
 
         try {
@@ -869,13 +968,8 @@
           mmYearEl.textContent = `${payload.make || ""} ${payload.model || ""} ${payload.year || ""}`.trim();
           vinNumberEl.textContent = payload.vin_number || vin;
 
-          editNameEl.value = payload.customer_name || "";
-          editPhoneEl.value = payload.phone_number || "";
-          editEmailEl.value = payload.email || "";
-          editAddressEl.value = payload.address || "";
-          editZipEl.value = payload.zip_code || "";
-
           currentCustomerId = payload.customer_id || null;
+          fillEditFields(payload);
 
           statusBadgeEl.innerHTML = makeStatusBadge(payload.status || "");
 
