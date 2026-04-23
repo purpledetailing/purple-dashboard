@@ -875,51 +875,6 @@ def search():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ============================================================
-# CUSTOMER EDIT (SAFE UPDATE)
-# ============================================================
-@app.route("/api/update-customer", methods=["POST"])
-@require_auth
-def update_customer():
-    try:
-        data = request.get_json(force=True)
-
-        customer_id = (data.get("customer_id") or "").strip()
-        if not customer_id:
-            return jsonify({"error": "Missing customer_id"}), 400
-
-        payload = {
-            "full_name": (data.get("full_name") or "").strip().upper() or None,
-            "email": (data.get("email") or "").strip().lower() or None,
-            "phone": (data.get("phone") or "").strip() or None,
-            "phone_norm": re.sub(r"\D", "", data.get("phone") or "") or None,
-            "address": (data.get("address") or "").strip().upper() or None,
-            "zip_code": re.sub(r"\D", "", data.get("zip_code") or "") or None,
-        }
-
-        # remove empty values so we don’t overwrite with null
-        payload = {k: v for k, v in payload.items() if v is not None}
-
-        if not payload:
-            return jsonify({"error": "No valid fields provided"}), 400
-
-        url = f"{SUPABASE_URL}/rest/v1/customers?id=eq.{customer_id}"
-
-        r = requests.patch(
-            url,
-            headers=supabase_headers_service_role(),
-            json=payload,
-            timeout=20
-        )
-
-        if r.status_code not in (200, 204):
-            return jsonify({"error": r.text}), 500
-
-        return jsonify({"success": True})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-        
 # ---------------------------
 # ✅ Public report stays PUBLIC and UNTOUCHED
 # ---------------------------
