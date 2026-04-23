@@ -884,7 +884,7 @@ def update_customer():
     try:
         data = request.get_json(force=True)
 
-        customer_id = (data.get("customer_id") or "").strip()
+        customer_id = str(data.get("customer_id") or "").strip()
         if not customer_id:
             return jsonify({"error": "Missing customer_id"}), 400
 
