@@ -239,6 +239,39 @@ def can_edit_business_record(business_id):
         return True
     return str(business_id) in user_business_ids()
 
+# ============================================================
+# 💰 PAYWALL CHECK
+# ============================================================
+def get_business_subscription_status(user):
+    try:
+        user_id = user.get("id")
+
+        rows = sb_get("business_users", {
+            "select": "business_id",
+            "user_id": f"eq.{user_id}",
+            "limit": "1"
+        })
+
+        if not rows:
+            return None
+
+        business_id = rows[0].get("business_id")
+
+        biz = sb_get("businesses", {
+            "select": "subscription_status",
+            "id": f"eq.{business_id}",
+            "limit": "1"
+        })
+
+        if not biz:
+            return None
+
+        return (biz[0].get("subscription_status") or "").lower()
+
+    except Exception as e:
+        print("Subscription check error:", str(e))
+        return None
+
 # ---------------------------
 # Supabase Auth helpers (ANON KEY)
 # ---------------------------
@@ -1003,6 +1036,15 @@ def update_customer():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+    # 🚫 PAYWALL BLOCK
+        sub_status = get_business_subscription_status(request.supabase_user)
+
+        if sub_status != "active":
+            return jsonify({
+                "error": "PAYMENT REQUIRED",
+                "message": "Activate your account to save records."
+            }), 402 
 # ---------------------------
 # ✅ Public report stays PUBLIC and UNTOUCHED
 # ---------------------------
