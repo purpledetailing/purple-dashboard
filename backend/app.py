@@ -349,7 +349,7 @@ def require_auth(fn):
                 return jsonify({"error": "AUTH REQUIRED"}), 401
                 
             nxt = request.full_path if request.query_string else request.path
-            return redirect(f"/login?next={safe_next_path(nxt)}")
+            return redirect(f"https://secure.purplevin.com/login?next={safe_next_path(nxt)}")
 
         # ✅ User exists → NOW check approval
         request.supabase_user = user
@@ -364,69 +364,6 @@ def require_auth(fn):
                     "error": "ACCESS PENDING",
                     "message": "Your account is pending approval."
         }), 403
-
-            from flask import Response
-
-            return Response("""
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Access Pending</title>
-  <style>
-    body {
-      margin: 0;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: radial-gradient(circle at top left, #5b1fa6, #0b1020);
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      color: white;
-    }
-
-    .card {
-      background: rgba(255,255,255,0.08);
-      padding: 40px;
-      border-radius: 16px;
-      text-align: center;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-    }
-
-    h1 {
-      font-size: 28px;
-      margin-bottom: 10px;
-    }
-
-    p {
-      opacity: 0.7;
-    }
-
-    a {
-      display: inline-block;
-      margin-top: 20px;
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
-      border: 1px solid rgba(255,255,255,0.3);
-      padding: 10px 18px;
-      border-radius: 999px;
-    }
-
-    a:hover {
-      background: rgba(255,255,255,0.1);
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Account Pending Approval</h1>
-    <p>We’ll review your account and contact you within 24 hours.</p>
-    <a href="/login">Back to Login</a>
-  </div>
-</body>
-</html>
-""", status=403, mimetype="text/html") 
 
         # ✅ Only approved users reach your app
         return fn(*args, **kwargs)
