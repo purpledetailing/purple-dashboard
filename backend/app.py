@@ -365,10 +365,105 @@ def require_auth(fn):
                     "message": "Your account is pending approval."
         }), 403
 
-            return (
-        "Your account is pending approval. We will contact you.",
-        403
-    )
+            return """
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Access Pending</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0a0a0a;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      max-width: 400px;
+      backdrop-filter: blur(10px);
+    }
+
+    .title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 20px;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(168,85,247,0.15);
+      color: #c084fc;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+
+    .btn {
+      display: inline-block;
+      margin-top: 15px;
+      padding: 12px 18px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: white;
+      text-decoration: none;
+      font-size: 13px;
+    }
+
+    .glow {
+      position: absolute;
+      top: 20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 300px;
+      height: 300px;
+      background: rgba(168,85,247,0.2);
+      filter: blur(100px);
+      z-index: -1;
+    }
+  </style>
+</head>
+<body>
+
+<div class="glow"></div>
+
+<div class="card">
+  <div class="status">ACCESS PENDING</div>
+
+  <div class="title">You're Almost In</div>
+
+  <div class="subtitle">
+    Your account is under review.<br><br>
+    We’ll activate your access shortly.
+  </div>
+
+  <div class="subtitle" style="font-size:12px;">
+    Typical approval time: <strong>within 24 hours</strong>
+  </div>
+
+  <a href="/login" class="btn">Back to Login</a>
+</div>
+
+</body>
+</html>
+""", 403
 
         # ✅ Only approved users reach your app
         return fn(*args, **kwargs)
