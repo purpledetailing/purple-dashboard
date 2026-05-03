@@ -2,24 +2,20 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter } from "next/navigation";
 
 export default function SignupPage() {
-  const router = useRouter();
-
   const [businessName, setBusinessName] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [err, setErr] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false); // 🔥 NEW
 
   async function onSignup(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    setMsg(null);
     setLoading(true);
 
     const cleanBusiness = businessName.trim();
@@ -43,7 +39,7 @@ export default function SignupPage() {
     }
 
     try {
-      // Save pending business info for login to consume and create DB rows AFTER auth session exists
+      // Store lead data locally (you can later push this to DB if needed)
       localStorage.setItem(
         "pv_pending_signup",
         JSON.stringify({
@@ -54,12 +50,10 @@ export default function SignupPage() {
         })
       );
 
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
         options: {
-          // IMPORTANT: this should be your deployed site domain (not localhost)
-          // Supabase will send users back here after email confirm (if you use "email link" flow).
           emailRedirectTo: "https://intel.purplevin.com/login",
           data: {
             full_name: cleanName,
@@ -70,16 +64,9 @@ export default function SignupPage() {
 
       if (error) throw error;
 
-      // If email confirmation is ON, session is usually null.
-      // Either way, we send them to /login. Login page will create business row after session exists.
-      if (!data.session) {
-        setMsg("Check your email to confirm your account, then come back and log in.");
-        router.replace("/login");
-        return;
-      }
+      // 🔥 IMPORTANT: DO NOT redirect
+      setSubmitted(true);
 
-      // If session exists immediately (confirm off), still route to login for a clean, consistent flow
-      router.replace("/login");
     } catch (e: any) {
       console.error("SIGNUP FAILED:", e);
       setErr(e?.message ?? "Signup failed");
@@ -88,11 +75,33 @@ export default function SignupPage() {
     }
   }
 
+  // 🔥 PENDING STATE SCREEN
+  if (submitted) {
+    return (
+      <div style={{ maxWidth: 520, margin: "80px auto", padding: 20, textAlign: "center" }}>
+        <h1 style={{ fontSize: 34, fontWeight: 900 }}>Request Received</h1>
+
+        <p style={{ marginTop: 16, fontSize: 16, opacity: 0.85 }}>
+          Your account has been submitted for review.
+        </p>
+
+        <p style={{ marginTop: 10, fontSize: 15, opacity: 0.75 }}>
+          A PurpleVin specialist will contact you within 24 hours to approve access.
+        </p>
+
+        <p style={{ marginTop: 20, fontSize: 13, opacity: 0.6 }}>
+          Please check your email to confirm your address.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 520, margin: "48px auto", padding: 16 }}>
-      <h1 style={{ fontSize: 34, fontWeight: 900 }}>Create Business Account</h1>
+      <h1 style={{ fontSize: 34, fontWeight: 900 }}>Request Access</h1>
+
       <p style={{ opacity: 0.8, marginTop: 8 }}>
-        Start capturing cosmetic history with PurpleVin.
+        Submit your business for review. We’ll contact you within 24 hours to approve access.
       </p>
 
       <form onSubmit={onSignup} style={{ display: "grid", gap: 10, marginTop: 18 }}>
@@ -102,12 +111,14 @@ export default function SignupPage() {
           placeholder="Business name"
           style={{ padding: 12, borderRadius: 10, border: "1px solid #ddd" }}
         />
+
         <input
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           placeholder="Your name"
           style={{ padding: 12, borderRadius: 10, border: "1px solid #ddd" }}
         />
+
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -115,6 +126,7 @@ export default function SignupPage() {
           autoComplete="email"
           style={{ padding: 12, borderRadius: 10, border: "1px solid #ddd" }}
         />
+
         <input
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -125,7 +137,6 @@ export default function SignupPage() {
         />
 
         {err && <div style={{ color: "crimson", fontSize: 14 }}>{err}</div>}
-        {msg && <div style={{ color: "seagreen", fontSize: 14 }}>{msg}</div>}
 
         <button
           disabled={loading}
@@ -138,12 +149,12 @@ export default function SignupPage() {
             opacity: loading ? 0.7 : 1,
           }}
         >
-          {loading ? "Creating..." : "Create Account"}
+          {loading ? "Submitting..." : "Request Access"}
         </button>
       </form>
 
       <div style={{ marginTop: 14, fontSize: 14, opacity: 0.85 }}>
-        Already have one? <a href="/login">Log in</a>
+        Already have access? <a href="/login">Log in</a>
       </div>
     </div>
   );
