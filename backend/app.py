@@ -242,7 +242,7 @@ def can_edit_business_record(business_id):
 # ============================================================
 # 💰 PAYWALL CHECK
 # ============================================================
-def get_business_subscription_status(user):
+def get_business_approval_status(user):
     try:
         user_id = user.get("id")
 
@@ -258,7 +258,7 @@ def get_business_subscription_status(user):
         business_id = rows[0].get("business_id")
 
         biz = sb_get("businesses", {
-            "select": "subscription_status",
+            "select": "approval_status",
             "id": f"eq.{business_id}",
             "limit": "1"
         })
@@ -266,10 +266,10 @@ def get_business_subscription_status(user):
         if not biz:
             return None
 
-        return (biz[0].get("subscription_status") or "").lower()
+        return (biz[0].get("approval_status") or "").lower()
 
     except Exception as e:
-        print("Subscription check error:", str(e))
+        print("Approval check error:", str(e))
         return None
 
 # ---------------------------
