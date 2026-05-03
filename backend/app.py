@@ -881,13 +881,13 @@ def login():
     # ✅ Get user from token
         user = sb_auth_user(access_token)
         if not user:
-        return ("Unable to verify user.", 401)
+            return ("Unable to verify user.", 401)
 
     # ✅ CHECK APPROVAL STATUS (NEW SYSTEM)
         status = get_business_approval_status(user)
 
         if status != "approved":
-        return (
+            return (
             "Your account is pending approval. We will contact you within 24 hours from signup@purplevin.com.",
             403
         )
