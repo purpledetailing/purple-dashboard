@@ -348,8 +348,7 @@ def require_auth(fn):
             if wants_json():
                 return jsonify({"error": "AUTH REQUIRED"}), 401
                 
-            nxt = request.full_path if request.query_string else 
-        request.path
+            nxt = request.full_path if request.query_string else request.path
             return redirect(f"/login?next={safe_next_path(nxt)}")
 
         # ✅ User exists → NOW check approval
