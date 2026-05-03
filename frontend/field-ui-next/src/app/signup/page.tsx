@@ -10,12 +10,13 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
 
   const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false); // 🔥 NEW
 
   async function onSignup(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    setMsg(null);
     setLoading(true);
 
     const cleanBusiness = businessName.trim();
@@ -23,23 +24,25 @@ export default function SignupPage() {
     const cleanEmail = email.trim();
 
     if (!cleanBusiness) {
-      setLoading(false);
       setErr("Business name is required.");
+      setLoading(false);
       return;
     }
+
     if (!cleanEmail) {
-      setLoading(false);
       setErr("Email is required.");
+      setLoading(false);
       return;
     }
+
     if (!password || password.length < 6) {
-      setLoading(false);
       setErr("Password must be at least 6 characters.");
+      setLoading(false);
       return;
     }
 
     try {
-      // Store lead data locally (you can later push this to DB if needed)
+      // Save locally for later use
       localStorage.setItem(
         "pv_pending_signup",
         JSON.stringify({
@@ -50,6 +53,7 @@ export default function SignupPage() {
         })
       );
 
+      // Create Supabase user
       const { error } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
@@ -64,47 +68,39 @@ export default function SignupPage() {
 
       if (error) throw error;
 
-      // 🔥 IMPORTANT: DO NOT redirect
-      setSubmitted(true);
+      // 🔥 CUSTOM MESSAGE (THIS IS YOUR NEW FLOW)
+      setMsg(
+        "Your account request has been received. Our team will review your business and contact you within 24 hours from signup@purplevin.com."
+      );
+
+      // Optional: clear form
+      setBusinessName("");
+      setFullName("");
+      setEmail("");
+      setPassword("");
 
     } catch (e: any) {
-      console.error("SIGNUP FAILED:", e);
-      setErr(e?.message ?? "Signup failed");
+      console.error(e);
+      setErr(e?.message || "Signup failed");
     } finally {
       setLoading(false);
     }
   }
 
-  // 🔥 PENDING STATE SCREEN
-  if (submitted) {
-    return (
-      <div style={{ maxWidth: 520, margin: "80px auto", padding: 20, textAlign: "center" }}>
-        <h1 style={{ fontSize: 34, fontWeight: 900 }}>Request Received</h1>
-
-        <p style={{ marginTop: 16, fontSize: 16, opacity: 0.85 }}>
-          Your account has been submitted for review.
-        </p>
-
-        <p style={{ marginTop: 10, fontSize: 15, opacity: 0.75 }}>
-          A PurpleVin specialist will contact you within 24 hours to approve access.
-        </p>
-
-        <p style={{ marginTop: 20, fontSize: 13, opacity: 0.6 }}>
-          Please check your email to confirm your address.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div style={{ maxWidth: 520, margin: "48px auto", padding: 16 }}>
-      <h1 style={{ fontSize: 34, fontWeight: 900 }}>Request Access</h1>
+      <h1 style={{ fontSize: 34, fontWeight: 900 }}>
+        Create Business Account
+      </h1>
 
       <p style={{ opacity: 0.8, marginTop: 8 }}>
-        Submit your business for review. We’ll contact you within 24 hours to approve access.
+        Start capturing cosmetic history with PurpleVin.
       </p>
 
-      <form onSubmit={onSignup} style={{ display: "grid", gap: 10, marginTop: 18 }}>
+      <form
+        onSubmit={onSignup}
+        style={{ display: "grid", gap: 10, marginTop: 18 }}
+      >
         <input
           value={businessName}
           onChange={(e) => setBusinessName(e.target.value)}
@@ -136,7 +132,13 @@ export default function SignupPage() {
           style={{ padding: 12, borderRadius: 10, border: "1px solid #ddd" }}
         />
 
-        {err && <div style={{ color: "crimson", fontSize: 14 }}>{err}</div>}
+        {err && (
+          <div style={{ color: "crimson", fontSize: 14 }}>{err}</div>
+        )}
+
+        {msg && (
+          <div style={{ color: "seagreen", fontSize: 14 }}>{msg}</div>
+        )}
 
         <button
           disabled={loading}
@@ -149,13 +151,13 @@ export default function SignupPage() {
             opacity: loading ? 0.7 : 1,
           }}
         >
-          {loading ? "Submitting..." : "Request Access"}
+          {loading ? "Creating..." : "Request Access"}
         </button>
       </form>
 
       <div style={{ marginTop: 14, fontSize: 14, opacity: 0.85 }}>
-        Already have access? <a href="/login">Log in</a>
+        Already have one? <a href="/login">Log in</a>
       </div>
     </div>
   );
-} 
+}
