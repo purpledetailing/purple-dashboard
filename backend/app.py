@@ -367,7 +367,7 @@ def require_auth(fn):
 
             from flask import Response
 
-return Response("""
+            return Response("""
 <!DOCTYPE html>
 <html>
 <head>
