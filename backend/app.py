@@ -349,7 +349,7 @@ def require_auth(fn):
                 return jsonify({"error": "AUTH REQUIRED"}), 401
                 
             nxt = request.full_path if request.query_string else request.path
-            return redirect(f"https://secure.purplevin.com/login?next={safe_next_path(nxt)}")
+            return redirect(f"https://intel.purplevin.com/login?next={safe_next_path(nxt)}")
 
         # ✅ User exists → NOW check approval
         request.supabase_user = user
