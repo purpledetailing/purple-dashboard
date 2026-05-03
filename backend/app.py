@@ -358,7 +358,7 @@ def require_auth(fn):
         status = get_business_approval_status(user)
         print("AUTH CHECK STATUS:", status)  # debug (you can remove later)
 
-        if status != "active":
+        if status != "approved":
             if wants_json():
                 return jsonify({
                     "error": "ACCESS PENDING",
