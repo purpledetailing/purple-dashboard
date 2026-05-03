@@ -865,7 +865,7 @@ def login():
 </html>
 """.strip()
 
-    # POST: attempt login
+# POST: attempt login
     email = (request.form.get("email") or "").strip()
     password = (request.form.get("password") or "").strip()
     if not email or not password:
@@ -874,17 +874,22 @@ def login():
     try:
         data = sb_auth_password_login(email, password)
         access_token = (data.get("access_token") or "").strip()
-    # 🔒 CHECK APPROVAL STATUS BEFORE ALLOWING ACCESS
-user_email = email.lower()
 
-rows = sb_get("businesses", {
+    if not access_token:
+            raise RuntimeError("No access_token returned.")
+# 🔒 CHECK APPROVAL STATUS BEFORE ALLOWING ACCESS
+    user_email = email.lower()
+    
+    rows = sb_get("businesses", {
     "select": "subscription_status",
     "email": f"eq.{user_email}",
     "limit": "1",
-})
-
+    
+    })
+    
 # If no business record exists yet → create one (pending)
-if not rows:
+    
+    if not rows:
     sb_post("businesses", {
         "name": "New Business",
         "email": user_email,
@@ -894,17 +899,14 @@ if not rows:
         "Your account is pending approval. We will contact you within 24 hours from signup@purplevin.com.",
         403
     )
-
-status = rows[0].get("subscription_status")
-
-if status != "approved":
+    
+    status = rows[0].get("subscription_status")
+    
+    if status != "approved":
     return (
         "Your account is pending approval. We will contact you within 24 hours from signup@purplevin.com.",
         403
     )
-
-        if not access_token:
-            raise RuntimeError("No access_token returned.")
 
         resp = make_response(redirect(next_url))
         resp = set_auth_cookie(resp, access_token)
