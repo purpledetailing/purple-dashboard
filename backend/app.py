@@ -865,40 +865,40 @@ def login():
 </html>
 """.strip()
 
-# POST: attempt login
+    # POST: attempt login
     email = (request.form.get("email") or "").strip()
     password = (request.form.get("password") or "").strip()
     if not email or not password:
         return ("Missing email or password.", 400)
 
     try:
-    data = sb_auth_password_login(email, password)
-    access_token = (data.get("access_token") or "").strip()
+        data = sb_auth_password_login(email, password)
+        access_token = (data.get("access_token") or "").strip()
 
-    if not access_token:
-        raise RuntimeError("No access_token returned.")
+        if not access_token:
+            raise RuntimeError("No access_token returned.")
 
     # ✅ Get user from token
-    user = sb_auth_user(access_token)
-    if not user:
+        user = sb_auth_user(access_token)
+        if not user:
         return ("Unable to verify user.", 401)
 
     # ✅ CHECK APPROVAL STATUS (NEW SYSTEM)
-    status = get_business_approval_status(user)
+        status = get_business_approval_status(user)
 
-    if status != "approved":
+        if status != "approved":
         return (
             "Your account is pending approval. We will contact you within 24 hours from signup@purplevin.com.",
             403
         )
 
     # ✅ ALLOW ACCESS
-    resp = make_response(redirect(next_url))
-    resp = set_auth_cookie(resp, access_token)
-    return resp
-
-except Exception as e:
-    return (f"Login failed. {str(e)}", 401)
+        resp = make_response(redirect(next_url))
+        resp = set_auth_cookie(resp, access_token)
+        return resp
+        
+    except Exception as e:
+        return (f"Login failed. {str(e)}", 401)
 
 @app.route("/logout")
 def logout():
