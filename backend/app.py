@@ -365,7 +365,9 @@ def require_auth(fn):
                     "message": "Your account is pending approval."
         }), 403
 
-            return """
+            from flask import Response
+
+return Response("""
 <!DOCTYPE html>
 <html>
 <head>
@@ -373,97 +375,58 @@ def require_auth(fn):
   <style>
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #0a0a0a;
-      color: white;
+      height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 100vh;
+      background: radial-gradient(circle at top left, #5b1fa6, #0b1020);
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      color: white;
     }
 
     .card {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 20px;
+      background: rgba(255,255,255,0.08);
       padding: 40px;
+      border-radius: 16px;
       text-align: center;
-      max-width: 400px;
       backdrop-filter: blur(10px);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
     }
 
-    .title {
-      font-size: 22px;
-      font-weight: 700;
+    h1 {
+      font-size: 28px;
       margin-bottom: 10px;
     }
 
-    .subtitle {
-      font-size: 14px;
-      color: rgba(255,255,255,0.7);
-      margin-bottom: 20px;
+    p {
+      opacity: 0.7;
     }
 
-    .status {
+    a {
       display: inline-block;
-      padding: 6px 12px;
-      border-radius: 999px;
-      background: rgba(168,85,247,0.15);
-      color: #c084fc;
-      font-size: 12px;
-      font-weight: 600;
-      margin-bottom: 20px;
-    }
-
-    .btn {
-      display: inline-block;
-      margin-top: 15px;
-      padding: 12px 18px;
-      border-radius: 12px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
+      margin-top: 20px;
       color: white;
       text-decoration: none;
-      font-size: 13px;
+      font-weight: bold;
+      border: 1px solid rgba(255,255,255,0.3);
+      padding: 10px 18px;
+      border-radius: 999px;
     }
 
-    .glow {
-      position: absolute;
-      top: 20%;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 300px;
-      height: 300px;
-      background: rgba(168,85,247,0.2);
-      filter: blur(100px);
-      z-index: -1;
+    a:hover {
+      background: rgba(255,255,255,0.1);
     }
   </style>
 </head>
 <body>
-
-<div class="glow"></div>
-
-<div class="card">
-  <div class="status">ACCESS PENDING</div>
-
-  <div class="title">You're Almost In</div>
-
-  <div class="subtitle">
-    Your account is under review.<br><br>
-    We’ll activate your access shortly.
+  <div class="card">
+    <h1>Account Pending Approval</h1>
+    <p>We’ll review your account and contact you within 24 hours.</p>
+    <a href="/login">Back to Login</a>
   </div>
-
-  <div class="subtitle" style="font-size:12px;">
-    Typical approval time: <strong>within 24 hours</strong>
-  </div>
-
-  <a href="/login" class="btn">Back to Login</a>
-</div>
-
 </body>
 </html>
-""", 403
+""", status=403, mimetype="text/html") 
 
         # ✅ Only approved users reach your app
         return fn(*args, **kwargs)
