@@ -343,8 +343,7 @@ def require_auth(fn):
         except Exception:
             user = None
 
-        # ❌ Not logged in at all
-        if not user:
+    if not user:
         if wants_json():
             return jsonify({"error": "AUTH REQUIRED"}), 401
 
@@ -366,7 +365,7 @@ def require_auth(fn):
 
         # ✅ Only approved users reach your app
         return fn(*args, **kwargs)
-
+        
     return wrapper
 
 # ============================================================
