@@ -872,47 +872,33 @@ def login():
         return ("Missing email or password.", 400)
 
     try:
-        data = sb_auth_password_login(email, password)
-        access_token = (data.get("access_token") or "").strip()
+    data = sb_auth_password_login(email, password)
+    access_token = (data.get("access_token") or "").strip()
 
     if not access_token:
-            raise RuntimeError("No access_token returned.")
-# 🔒 CHECK APPROVAL STATUS BEFORE ALLOWING ACCESS
-    user_email = email.lower()
-    
-    rows = sb_get("businesses", {
-    "select": "subscription_status",
-    "email": f"eq.{user_email}",
-    "limit": "1",
-    
-    })
-    
-# If no business record exists yet → create one (pending)
-    
-    if not rows:
-    sb_post("businesses", {
-        "name": "New Business",
-        "email": user_email,
-        "subscription_status": "pending"
-    })
-    return (
-        "Your account is pending approval. We will contact you within 24 hours from signup@purplevin.com.",
-        403
-    )
-    
-    status = rows[0].get("subscription_status")
-    
-    if status != "approved":
-    return (
-        "Your account is pending approval. We will contact you within 24 hours from signup@purplevin.com.",
-        403
-    )
+        raise RuntimeError("No access_token returned.")
 
-        resp = make_response(redirect(next_url))
-        resp = set_auth_cookie(resp, access_token)
-        return resp
-    except Exception as e:
-        return (f"Login failed. {str(e)}", 401)
+    # ✅ Get user from token
+    user = sb_auth_user(access_token)
+    if not user:
+        return ("Unable to verify user.", 401)
+
+    # ✅ CHECK APPROVAL STATUS (NEW SYSTEM)
+    status = get_business_approval_status(user)
+
+    if status != "approved":
+        return (
+            "Your account is pending approval. We will contact you within 24 hours from signup@purplevin.com.",
+            403
+        )
+
+    # ✅ ALLOW ACCESS
+    resp = make_response(redirect(next_url))
+    resp = set_auth_cookie(resp, access_token)
+    return resp
+
+except Exception as e:
+    return (f"Login failed. {str(e)}", 401)
 
 @app.route("/logout")
 def logout():
