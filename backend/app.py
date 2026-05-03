@@ -354,15 +354,21 @@ def require_auth(fn):
         # ✅ User exists → NOW check approval
         request.supabase_user = user
 
+        # 🔒 CHECK APPROVAL
         status = get_business_approval_status(user)
-
         print("AUTH CHECK STATUS:", status)  # debug (you can remove later)
 
-        if status != "approved":
+        if status != "active":
+            if wants_json():
+                return jsonify({
+                    "error": "ACCESS PENDING",
+                    "message": "Your account is pending approval."
+        }), 403
+
             return (
-                "Your account is pending approval. We will contact you within 24 hours.",
-                403
-            )
+        "Your account is pending approval. We will contact you.",
+        403
+    )
 
         # ✅ Only approved users reach your app
         return fn(*args, **kwargs)
