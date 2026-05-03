@@ -515,6 +515,52 @@ export default function NewJobPage() {
 function NewJobInner() {
   const router = useRouter();
   const { signOut } = useAuth();
+  const [checkingAccess, setCheckingAccess] = useState(true);
+
+  useEffect(() => {
+  (async () => {
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+
+      if (!userRes?.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const userId = userRes.user.id;
+
+      // get business_id
+      const { data: bu } = await supabase
+        .from("business_users")
+        .select("business_id")
+        .eq("user_id", userId)
+        .limit(1)
+        .maybeSingle();
+
+      if (!bu?.business_id) {
+        router.replace("/login");
+        return;
+      }
+
+      // 🔥 THIS IS THE KEY CHECK
+      const { data: biz } = await supabase
+        .from("businesses")
+        .select("approval_status")
+        .eq("id", bu.business_id)
+        .maybeSingle();
+
+      if (!biz || biz.approval_status !== "approved") {
+        router.replace("/login?pending=1");
+        return;
+      }
+
+      setCheckingAccess(false);
+    } catch (e) {
+      console.error("Access check failed:", e);
+      router.replace("/login");
+    }
+  })();
+}, []); 
 
   const [step, setStep] = useState<Step>(1);
 
@@ -1737,6 +1783,13 @@ const legacyRes = await insertCustomerJobLegacy({
   /** =========================
    * Render
    * ========================= */
+  if (checkingAccess) {
+  return (
+    <div className="min-h-screen flex items-center justify-center text-white">
+      Checking access...
+    </div>
+  );
+} 
   return (
     <div className="min-h-[100dvh] text-slate-100 overscroll-contain">
       {/* ✅ Toast (visible confirmation, independent from msg) */}
