@@ -135,7 +135,15 @@ export default function LoginPage() {
       const ok = await ensureBusiness();
       if (!ok) return;
 
-      router.replace("/new-job");
+      // 🔥 check backend status
+      const res = await fetch("/api/me");
+
+      if (res.status === 403) {
+     router.replace("/pending");
+     return;
+  }
+
+  router.replace("/new-job"); 
     } catch (e: any) {
       setErr(e?.message ?? "Login failed");
     } finally {
