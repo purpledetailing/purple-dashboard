@@ -874,6 +874,35 @@ def login():
     try:
         data = sb_auth_password_login(email, password)
         access_token = (data.get("access_token") or "").strip()
+    # 🔒 CHECK APPROVAL STATUS BEFORE ALLOWING ACCESS
+user_email = email.lower()
+
+rows = sb_get("businesses", {
+    "select": "subscription_status",
+    "email": f"eq.{user_email}",
+    "limit": "1",
+})
+
+# If no business record exists yet → create one (pending)
+if not rows:
+    sb_post("businesses", {
+        "name": "New Business",
+        "email": user_email,
+        "subscription_status": "pending"
+    })
+    return (
+        "Your account is pending approval. We will contact you within 24 hours from signup@purplevin.com.",
+        403
+    )
+
+status = rows[0].get("subscription_status")
+
+if status != "approved":
+    return (
+        "Your account is pending approval. We will contact you within 24 hours from signup@purplevin.com.",
+        403
+    )
+
         if not access_token:
             raise RuntimeError("No access_token returned.")
 
@@ -1037,14 +1066,14 @@ def update_customer():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    # 🚫 PAYWALL BLOCK
-        sub_status = get_business_subscription_status(request.supabase_user)
+    # 🚫 ACCESS BLOCK
+        approval_status = get_business_approval_status(request.supabase_user)
 
-        if sub_status != "active":
+        if sub_status != "approved":
             return jsonify({
-                "error": "PAYMENT REQUIRED",
-                "message": "Activate your account to save records."
-            }), 402 
+                "error": "ACCESS PENDING",
+                "message": "Your account request has been received. We will review your access and contact you within 24 hours."
+            }), 403 
 # ---------------------------
 # ✅ Public report stays PUBLIC and UNTOUCHED
 # ---------------------------
