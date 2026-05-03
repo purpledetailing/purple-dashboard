@@ -899,8 +899,7 @@ def login():
         print("DEBUG STATUS:", status)  # <-- add this for now
 
         if status != "approved":
-        # 🚫 DO NOT SET COOKIE
-        return (
+            return (
             "Your account is pending approval. We will contact you within 24 hours.",
             403
         )
