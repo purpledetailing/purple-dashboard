@@ -349,7 +349,7 @@ def require_auth(fn):
                 return jsonify({"error": "AUTH REQUIRED"}), 401
                 
             nxt = request.full_path if request.query_string else request.path
-            return redirect(f"https://intel.purplevin.com/login?next={safe_next_path(nxt)}")
+            return redirect(f"/login?next={safe_next_path(nxt)}")
 
         # ✅ User exists → NOW check approval
         request.supabase_user = user
@@ -699,7 +699,7 @@ def health_supabase():
 # Because your Flask app serves static at /static from static_folder="../static"
 LOGIN_BG_URL = "/static/img/elephant-bg.png"
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/backend-login", methods=["GET", "POST"])
 def login():
     if not supabase_auth_ready():
         return ("Supabase auth not configured. Set SUPABASE_ANON_KEY on server.", 500)
