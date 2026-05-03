@@ -333,29 +333,40 @@ def current_access_token():
     return (request.cookies.get(AUTH_COOKIE_NAME) or "").strip()
 
 def require_auth(fn):
-    """
-    Protect internal pages. Public VIN report stays untouched.
-    - If JSON/API request -> 401
-    - If browser -> redirect to /login
-    """
     @wraps(fn)
     def wrapper(*args, **kwargs):
         at = current_access_token()
         user = None
+
         try:
             user = sb_auth_user(at) if at else None
         except Exception:
             user = None
 
-        if user:
-            request.supabase_user = user
-            return fn(*args, **kwargs)
-
+        # ❌ Not logged in at all
+        if not user:
         if wants_json():
             return jsonify({"error": "AUTH REQUIRED"}), 401
 
         nxt = request.full_path if request.query_string else request.path
         return redirect(f"/login?next={safe_next_path(nxt)}")
+
+        # ✅ User exists → NOW check approval
+        request.supabase_user = user
+
+        status = get_business_approval_status(user)
+
+        print("AUTH CHECK STATUS:", status)  # debug (you can remove later)
+
+        if status != "approved":
+            return (
+                "Your account is pending approval. We will contact you within 24 hours.",
+                403
+            )
+
+        # ✅ Only approved users reach your app
+        return fn(*args, **kwargs)
+
     return wrapper
 
 # ============================================================
@@ -878,27 +889,30 @@ def login():
         if not access_token:
             raise RuntimeError("No access_token returned.")
 
-    # ✅ Get user from token
+    # ✅ Get user FIRST
         user = sb_auth_user(access_token)
         if not user:
             return ("Unable to verify user.", 401)
 
-    # ✅ CHECK APPROVAL STATUS (NEW SYSTEM)
+    # ✅ CHECK APPROVAL BEFORE ANY ACCESS
         status = get_business_approval_status(user)
 
+        print("DEBUG STATUS:", status)  # <-- add this for now
+
         if status != "approved":
-            return (
-            "Your account is pending approval. We will contact you within 24 hours from signup@purplevin.com.",
+        # 🚫 DO NOT SET COOKIE
+        return (
+            "Your account is pending approval. We will contact you within 24 hours.",
             403
         )
 
-    # ✅ ALLOW ACCESS
+    # ✅ ONLY APPROVED USERS GET SESSION
         resp = make_response(redirect(next_url))
         resp = set_auth_cookie(resp, access_token)
         return resp
-        
+
     except Exception as e:
-        return (f"Login failed. {str(e)}", 401)
+        return (f"Login failed. {str(e)}", 401) 
 
 @app.route("/logout")
 def logout():
