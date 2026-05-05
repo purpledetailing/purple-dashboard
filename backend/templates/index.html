@@ -564,7 +564,10 @@
             <div class="panel" id="infoPanel">
               <div class="panel-header">
                 <div class="panel-title">Customer & Vehicle</div>
-                <div id="statusBadge"></div>
+                
+                <button type="button" id="editCustomerBtn" class="edit-toggle-btn">
+                  Edit Customer
+                </button>
               </div>
 
               <div class="info-grid">
@@ -601,12 +604,6 @@
                     <span id="vinNumber"></span>
                   </div>
                 </div>
-              </div>
-
-              <div class="edit-toolbar">
-                <button type="button" id="editCustomerBtn" class="edit-toggle-btn">
-                  Edit Customer
-                </button>
               </div>
 
               <div id="readOnlyNote" class="readonly-note">
@@ -1019,8 +1016,6 @@
           fillEditFields(payload);
 
           applyEditPermission(payload.can_edit_customer === true);
-
-          statusBadgeEl.innerHTML = makeStatusBadge(payload.status || "");
 
           const notes = (payload.notes || "").trim();
           if (notes) {
