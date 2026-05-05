@@ -38,15 +38,23 @@ body {
 .card {
   background: #fff;
   border-radius: 18px;
-  padding: 20px;
+  padding: 24px;
   border: 1px solid var(--border-soft);
 }
 
-/* 🔥 UPDATED HEADER */
+/* HEADER */
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 18px;
+}
+
+.panel-title {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
 }
 
 .panel-actions {
@@ -69,6 +77,7 @@ body {
   background: #f3f4f6;
 }
 
+/* BADGE */
 .badge {
   padding: 3px 8px;
   border-radius: 999px;
@@ -79,11 +88,64 @@ body {
   background: #ecfdf3;
 }
 
+/* INFO */
+.info-row {
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+
+.info-row b {
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+/* EDIT SECTION */
 .edit-section {
   display: none;
-  margin-top: 12px;
-  padding: 12px;
+  margin-top: 18px;
+  padding: 14px;
   border: 1px dashed var(--border-soft);
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.edit-section input {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.edit-section input:focus {
+  border-color: var(--purple-main);
+}
+
+/* BUTTON ROW */
+.edit-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.edit-actions button {
+  border-radius: 999px;
+  padding: 8px 14px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+#saveCustomerBtn {
+  background: #000;
+  color: #fff;
+}
+
+#cancelEditBtn {
+  background: #f3f4f6;
 }
 </style>
 </head>
@@ -92,12 +154,12 @@ body {
 <div class="container">
 <div class="card">
 
-<!-- 🔥 HEADER WITH BUTTON MOVED -->
+<!-- HEADER -->
 <div class="panel-header">
   <div class="panel-title">Customer & Vehicle</div>
 
   <div class="panel-actions">
-    <div id="statusBadge"></div>
+    <div id="statusBadge" class="badge active">ACTIVE</div>
 
     <button id="editCustomerBtn" class="edit-btn">
       Edit
@@ -106,20 +168,20 @@ body {
 </div>
 
 <!-- CUSTOMER INFO -->
-<div style="margin-top:15px;">
-  <div><b>Customer:</b> <span id="customerName">—</span></div>
-  <div><b>Phone:</b> <span id="phoneNumber"></span></div>
-  <div><b>Address:</b> <span id="address"></span></div>
-  <div><b>Vehicle:</b> <span id="mmYear"></span></div>
+<div>
+  <div class="info-row"><b>Customer:</b> <span id="customerName">—</span></div>
+  <div class="info-row"><b>Phone:</b> <span id="phoneNumber"></span></div>
+  <div class="info-row"><b>Address:</b> <span id="address"></span></div>
+  <div class="info-row"><b>Vehicle:</b> <span id="mmYear"></span></div>
 </div>
 
-<!-- 🔥 EDIT SECTION (UNCHANGED LOGIC) -->
+<!-- EDIT SECTION -->
 <div id="editCustomerSection" class="edit-section">
   <input id="editName" placeholder="Name" />
   <input id="editPhone" placeholder="Phone" />
   <input id="editEmail" placeholder="Email" />
 
-  <div style="margin-top:10px;">
+  <div class="edit-actions">
     <button id="saveCustomerBtn">Save</button>
     <button id="cancelEditBtn">Cancel</button>
   </div>
