@@ -2,142 +2,145 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Purple Dashboard</title>
+<title>Purple Dashboard - VIN Search</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 
 <style>
-/* --- KEEP YOUR EXISTING STYLES --- */
-/* ADD BELOW */
+:root {
+  --purple-main: #5b1fa6;
+  --purple-dark: #3b0764;
+  --text-main: #0f172a;
+  --text-muted: #6b7280;
+  --bg-main: #f9fafb;
+  --card-bg: #ffffff;
+  --border-soft: #e5e7eb;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: system-ui;
+}
+
+body {
+  background: var(--bg-main);
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px;
+}
+
+.container {
+  max-width: 1000px;
+  width: 100%;
+}
+
+.card {
+  background: #fff;
+  border-radius: 18px;
+  padding: 20px;
+  border: 1px solid var(--border-soft);
+}
+
+/* 🔥 UPDATED HEADER */
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 
 .panel-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
-.edit-icon-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: none;
-  background: #0f172a;
-  color: #fff;
-  font-size: 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.edit-icon-btn:hover {
-  background: #5b1fa6;
-}
-
-/* --- MODAL --- */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal {
-  width: 100%;
-  max-width: 500px;
-  background: #fff;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-}
-
-.modal-header {
+.edit-btn {
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  padding: 6px 12px;
+  font-size: 0.75rem;
   font-weight: 700;
-  margin-bottom: 10px;
+  background: #f9fafb;
+  cursor: pointer;
 }
 
-.modal-actions {
-  display: flex;
-  gap: 10px;
+.edit-btn:hover {
+  background: #f3f4f6;
+}
+
+.badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+}
+
+.badge.active {
+  background: #ecfdf3;
+}
+
+.edit-section {
+  display: none;
   margin-top: 12px;
+  padding: 12px;
+  border: 1px dashed var(--border-soft);
 }
 </style>
 </head>
 
 <body>
+<div class="container">
+<div class="card">
 
-<div class="panel">
+<!-- 🔥 HEADER WITH BUTTON MOVED -->
+<div class="panel-header">
+  <div class="panel-title">Customer & Vehicle</div>
 
-  <div class="panel-header">
-    <div class="panel-title">Customer & Vehicle</div>
+  <div class="panel-actions">
+    <div id="statusBadge"></div>
 
-    <div class="panel-actions">
-      <div id="statusBadge"></div>
-
-      <!-- ✏️ ICON BUTTON -->
-      <button id="editCustomerBtn" class="edit-icon-btn" title="Edit">
-        ✏️
-      </button>
-    </div>
+    <button id="editCustomerBtn" class="edit-btn">
+      Edit
+    </button>
   </div>
-
-  <!-- YOUR EXISTING INFO GRID HERE -->
-
 </div>
 
-<!-- 🔥 MODAL -->
-<div id="editModal" class="modal-overlay">
-  <div class="modal">
+<!-- CUSTOMER INFO -->
+<div style="margin-top:15px;">
+  <div><b>Customer:</b> <span id="customerName">—</span></div>
+  <div><b>Phone:</b> <span id="phoneNumber"></span></div>
+  <div><b>Address:</b> <span id="address"></span></div>
+  <div><b>Vehicle:</b> <span id="mmYear"></span></div>
+</div>
 
-    <div class="modal-header">Edit Customer</div>
+<!-- 🔥 EDIT SECTION (UNCHANGED LOGIC) -->
+<div id="editCustomerSection" class="edit-section">
+  <input id="editName" placeholder="Name" />
+  <input id="editPhone" placeholder="Phone" />
+  <input id="editEmail" placeholder="Email" />
 
-    <input id="editName" placeholder="Full Name" class="search-input" />
-    <input id="editPhone" placeholder="Phone" class="search-input" />
-    <input id="editEmail" placeholder="Email" class="search-input" />
-    <input id="editAddress" placeholder="Address" class="search-input" />
-    <input id="editZip" placeholder="Zip Code" class="search-input" />
-
-    <div class="modal-actions">
-      <button id="saveCustomerBtn" class="search-button">Save</button>
-      <button id="cancelEditBtn" class="secondary-button">Cancel</button>
-    </div>
-
-    <div id="saveStatus" class="edit-status"></div>
-
+  <div style="margin-top:10px;">
+    <button id="saveCustomerBtn">Save</button>
+    <button id="cancelEditBtn">Cancel</button>
   </div>
+</div>
+
+</div>
 </div>
 
 <script>
-const editBtn = document.getElementById("editCustomerBtn");
-const modal = document.getElementById("editModal");
-const cancelBtn = document.getElementById("cancelEditBtn");
+const btn = document.getElementById("editCustomerBtn");
+const section = document.getElementById("editCustomerSection");
 
-// OPEN MODAL
-editBtn.addEventListener("click", () => {
-  if (!currentCanEditCustomer) return;
-  modal.style.display = "flex";
-});
+btn.onclick = () => {
+  section.style.display =
+    section.style.display === "block" ? "none" : "block";
+};
 
-// CLOSE MODAL
-cancelBtn.addEventListener("click", () => {
-  modal.style.display = "none";
-});
-
-// CLICK OUTSIDE CLOSE
-modal.addEventListener("click", (e) => {
-  if (e.target === modal) {
-    modal.style.display = "none";
-  }
-});
-
-// AFTER SAVE
-saveCustomerBtn.addEventListener("click", async () => {
-  // keep your existing save logic
-  modal.style.display = "none";
-});
+document.getElementById("cancelEditBtn").onclick = () => {
+  section.style.display = "none";
+};
 </script>
 
 </body>
-</html> 
+</html>
