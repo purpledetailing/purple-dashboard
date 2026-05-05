@@ -1,208 +1,1084 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8" />
-<title>Purple Dashboard - VIN Search</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+  <head>
+    <meta charset="UTF-8" />
+    <title>Purple Dashboard - VIN Search</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        --purple-main: #5b1fa6;
+        --purple-dark: #3b0764;
+        --text-main: #0f172a;
+        --text-muted: #6b7280;
+        --bg-main: #f9fafb;
+        --card-bg: #ffffff;
+        --border-soft: #e5e7eb;
+        --border-strong: #d1d5db;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+      body {
+        min-height: 100vh;
+        background: var(--bg-main);
+        color: var(--text-main);
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 40px 16px;
+      }
+      .container {
+        width: 100%;
+        max-width: 1000px;
+      }
+      .header {
+        margin-bottom: 24px;
+        text-align: center;
+        position: relative;
+      }
+      .logo-text {
+        font-size: 2.4rem;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #000000;
+      }
+      .logo-text span {
+        color: var(--purple-main);
+      }
+      .subheading {
+        font-size: 0.95rem;
+        color: var(--text-muted);
+        opacity: 0.95;
+      }
 
-<style>
-:root {
-  --purple-main: #5b1fa6;
-  --purple-dark: #3b0764;
-  --text-main: #0f172a;
-  --text-muted: #6b7280;
-  --bg-main: #f9fafb;
-  --card-bg: #ffffff;
-  --border-soft: #e5e7eb;
-}
+      .logout-btn {
+        position: absolute;
+        right: 0;
+        top: 2px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: #0f172a;
+        color: #ffffff;
+        border: 1px solid rgba(15, 23, 42, 0.18);
+        font-weight: 800;
+        cursor: pointer;
+        font-size: 0.8rem;
+      }
+      .logout-btn:hover {
+        background: var(--purple-main);
+      }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  font-family: system-ui;
-}
+      .card {
+        background: var(--card-bg);
+        border-radius: 18px;
+        border: 1px solid var(--border-soft);
+        padding: 20px 20px 24px;
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+      }
+      .card-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 16px;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .card-title {
+        font-size: 1.3rem;
+        font-weight: 600;
+      }
+      .card-tag {
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        border: 1px solid var(--border-soft);
+        color: var(--text-muted);
+        background: #f9fafb;
+      }
+      .search-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .search-row label {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+        display: block;
+      }
+      .search-input-wrapper {
+        flex: 1 1 220px;
+      }
+      .search-input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 999px;
+        background: #ffffff;
+        border: 1px solid var(--border-soft);
+        color: var(--text-main);
+        font-size: 0.95rem;
+        outline: none;
+        transition: border 0.15s ease, box-shadow 0.15s ease,
+          background 0.15s ease;
+      }
+      .search-input::placeholder {
+        color: #9ca3af;
+      }
+      .search-input:focus {
+        border-color: var(--purple-main);
+        box-shadow: 0 0 0 1px rgba(91, 31, 166, 0.25);
+        background: #ffffff;
+      }
+      .search-button {
+        padding: 10px 18px;
+        border-radius: 999px;
+        border: none;
+        background: linear-gradient(135deg, #000000, var(--purple-main));
+        color: #ffffff;
+        font-weight: 600;
+        font-size: 0.95rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
+        transition: transform 0.1s ease, box-shadow 0.15s ease,
+          filter 0.12s ease;
+        white-space: nowrap;
+      }
+      .search-button:hover {
+        filter: brightness(1.05);
+        transform: translateY(-1px);
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.3);
+      }
+      .search-button:active {
+        transform: translateY(0);
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.2);
+      }
+      .search-button span.icon {
+        font-size: 1.1rem;
+        line-height: 1;
+      }
+      .hint {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+      }
+      .divider {
+        height: 1px;
+        width: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--border-soft),
+          transparent
+        );
+        margin: 14px 0;
+      }
+      .status {
+        font-size: 0.85rem;
+        margin-bottom: 6px;
+        min-height: 1.2em;
+      }
+      .status.error {
+        color: #b91c1c;
+      }
+      .status.ok {
+        color: #15803d;
+      }
+      .results {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr);
+        gap: 18px;
+        margin-top: 4px;
+      }
+      @media (max-width: 800px) {
+        .results {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .logout-btn {
+          position: static;
+          margin-top: 10px;
+        }
+        .header {
+          text-align: center;
+        }
+      }
+      .panel {
+        background: #ffffff;
+        border-radius: 14px;
+        border: 1px solid var(--border-soft);
+        padding: 14px 14px 16px;
+      }
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 8px;
+        gap: 8px;
+      }
+      .panel-title {
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: var(--text-muted);
+      }
+      .small-tag {
+        font-size: 0.7rem;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: #f9fafb;
+        color: var(--text-muted);
+        border: 1px solid var(--border-soft);
+      }
+      .info-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.3fr);
+        gap: 10px 18px;
+        margin-top: 4px;
+      }
+      @media (max-width: 700px) {
+        .info-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .info-item {
+        font-size: 0.85rem;
+      }
+      .info-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--text-muted);
+        margin-bottom: 2px;
+      }
+      .info-value {
+        color: var(--text-main);
+        font-weight: 500;
+        word-break: break-word;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.75rem;
+        border-radius: 999px;
+        padding: 2px 8px;
+      }
+      .badge.vip {
+        background: #fefce8;
+        color: #854d0e;
+        border: 1px solid #facc15;
+      }
+      .badge.one-time {
+        background: #eff6ff;
+        color: #1e40af;
+        border: 1px solid #60a5fa;
+      }
+      .badge.active {
+        background: #ecfdf3;
+        color: #166534;
+        border: 1px solid #34d399;
+      }
+      .vin-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: #f9fafb;
+        border: 1px dashed var(--border-soft);
+        font-size: 0.8rem;
+        color: var(--text-main);
+        margin-top: 4px;
+      }
+      .vin-pill small {
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: var(--text-muted);
+        font-size: 0.68rem;
+      }
+      details.notes {
+        margin-top: 10px;
+        border-radius: 12px;
+        background: #f9fafb;
+        border: 1px dashed var(--border-soft);
+        padding: 8px 10px;
+        font-size: 0.85rem;
+      }
+      details.notes summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--text-main);
+      }
+      details.notes summary::marker {
+        display: none;
+      }
+      details.notes summary span.label {
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+      }
+      .muted {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+      }
+      .section-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: var(--text-muted);
+        margin-top: 14px;
+        margin-bottom: 6px;
+      }
+      .share-box {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 4px;
+      }
+      .share-input {
+        flex: 1;
+        padding: 8px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        background: #f9fafb;
+        font-size: 0.8rem;
+        color: var(--text-main);
+        outline: none;
+      }
+      .share-input:focus {
+        border-color: var(--purple-main);
+        box-shadow: 0 0 0 1px rgba(91, 31, 166, 0.2);
+        background: #ffffff;
+      }
+      .share-button {
+        border-radius: 999px;
+        border: none;
+        padding: 7px 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        background: #000000;
+        color: #ffffff;
+        cursor: pointer;
+      }
+      .share-button:hover {
+        background: var(--purple-main);
+      }
+      .share-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+      }
 
-body {
-  background: var(--bg-main);
-  display: flex;
-  justify-content: center;
-  padding: 40px 16px;
-}
+      .history-card {
+        border-radius: 10px;
+        border: 1px solid rgba(209, 213, 219, 1);
+        padding: 10px 12px;
+        margin-bottom: 10px;
+        background: #ffffff;
+      }
+      .history-top {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .history-date {
+        font-size: 0.8rem;
+        color: #6b7280;
+        white-space: nowrap;
+      }
+      .history-name {
+        font-size: 0.92rem;
+        color: #111827;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+      .history-preview {
+        margin-top: 6px;
+        font-size: 0.85rem;
+        color: #111827;
+        opacity: 0.92;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        line-height: 1.35;
+        white-space: pre-line;
+      }
+      .history-details {
+        margin-top: 8px;
+        border-top: 1px dashed #e5e7eb;
+        padding-top: 8px;
+      }
+      .history-pre {
+        white-space: pre-line;
+        font-size: 0.85rem;
+        color: #111827;
+        line-height: 1.45;
+      }
 
-.container {
-  max-width: 1000px;
-  width: 100%;
-}
+      .edit-toolbar {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 14px;
+      }
+      .edit-toggle-btn {
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        padding: 7px 12px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        background: #f9fafb;
+        color: var(--text-main);
+        cursor: pointer;
+      }
+      .edit-toggle-btn:hover {
+        background: #f3f4f6;
+      }
+      .edit-section {
+        display: none;
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px dashed var(--border-soft);
+        background: #fafafa;
+      }
+      .edit-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 10px 14px;
+      }
+      @media (max-width: 700px) {
+        .edit-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .edit-full {
+        grid-column: 1 / -1;
+      }
+      .edit-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      .secondary-button {
+        border-radius: 999px;
+        border: 1px solid var(--border-soft);
+        padding: 10px 16px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        background: #f9fafb;
+        color: var(--text-main);
+        cursor: pointer;
+      }
+      .secondary-button:hover {
+        background: #f3f4f6;
+      }
+      .edit-status {
+        font-size: 0.85rem;
+        min-height: 1.2em;
+      }
+      .edit-status.ok {
+        color: #15803d;
+      }
+      .edit-status.error {
+        color: #b91c1c;
+      }
+      .readonly-note {
+        display: none;
+        margin-top: 12px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        border: 1px dashed var(--border-soft);
+        background: #f9fafb;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        line-height: 1.35;
+      }
+    </style>
+  </head>
 
-.card {
-  background: #fff;
-  border-radius: 18px;
-  padding: 24px;
-  border: 1px solid var(--border-soft);
-}
+  <body>
+    <div class="container">
+      <header class="header">
+        <button id="logoutBtn" class="logout-btn" type="button">Logout</button>
+        <div class="logo-text"><span>Purple</span> Dashboard</div>
+        <p class="subheading">
+          Verified Cosmetic History by PurpleVin
+        </p>
+      </header>
 
-/* HEADER */
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 18px;
-}
+      <main class="card">
+        <div class="card-header">
+          <div class="left">
+            <div class="card-title">VIN Lookup</div>
+            <div class="hint">Enter a full 17-character VIN from your client list.</div>
+          </div>
+          <div class="card-tag">Internal Use Only</div>
+        </div>
 
-.panel-title {
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--text-muted);
-}
+        <form id="vinForm">
+          <div class="search-row">
+            <div class="search-input-wrapper">
+              <label for="vinInput">VIN Number</label>
+              <input
+                type="text"
+                id="vinInput"
+                class="search-input"
+                placeholder="e.g. 4JGFB4FB9RB121790"
+                maxlength="17"
+              />
+            </div>
+            <div style="display:flex;align-items:flex-end;">
+              <button type="submit" class="search-button">
+                <span class="icon">🔍</span><span>Search</span>
+              </button>
+            </div>
+          </div>
+        </form>
 
-.panel-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+        <div class="status" id="statusMessage"></div>
+        <div class="divider"></div>
 
-.edit-btn {
-  border-radius: 999px;
-  border: 1px solid var(--border-soft);
-  padding: 6px 12px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  background: #f9fafb;
-  cursor: pointer;
-}
+        <section id="resultsSection" style="display:none;">
+          <div class="results">
+            <!-- Left -->
+            <div class="panel" id="infoPanel">
+              <div class="panel-header">
+                <div class="panel-title">Customer & Vehicle</div>
+                <div id="statusBadge"></div>
+              </div>
 
-.edit-btn:hover {
-  background: #f3f4f6;
-}
+              <div class="info-grid">
+                <div class="info-item">
+                  <div class="info-label">Customer</div>
+                  <div class="info-value" id="customerName"></div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">Phone</div>
+                  <div class="info-value" id="phoneNumber"></div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">Address</div>
+                  <div class="info-value" id="address"></div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">Zip</div>
+                  <div class="info-value" id="zipCode"></div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">Email</div>
+                  <div class="info-value" id="emailAddress"></div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">Make / Model / Year</div>
+                  <div class="info-value" id="mmYear"></div>
+                </div>
+              </div>
 
-/* BADGE */
-.badge {
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 0.7rem;
-}
+              <div style="margin-top:10px;">
+                <div class="vin-pill">
+                  <div>
+                    <small>VIN</small><br />
+                    <span id="vinNumber"></span>
+                  </div>
+                </div>
+              </div>
 
-.badge.active {
-  background: #ecfdf3;
-}
+              <div class="edit-toolbar">
+                <button type="button" id="editCustomerBtn" class="edit-toggle-btn">
+                  Edit Customer
+                </button>
+              </div>
 
-/* INFO */
-.info-row {
-  margin-bottom: 10px;
-  font-size: 0.9rem;
-}
+              <div id="readOnlyNote" class="readonly-note">
+                Read-only customer record. You can view this VIN, but only the owning business or an admin can edit the customer information.
+              </div>
 
-.info-row b {
-  color: var(--text-muted);
-  font-weight: 600;
-  margin-right: 6px;
-}
+              <div id="editCustomerSection" class="edit-section">
+                <div class="panel-title" style="margin-bottom:8px;">Edit Customer</div>
+                <div class="hint">Only customer contact information can be edited here.</div>
 
-/* EDIT SECTION */
-.edit-section {
-  display: none;
-  margin-top: 18px;
-  padding: 14px;
-  border: 1px dashed var(--border-soft);
-  border-radius: 10px;
-  background: #fafafa;
-}
+                <div class="edit-grid" style="margin-top:10px;">
+                  <div>
+                    <label class="info-label" for="editName">Full Name</label>
+                    <input type="text" id="editName" class="search-input" placeholder="Full Name" />
+                  </div>
+                  <div>
+                    <label class="info-label" for="editPhone">Phone</label>
+                    <input type="text" id="editPhone" class="search-input" placeholder="Phone" />
+                  </div>
+                  <div>
+                    <label class="info-label" for="editEmail">Email</label>
+                    <input type="text" id="editEmail" class="search-input" placeholder="Email" />
+                  </div>
+                  <div>
+                    <label class="info-label" for="editZip">Zip</label>
+                    <input type="text" id="editZip" class="search-input" placeholder="Zip Code" />
+                  </div>
+                  <div class="edit-full">
+                    <label class="info-label" for="editAddress">Address</label>
+                    <input type="text" id="editAddress" class="search-input" placeholder="Address" />
+                  </div>
+                </div>
 
-.edit-section input {
-  width: 100%;
-  margin-bottom: 8px;
-  padding: 10px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border-soft);
-  font-size: 0.9rem;
-  outline: none;
-}
+                <div class="edit-actions">
+                  <button type="button" id="saveCustomerBtn" class="search-button">
+                    Save Customer
+                  </button>
+                  <button type="button" id="cancelEditBtn" class="secondary-button">
+                    Cancel
+                  </button>
+                  <div id="saveStatus" class="edit-status"></div>
+                </div>
+              </div>
 
-.edit-section input:focus {
-  border-color: var(--purple-main);
-}
+              <details class="notes" id="notesBlock" style="display:none;">
+                <summary>
+                  <span class="label">Notes</span>
+                  <span style="font-size:0.75rem;color:#6b7280;">Tap to expand</span>
+                </summary>
+                <p id="notesText" style="margin-top:8px;"></p>
+              </details>
 
-/* BUTTON ROW */
-.edit-actions {
-  margin-top: 10px;
-  display: flex;
-  gap: 8px;
-}
+              <details class="notes" id="historyBlock" style="display:none;">
+                <summary>
+                  <span class="label">Service History</span>
+                  <span id="historyCountLabel" style="font-size:0.75rem;color:#6b7280;"></span>
+                </summary>
+                <div id="historyList" style="margin-top:8px;"></div>
+              </details>
 
-.edit-actions button {
-  border-radius: 999px;
-  padding: 8px 14px;
-  border: none;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
+              <div class="section-label">Customer Portal Link</div>
+              <div class="share-box">
+                <input id="shareLink" class="share-input" type="text" readonly value="" />
+                <button type="button" id="copyShareBtn" class="share-button">Copy</button>
+              </div>
+              <div id="shareHint" class="share-hint">
+                This link shows a read-only version of this vehicle for the customer.
+              </div>
+            </div>
 
-#saveCustomerBtn {
-  background: #000;
-  color: #fff;
-}
+            <!-- Right -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">Service Gallery</div>
+                <span class="small-tag">Photo Grid</span>
+              </div>
+              <div id="photoGrid" style="display:none;"></div>
+              <div id="noPhotosMsg" class="muted" style="display:none;">
+                No photos uploaded yet for this VIN.
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
 
-#cancelEditBtn {
-  background: #f3f4f6;
-}
-</style>
-</head>
+    <script>
+      document.getElementById("logoutBtn")?.addEventListener("click", () => {
+        window.location.href = "/logout";
+      });
+    </script>
 
-<body>
-<div class="container">
-<div class="card">
+    <script>
+      const PUBLIC_BASE_URL = "";
 
-<!-- HEADER -->
-<div class="panel-header">
-  <div class="panel-title">Customer & Vehicle</div>
+      let currentCustomerId = null;
+      let currentCanEditCustomer = false;
+      let originalCustomer = {
+        full_name: "",
+        phone: "",
+        email: "",
+        address: "",
+        zip_code: "",
+      };
 
-  <div class="panel-actions">
-    <div id="statusBadge" class="badge active">ACTIVE</div>
+      const form = document.getElementById("vinForm");
+      const vinInput = document.getElementById("vinInput");
+      const statusMessage = document.getElementById("statusMessage");
+      const resultsSection = document.getElementById("resultsSection");
 
-    <button id="editCustomerBtn" class="edit-btn">
-      Edit
-    </button>
-  </div>
-</div>
+      const customerNameEl = document.getElementById("customerName");
+      const phoneNumberEl = document.getElementById("phoneNumber");
+      const addressEl = document.getElementById("address");
+      const zipCodeEl = document.getElementById("zipCode");
+      const emailAddressEl = document.getElementById("emailAddress");
+      const mmYearEl = document.getElementById("mmYear");
+      const vinNumberEl = document.getElementById("vinNumber");
+      const statusBadgeEl = document.getElementById("statusBadge");
 
-<!-- CUSTOMER INFO -->
-<div>
-  <div class="info-row"><b>Customer:</b> <span id="customerName">—</span></div>
-  <div class="info-row"><b>Phone:</b> <span id="phoneNumber"></span></div>
-  <div class="info-row"><b>Address:</b> <span id="address"></span></div>
-  <div class="info-row"><b>Vehicle:</b> <span id="mmYear"></span></div>
-</div>
+      const editCustomerBtn = document.getElementById("editCustomerBtn");
+      const editCustomerSection = document.getElementById("editCustomerSection");
+      const readOnlyNote = document.getElementById("readOnlyNote");
+      const editName = document.getElementById("editName");
+      const editPhone = document.getElementById("editPhone");
+      const editEmail = document.getElementById("editEmail");
+      const editAddress = document.getElementById("editAddress");
+      const editZip = document.getElementById("editZip");
+      const saveCustomerBtn = document.getElementById("saveCustomerBtn");
+      const cancelEditBtn = document.getElementById("cancelEditBtn");
+      const saveStatus = document.getElementById("saveStatus");
 
-<!-- EDIT SECTION -->
-<div id="editCustomerSection" class="edit-section">
-  <input id="editName" placeholder="Name" />
-  <input id="editPhone" placeholder="Phone" />
-  <input id="editEmail" placeholder="Email" />
+      const notesBlock = document.getElementById("notesBlock");
+      const notesText = document.getElementById("notesText");
 
-  <div class="edit-actions">
-    <button id="saveCustomerBtn">Save</button>
-    <button id="cancelEditBtn">Cancel</button>
-  </div>
-</div>
+      const historyBlock = document.getElementById("historyBlock");
+      const historyList = document.getElementById("historyList");
+      const historyCountLabel = document.getElementById("historyCountLabel");
 
-</div>
-</div>
+      const shareLinkEl = document.getElementById("shareLink");
+      const copyShareBtn = document.getElementById("copyShareBtn");
 
-<script>
-const btn = document.getElementById("editCustomerBtn");
-const section = document.getElementById("editCustomerSection");
+      const photoGrid = document.getElementById("photoGrid");
+      const noPhotosMsg = document.getElementById("noPhotosMsg");
 
-btn.onclick = () => {
-  section.style.display =
-    section.style.display === "block" ? "none" : "block";
-};
+      function escapeHtml(str) {
+        return String(str ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
 
-document.getElementById("cancelEditBtn").onclick = () => {
-  section.style.display = "none";
-};
-</script>
+      function setStatus(message, type = "") {
+        statusMessage.textContent = message || "";
+        statusMessage.className = "status";
+        if (type) statusMessage.classList.add(type);
+      }
 
-</body>
+      function setSaveStatus(message, type = "") {
+        saveStatus.textContent = message || "";
+        saveStatus.className = "edit-status";
+        if (type) saveStatus.classList.add(type);
+      }
+
+      function makeStatusBadge(status) {
+        if (!status) return "";
+        const normalized = String(status).trim().toUpperCase();
+        let badgeClass = "badge";
+        if (normalized === "VIP") badgeClass += " vip";
+        else if (normalized === "ONE-TIME" || normalized === "ONE TIME") badgeClass += " one-time";
+        else if (normalized === "ACTIVE") badgeClass += " active";
+        return `<span class="${badgeClass}">${escapeHtml(normalized)}</span>`;
+      }
+
+      function getPublicBaseUrl() {
+        return (PUBLIC_BASE_URL || window.location.origin).replace(/\/$/, "");
+      }
+
+      async function copyToClipboard(text) {
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+          }
+        } catch (e) {}
+        const temp = document.createElement("textarea");
+        temp.value = text;
+        temp.style.position = "fixed";
+        temp.style.left = "-9999px";
+        document.body.appendChild(temp);
+        temp.focus();
+        temp.select();
+        let ok = false;
+        try {
+          ok = document.execCommand("copy");
+        } catch (e) {
+          ok = false;
+        }
+        document.body.removeChild(temp);
+        return ok;
+      }
+
+      function renderPhotos(payload) {
+        const photos = Array.isArray(payload?.photo_urls) ? payload.photo_urls : [];
+        if (photos.length > 0) {
+          photoGrid.style.display = "grid";
+          photoGrid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+          photoGrid.style.gap = "10px";
+          photoGrid.innerHTML = photos
+            .map((u) => {
+              const safe = escapeHtml(u);
+              return `
+                <a href="${safe}" target="_blank" rel="noopener noreferrer"
+                  style="display:block;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;background:#0f172a;">
+                  <img src="${safe}" loading="lazy"
+                    style="width:100%;height:180px;object-fit:cover;display:block;" />
+                </a>
+              `;
+            })
+            .join("");
+          noPhotosMsg.style.display = "none";
+        } else {
+          photoGrid.style.display = "none";
+          photoGrid.innerHTML = "";
+          noPhotosMsg.style.display = "block";
+        }
+      }
+
+      function fillEditFields(payload) {
+        originalCustomer = {
+          full_name: payload.customer_name || "",
+          phone: payload.phone_number || "",
+          email: payload.email || "",
+          address: payload.address || "",
+          zip_code: payload.zip_code || "",
+        };
+
+        editName.value = originalCustomer.full_name;
+        editPhone.value = originalCustomer.phone;
+        editEmail.value = originalCustomer.email;
+        editAddress.value = originalCustomer.address;
+        editZip.value = originalCustomer.zip_code;
+      }
+
+      function resetEditFields() {
+        editName.value = originalCustomer.full_name;
+        editPhone.value = originalCustomer.phone;
+        editEmail.value = originalCustomer.email;
+        editAddress.value = originalCustomer.address;
+        editZip.value = originalCustomer.zip_code;
+      }
+
+      function applyEditPermission(canEdit) {
+        currentCanEditCustomer = Boolean(canEdit);
+
+        if (currentCanEditCustomer) {
+          editCustomerBtn.style.display = "inline-flex";
+          readOnlyNote.style.display = "none";
+        } else {
+          editCustomerBtn.style.display = "none";
+          editCustomerSection.style.display = "none";
+          readOnlyNote.style.display = "block";
+        }
+      }
+
+      function openEditSection() {
+        if (!currentCanEditCustomer) {
+          editCustomerSection.style.display = "none";
+          readOnlyNote.style.display = "block";
+          return;
+        }
+
+        editCustomerSection.style.display = "block";
+        editCustomerBtn.textContent = "Editing";
+        setSaveStatus("");
+      }
+
+      function closeEditSection() {
+        editCustomerSection.style.display = "none";
+        editCustomerBtn.textContent = "Edit Customer";
+        setSaveStatus("");
+        resetEditFields();
+      }
+
+      async function fetchWithAuth(url) {
+        const r = await fetch(url, { credentials: "include" });
+        if (r.status === 401) {
+          window.location.href = "/login";
+          throw new Error("AUTH REQUIRED");
+        }
+        return r;
+      }
+
+      editCustomerBtn.addEventListener("click", () => {
+        if (!resultsSection.style.display || resultsSection.style.display === "none") return;
+        if (!currentCanEditCustomer) return;
+
+        if (editCustomerSection.style.display === "block") {
+          closeEditSection();
+        } else {
+          openEditSection();
+        }
+      });
+
+      cancelEditBtn.addEventListener("click", () => {
+        closeEditSection();
+      });
+
+      saveCustomerBtn.addEventListener("click", async () => {
+        if (!currentCanEditCustomer) {
+          setSaveStatus("You do not have permission to edit this record.", "error");
+          return;
+        }
+
+        if (!currentCustomerId) {
+          setSaveStatus("No customer record found for editing.", "error");
+          return;
+        }
+
+        setSaveStatus("Saving...");
+
+        const payload = {
+          customer_id: currentCustomerId,
+          vin: vinNumberEl.textContent || "",
+          full_name: editName.value,
+          phone: editPhone.value,
+          email: editEmail.value,
+          address: editAddress.value,
+          zip_code: editZip.value,
+        };
+
+        try {
+          const res = await fetch("/api/update-customer", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data?.error || "Save failed.");
+          }
+
+          customerNameEl.textContent = editName.value || "—";
+          phoneNumberEl.textContent = editPhone.value || "";
+          addressEl.textContent = editAddress.value || "";
+          zipCodeEl.textContent = editZip.value || "";
+          emailAddressEl.textContent = editEmail.value || "";
+
+          originalCustomer = {
+            full_name: editName.value || "",
+            phone: editPhone.value || "",
+            email: editEmail.value || "",
+            address: editAddress.value || "",
+            zip_code: editZip.value || "",
+          };
+
+          setSaveStatus("Saved ✅", "ok");
+
+          setTimeout(() => {
+            closeEditSection();
+          }, 700);
+        } catch (err) {
+          setSaveStatus(String(err?.message || err || "Save failed."), "error");
+        }
+      });
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const vin = (vinInput.value || "").trim().toUpperCase();
+        if (vin.length !== 17) {
+          setStatus("VIN must be 17 characters.", "error");
+          return;
+        }
+
+        setStatus("Searching...", "");
+        setSaveStatus("");
+        resultsSection.style.display = "none";
+        editCustomerSection.style.display = "none";
+        editCustomerBtn.textContent = "Edit Customer";
+        editCustomerBtn.style.display = "inline-flex";
+        readOnlyNote.style.display = "none";
+        currentCustomerId = null;
+        currentCanEditCustomer = false;
+
+        try {
+          const r = await fetchWithAuth(`/search?vin=${encodeURIComponent(vin)}`);
+          const payload = await r.json();
+
+          if (!r.ok) {
+            setStatus(payload?.error || "Search failed.", "error");
+            return;
+          }
+
+          customerNameEl.textContent = payload.customer_name || "—";
+          phoneNumberEl.textContent = payload.phone_number || "";
+          addressEl.textContent = payload.address || "";
+          zipCodeEl.textContent = payload.zip_code || "";
+          emailAddressEl.textContent = payload.email || "";
+          mmYearEl.textContent = `${payload.make || ""} ${payload.model || ""} ${payload.year || ""}`.trim();
+          vinNumberEl.textContent = payload.vin_number || vin;
+
+          currentCustomerId = payload.customer_id || null;
+          fillEditFields(payload);
+
+          applyEditPermission(payload.can_edit_customer === true);
+
+          statusBadgeEl.innerHTML = makeStatusBadge(payload.status || "");
+
+          const notes = (payload.notes || "").trim();
+          if (notes) {
+            notesText.textContent = notes;
+            notesBlock.style.display = "block";
+          } else {
+            notesBlock.style.display = "none";
+            notesText.textContent = "";
+          }
+
+          shareLinkEl.value = payload.customer_portal_url || `${getPublicBaseUrl()}/vin/${vin}`;
+
+          copyShareBtn.onclick = async () => {
+            const ok = await copyToClipboard(shareLinkEl.value);
+            setStatus(ok ? "Copied portal link." : "Copy failed.", ok ? "ok" : "error");
+          };
+
+          renderPhotos(payload);
+
+          const history = Array.isArray(payload.service_history) ? payload.service_history : [];
+          if (history.length) {
+            historyCountLabel.textContent = `${history.length} record(s)`;
+            historyList.innerHTML = history.map((h) => {
+              const d = escapeHtml(h.date || "");
+              const t = escapeHtml(h.service_type || "");
+              const desc = escapeHtml(h.service_description || "");
+              const notes = escapeHtml(h.service_notes || "");
+              const hasDetails = Boolean(desc || notes);
+
+              return `
+                <div class="history-card">
+                  <div class="history-top">
+                    <div class="history-name">${t || "SERVICE"}</div>
+                    <div class="history-date">${d}</div>
+                  </div>
+                  ${desc ? `<div class="history-preview">${desc}</div>` : ``}
+                  ${hasDetails ? `
+                    <div class="history-details">
+                      ${desc ? `<div class="history-pre"><b>Details:</b>\n${desc}</div>` : ``}
+                      ${notes ? `<div class="history-pre" style="margin-top:8px;"><b>Notes:</b>\n${notes}</div>` : ``}
+                    </div>
+                  ` : ``}
+                </div>
+              `;
+            }).join("");
+            historyBlock.style.display = "block";
+          } else {
+            historyBlock.style.display = "none";
+            historyList.innerHTML = "";
+            historyCountLabel.textContent = "";
+          }
+
+          resultsSection.style.display = "block";
+          setStatus("Loaded.", "ok");
+        } catch (err) {
+          setStatus(String(err?.message || err || "Error"), "error");
+        }
+      });
+    </script>
+  </body>
 </html>
