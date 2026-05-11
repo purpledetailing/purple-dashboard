@@ -83,6 +83,15 @@ const OFFLINE_QUEUE_KEY = "purple_field_offline_jobs_v1";
 * Package descriptions
 * ========================= */
 const PACKAGE_DETAILS: Record<string, string[]> = {
+  "PURPLE LIGHT": [
+    "Gentle Exterior Wash",
+    "Gentle Microfiber Towel Dry",
+    "Interior and Exterior Window Clean",
+    "Dash and Console Wipe Down",
+    "Hand Polish Wax",
+    "Clean Tires & Rims Face",
+    "Tire Shine",
+  ],
   "PURPLE RAIN": [
     "Gentle Exterior Wash",
     "Gentle Microfiber Towel Dry",
