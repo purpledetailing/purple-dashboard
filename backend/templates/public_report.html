@@ -9,6 +9,7 @@
       Vehicle Not Found · Purple Report
     {% endif %}
   </title>
+
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <style>
@@ -71,6 +72,13 @@
       font-weight: 600;
     }
 
+    .vin-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
+
     .vin-tag {
       font-size: 0.75rem;
       padding: 6px 10px;
@@ -87,6 +95,11 @@
     .vin-tag strong {
       color: var(--text-main);
       font-weight: 600;
+    }
+
+    .generated-time {
+      font-size: 0.72rem;
+      color: var(--text-muted);
     }
 
     .card {
@@ -117,6 +130,13 @@
       color: var(--text-muted);
     }
 
+    .action-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
     .badge {
       display: inline-flex;
       align-items: center;
@@ -126,8 +146,24 @@
       background: #111827;
       color: #ffffff;
       font-size: 0.7rem;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
+    }
+
+    .action-pill {
+      border: 1px solid var(--border-subtle);
+      background: #ffffff;
+      color: var(--text-main);
+      border-radius: 999px;
+      padding: 7px 14px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+
+    .action-pill:hover {
+      background: #f3f4f6;
     }
 
     .grid {
@@ -138,7 +174,9 @@
     }
 
     @media (max-width: 800px) {
-      .grid { grid-template-columns: minmax(0, 1fr); }
+      .grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }
 
     .panel {
@@ -157,7 +195,9 @@
       margin-bottom: 10px;
     }
 
-    .info-item { margin-bottom: 10px; }
+    .info-item {
+      margin-bottom: 10px;
+    }
 
     .info-label {
       font-size: 0.7rem;
@@ -172,7 +212,6 @@
       word-break: break-word;
     }
 
-    /* --- Service History Header Row --- */
     .service-header {
       display: flex;
       justify-content: space-between;
@@ -191,8 +230,6 @@
       gap: 8px;
       white-space: nowrap;
       flex-shrink: 0;
-
-      /* ✅ clickable */
       cursor: pointer;
       user-select: none;
     }
@@ -223,12 +260,10 @@
       }
     }
 
-    /* ✅ Master collapse for the entire list */
     #serviceHistoryWrap.is-collapsed {
       display: none;
     }
 
-    /* --- Service Item --- */
     .service-item {
       padding: 10px 12px;
       border-radius: 12px;
@@ -239,6 +274,7 @@
       transition: background 120ms ease, border-color 120ms ease;
       min-width: 0;
       overflow: hidden;
+      break-inside: avoid;
     }
 
     .service-item:hover {
@@ -254,7 +290,9 @@
       min-width: 0;
     }
 
-    .service-left { min-width: 0; }
+    .service-left {
+      min-width: 0;
+    }
 
     .service-date {
       font-size: 0.75rem;
@@ -313,8 +351,13 @@
       min-width: 0;
     }
 
-    .service-item.is-open .service-details { display: block; }
-    .service-item.is-open .details-cta { color: var(--text-main); }
+    .service-item.is-open .service-details {
+      display: block;
+    }
+
+    .service-item.is-open .details-cta {
+      color: var(--text-main);
+    }
 
     .svc-list {
       margin-left: 18px;
@@ -324,9 +367,10 @@
       overflow-wrap: anywhere;
     }
 
-    .svc-list li { margin: 6px 0; }
+    .svc-list li {
+      margin: 6px 0;
+    }
 
-    /* Gallery */
     .gallery-footer {
       margin-top: 10px;
       display: flex;
@@ -358,223 +402,451 @@
       padding: 18px;
       font-size: 0.9rem;
     }
+
+    @media print {
+
+      body {
+        background: white;
+        padding: 0;
+      }
+
+      .card {
+        box-shadow: none;
+        border: none;
+      }
+
+      .action-row {
+        display: none;
+      }
+
+    }
   </style>
 </head>
 
 <body>
+
   <div class="page">
+
     <header>
+
       <div>
-        <div class="brand-title">Purple Dashboard</div>
+        <div class="brand-title">
+          Purple Dashboard
+        </div>
+
         <div class="brand-subtitle">
           Verified Cosmetic History snapshot by <span>PurpleVin</span>
         </div>
       </div>
-      <div class="vin-tag">
-        VIN <strong>{{ vin }}</strong>
+
+      <div class="vin-wrap">
+
+        <div class="vin-tag">
+          VIN <strong>{{ vin }}</strong>
+        </div>
+
+        <div class="generated-time">
+          Generated {{ current_date }}
+        </div>
+
       </div>
+
     </header>
 
     {% if not_found %}
+
       <div class="card">
+
         <div class="not-found">
           We couldn’t find a vehicle record for this VIN.
           If you believe this is an error, please contact PurpleVin.
         </div>
+
       </div>
+
     {% else %}
+
       <main class="card">
+
         <div class="card-header">
+
           <div>
+
             <div class="vehicle-title">
               {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}
             </div>
-            <div class="vehicle-meta">Verified by PurpleVin</div>
+
+            <div class="vehicle-meta">
+              Verified by PurpleVin
+            </div>
+
           </div>
-          <div class="badge">Purple Report</div>
+
+          <div class="action-row">
+
+            <div class="badge">
+              Purple Report
+            </div>
+
+            <button class="action-pill" onclick="shareReport()">
+              Share
+            </button>
+
+            <button class="action-pill" onclick="downloadPDF()">
+              Download PDF
+            </button>
+
+          </div>
+
         </div>
 
         <section class="grid">
-          <section class="panel">
-            <div class="panel-title">Vehicle Overview</div>
 
-            <div class="info-item">
-              <div class="info-label">VIN</div>
-              <div class="info-value">{{ vehicle.vin_number }}</div>
+          <section class="panel">
+
+            <div class="panel-title">
+              Vehicle Overview
             </div>
 
             <div class="info-item">
-              <div class="info-label">Make / Model / Year</div>
+              <div class="info-label">VIN</div>
+              <div class="info-value">
+                {{ vehicle.vin_number }}
+              </div>
+            </div>
+
+            <div class="info-item">
+              <div class="info-label">
+                Make / Model / Year
+              </div>
+
               <div class="info-value">
                 {{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}
               </div>
             </div>
 
             <div class="service-header">
-              <div class="panel-title" style="margin:0;">Service History</div>
 
-              <!-- ✅ CLICK THIS to collapse/expand ENTIRE list -->
-              <div class="service-count" id="svcToggleBtn" role="button" tabindex="0" aria-expanded="true">
-                <span class="pill" id="svcMasterPm">−</span>
-                <span>{{ service_history|length }} records</span>
+              <div class="panel-title" style="margin:0;">
+                Service History
               </div>
+
+              <div class="service-count"
+                   id="svcToggleBtn"
+                   role="button"
+                   tabindex="0"
+                   aria-expanded="true">
+
+                <span class="pill" id="svcMasterPm">−</span>
+
+                <span>
+                  {{ service_history|length }} records
+                </span>
+
+              </div>
+
             </div>
 
             {% if service_history %}
+
               <div id="serviceHistoryWrap">
+
                 {% for entry in service_history %}
-                  <div class="service-item {% if loop.first %}is-open{% endif %}" data-idx="{{ loop.index0 }}">
+
+                  <div class="service-item {% if loop.first %}is-open{% endif %}"
+                       data-idx="{{ loop.index0 }}">
+
                     <div class="service-top">
+
                       <div class="service-left">
-                        <div class="service-date">{{ entry.date }}</div>
-                        <div class="service-type">{{ entry.service_type }}</div>
+
+                        <div class="service-date">
+                          {{ entry.date }}
+                        </div>
+
+                        <div class="service-type">
+                          {{ entry.service_type }}
+                        </div>
+
                       </div>
 
-                      <div class="details-cta" aria-label="Toggle details">
-                        <span class="pm">{% if loop.first %}−{% else %}+{% endif %}</span>
+                      <div class="details-cta">
+
+                        <span class="pm">
+                          {% if loop.first %}−{% else %}+{% endif %}
+                        </span>
+
                         <span>Details</span>
+
                       </div>
+
                     </div>
 
                     <div class="service-details">
+
                       {% if entry.service_description %}
+
                         <ul class="svc-list">
+
                           {% for line in entry.service_description.split('\n') %}
+
                             {% set t = line.strip() %}
+
                             {% if t %}
                               <li>{{ t.lstrip('-•').strip() }}</li>
                             {% endif %}
+
                           {% endfor %}
+
                         </ul>
+
                       {% else %}
+
                         <div style="font-size:0.85rem;color:var(--text-muted);">
                           No details recorded for this visit.
                         </div>
+
                       {% endif %}
+
                     </div>
+
                   </div>
+
                 {% endfor %}
+
               </div>
+
             {% else %}
+
               <p style="font-size:0.85rem;color:var(--text-muted);">
                 No service records available yet.
               </p>
+
             {% endif %}
+
           </section>
 
           <section class="panel">
-            <div class="panel-title">Service Gallery</div>
+
+            <div class="panel-title">
+              Service Gallery
+            </div>
 
             {% if photo_urls and (photo_urls|length > 0) %}
+
               <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+
                 {% for u in photo_urls %}
-                  <a href="{{ u }}" target="_blank" rel="noopener noreferrer"
+
+                  <a href="{{ u }}"
+                     target="_blank"
+                     rel="noopener noreferrer"
                      style="display:block;border-radius:12px;overflow:hidden;border:1px solid var(--border-subtle);background:#0f172a;">
+
                     <img src="{{ u }}"
                          style="width:100%;height:180px;object-fit:cover;display:block;"
                          loading="lazy" />
+
                   </a>
+
                 {% endfor %}
+
               </div>
 
               <div class="gallery-footer">
-                <span>Photos uploaded for record</span>
+
+                <span>
+                  Photos uploaded for record
+                </span>
+
                 {% if vehicle.service_history_link %}
-                  <a href="{{ vehicle.service_history_link }}" target="_blank" class="link-button">
+
+                  <a href="{{ vehicle.service_history_link }}"
+                     target="_blank"
+                     class="link-button">
+
                     Open Full Gallery ↗
+
                   </a>
+
                 {% else %}
-                  <span>Service photos stored securely</span>
+
+                  <span>
+                    Service photos stored securely
+                  </span>
+
                 {% endif %}
+
               </div>
+
             {% else %}
+
               <p style="font-size:0.85rem;color:var(--text-muted);">
                 No photos uploaded yet.
               </p>
+
             {% endif %}
+
           </section>
+
         </section>
+
       </main>
+
     {% endif %}
+
   </div>
 
   <script>
+
+    async function shareReport() {
+
+      const shareData = {
+        title: 'PurpleVin Vehicle Report',
+        text: 'View this verified cosmetic history report on PurpleVin.',
+        url: window.location.href
+      };
+
+      if (navigator.share) {
+
+        try {
+          await navigator.share(shareData);
+        } catch (err) {}
+
+      } else {
+
+        try {
+          await navigator.clipboard.writeText(window.location.href);
+          alert('Report link copied.');
+        } catch (err) {
+          alert('Unable to copy report link.');
+        }
+
+      }
+
+    }
+
+    function downloadPDF() {
+      window.print();
+    }
+
     (function () {
+
       const wrap = document.getElementById("serviceHistoryWrap");
       const masterPm = document.getElementById("svcMasterPm");
       const toggleBtn = document.getElementById("svcToggleBtn");
+
       if (!wrap || !masterPm || !toggleBtn) return;
 
-      // --- item accordion helpers ---
       function closeAllItems() {
+
         wrap.querySelectorAll(".service-item.is-open").forEach(el => {
+
           el.classList.remove("is-open");
+
           const pm = el.querySelector(".details-cta .pm");
+
           if (pm) pm.textContent = "+";
+
         });
+
       }
 
       function openFirstItemIfExists() {
+
         const first = wrap.querySelector(".service-item");
+
         if (!first) return;
+
         first.classList.add("is-open");
+
         const pm = first.querySelector(".details-cta .pm");
+
         if (pm) pm.textContent = "−";
+
       }
 
-      // --- MASTER collapse/expand ENTIRE list ---
       function collapseHistory() {
+
         wrap.classList.add("is-collapsed");
+
         masterPm.textContent = "+";
+
         toggleBtn.setAttribute("aria-expanded", "false");
+
         closeAllItems();
+
       }
 
       function expandHistory() {
+
         wrap.classList.remove("is-collapsed");
+
         masterPm.textContent = "−";
+
         toggleBtn.setAttribute("aria-expanded", "true");
+
         openFirstItemIfExists();
+
       }
 
       function toggleHistory() {
+
         const collapsed = wrap.classList.contains("is-collapsed");
+
         if (collapsed) expandHistory();
         else collapseHistory();
+
       }
 
-      // Click on "+ records" area toggles the whole section
       toggleBtn.addEventListener("click", (e) => {
+
         e.preventDefault();
         e.stopPropagation();
+
         toggleHistory();
+
       });
 
-      // Keyboard accessibility: Enter/Space
       toggleBtn.addEventListener("keydown", (e) => {
+
         if (e.key === "Enter" || e.key === " ") {
+
           e.preventDefault();
+
           toggleHistory();
+
         }
+
       });
 
-      // Clicking a service-item toggles ONLY that item (accordion),
-      // but only if the list is expanded.
       wrap.addEventListener("click", (e) => {
+
         if (wrap.classList.contains("is-collapsed")) return;
 
         const item = e.target.closest(".service-item");
+
         if (!item) return;
 
         const isOpen = item.classList.contains("is-open");
+
         closeAllItems();
+
         if (!isOpen) {
+
           item.classList.add("is-open");
+
           const pm = item.querySelector(".details-cta .pm");
+
           if (pm) pm.textContent = "−";
+
         }
+
       });
+
     })();
+
   </script>
+
 </body>
 </html>
