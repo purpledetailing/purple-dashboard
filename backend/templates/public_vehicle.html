@@ -9,6 +9,7 @@
       Vehicle Not Found · Purple Report
     {% endif %}
   </title>
+
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <style>
@@ -20,7 +21,6 @@
       --border-subtle: #e5e7eb;
       --text-main: #111827;
       --text-muted: #6b7280;
-      --badge-bg: #0f172a;
     }
 
     * {
@@ -77,6 +77,13 @@
       font-weight: 600;
     }
 
+    .vin-area {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
+
     .vin-tag {
       font-size: 0.75rem;
       padding: 6px 10px;
@@ -95,7 +102,10 @@
       font-weight: 600;
     }
 
-    /* Card layout */
+    .generated-time {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
 
     .card {
       background: var(--bg-card);
@@ -131,15 +141,22 @@
       color: var(--text-muted);
     }
 
+    .action-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
     .badge {
       display: inline-flex;
       align-items: center;
       gap: 6px;
       border-radius: 999px;
-      padding: 4px 10px;
+      padding: 8px 14px;
       background: #111827;
       color: #f9fafb;
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       text-transform: uppercase;
       letter-spacing: 0.14em;
     }
@@ -149,6 +166,22 @@
       height: 6px;
       border-radius: 999px;
       background: #22c55e;
+    }
+
+    .action-pill {
+      border: 1px solid var(--border-subtle);
+      background: #ffffff;
+      color: var(--text-main);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.15s ease;
+    }
+
+    .action-pill:hover {
+      background: #f3f4f6;
     }
 
     .grid {
@@ -191,7 +224,6 @@
 
     .info-list {
       display: grid;
-      grid-template-columns: minmax(0, 1fr);
       gap: 8px;
       font-size: 0.9rem;
     }
@@ -210,8 +242,6 @@
       font-weight: 500;
     }
 
-    /* Service history list */
-
     .service-list {
       display: flex;
       flex-direction: column;
@@ -220,7 +250,7 @@
     }
 
     .service-item {
-      padding: 10px 10px;
+      padding: 10px;
       border-radius: 10px;
       border: 1px solid var(--border-subtle);
       background: #f9fafb;
@@ -239,7 +269,6 @@
       color: var(--text-muted);
     }
 
-    /* UPDATED: primary service name */
     .service-name {
       font-size: 0.9rem;
       font-weight: 800;
@@ -248,7 +277,6 @@
       letter-spacing: 0.06em;
     }
 
-    /* Keep type as subtle tag (optional) */
     .service-type {
       font-size: 0.75rem;
       font-weight: 700;
@@ -256,9 +284,9 @@
       text-transform: uppercase;
       letter-spacing: 0.08em;
       opacity: 0.95;
+      margin-bottom: 6px;
     }
 
-    /* NEW: details collapsible */
     .service-details {
       margin-top: 6px;
       border-radius: 10px;
@@ -284,7 +312,7 @@
       display: none;
     }
 
-    .service-details summary .pill {
+    .pill {
       font-size: 0.72rem;
       padding: 4px 9px;
       border-radius: 999px;
@@ -301,7 +329,7 @@
       border-top: 1px solid var(--border-subtle);
       font-size: 0.86rem;
       color: var(--text-main);
-      white-space: pre-line; /* IMPORTANT: preserves \n bullets from DB */
+      white-space: pre-line;
       line-height: 1.35rem;
     }
 
@@ -310,8 +338,6 @@
       color: var(--text-muted);
       padding: 8px 0;
     }
-
-    /* Gallery */
 
     .gallery-frame {
       border-radius: 12px;
@@ -343,7 +369,7 @@
       text-decoration: none;
       color: #ffffff;
       background: var(--purple);
-      padding: 5px 11px;
+      padding: 6px 12px;
       border-radius: 999px;
       display: inline-flex;
       align-items: center;
@@ -355,8 +381,6 @@
       filter: brightness(1.05);
     }
 
-    /* Not found */
-
     .not-found-card {
       margin-top: 16px;
       padding: 16px 18px;
@@ -366,142 +390,235 @@
       color: #991b1b;
       font-size: 0.9rem;
     }
+
+    @media print {
+      .action-row {
+        display: none;
+      }
+
+      body {
+        background: white;
+      }
+
+      .card {
+        box-shadow: none;
+      }
+    }
   </style>
 </head>
+
 <body>
   <div class="page">
+
     <header>
       <div class="brand">
         <div class="brand-title">Purple Dashboard</div>
+
         <div class="brand-subtitle">
-          Verified Comestic History snapshot by <span>PurpleVin</span>
+          Verified Cosmetic History snapshot by <span>PurpleVin</span>
         </div>
       </div>
 
-      <div class="vin-tag">
-        VIN
-        <strong>{{ vin }}</strong>
+      <div class="vin-area">
+        <div class="vin-tag">
+          VIN
+          <strong>{{ vin }}</strong>
+        </div>
+
+        <div class="generated-time">
+          Generated {{ current_date }}
+        </div>
       </div>
     </header>
 
     {% if not_found %}
+
       <div class="card">
         <div class="not-found-card">
           We couldn’t find a vehicle record for this VIN in the Purple Dashboard.
           If you believe this is an error, please contact PurpleVin.
         </div>
       </div>
+
     {% else %}
+
       <main class="card">
+
         <div class="card-header">
+
           <div class="vehicle-main">
+
             <div class="vehicle-title">
               {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}
             </div>
+
             <div class="vehicle-meta">
-              Maintained by PurpleVin
+              Verified by PurpleVin
             </div>
+
           </div>
-          <div class="badge">
-            <span class="dot"></span>
-            Purple Report
+
+          <div class="action-row">
+
+            <div class="badge">
+              <span class="dot"></span>
+              Purple Report
+            </div>
+
+            <button class="action-pill" onclick="shareReport()">
+              Share
+            </button>
+
+            <button class="action-pill" onclick="downloadPDF()">
+              Download PDF
+            </button>
+
           </div>
+
         </div>
 
         <section class="grid">
-          <!-- Left: quick info + history -->
+
+          <!-- LEFT -->
+
           <section class="panel">
+
             <div class="panel-header">
               <div class="panel-title">Vehicle Overview</div>
             </div>
+
             <div class="info-list" style="margin-bottom: 12px;">
+
               <div>
                 <div class="info-item-label">VIN</div>
-                <div class="info-item-value">{{ vehicle.vin_number }}</div>
+                <div class="info-item-value">
+                  {{ vehicle.vin_number }}
+                </div>
               </div>
+
               <div>
                 <div class="info-item-label">Make / Model / Year</div>
+
                 <div class="info-item-value">
                   {{ vehicle.make }} · {{ vehicle.model }} · {{ vehicle.year }}
                 </div>
               </div>
+
             </div>
 
             <div class="panel-header" style="margin-top: 8px;">
-              <div class="panel-title">Service History</div>
+
+              <div class="panel-title">
+                Service History
+              </div>
+
               <div class="panel-sub">
+
                 {% if service_history and service_history|length > 0 %}
                   {{ service_history|length }} visit{{ service_history|length > 1 and 's' or '' }}
                 {% else %}
                   No recorded visits yet
                 {% endif %}
+
               </div>
+
             </div>
 
             {% if service_history and service_history|length > 0 %}
+
               <div class="service-list">
+
                 {% for entry in service_history %}
+
                   <article class="service-item">
+
                     <div class="service-row-top">
+
                       <div class="service-date">
                         {{ entry.date or 'Date N/A' }}
                       </div>
 
-                      <!-- UPDATED: show Package/Service Name first -->
                       <div class="service-name">
                         {{ entry.service_name or entry.service_type or 'SERVICE' }}
                       </div>
+
                     </div>
 
-                    <!-- OPTIONAL: if you still want to show type as a small tag, keep this.
-                         If not, delete this entire block. -->
                     {% if entry.service_type and entry.service_type != entry.service_name %}
-                      <div class="service-type" style="margin-bottom:6px;">
+
+                      <div class="service-type">
                         {{ entry.service_type }}
                       </div>
+
                     {% endif %}
 
-                    <!-- NEW: Details (description) -->
                     {% if entry.service_description %}
+
                       <details class="service-details">
+
                         <summary>
                           <span class="pill">Details</span>
                           <span>Tap to expand</span>
                         </summary>
-                        <div class="service-desc">{{ entry.service_description }}</div>
+
+                        <div class="service-desc">
+                          {{ entry.service_description }}
+                        </div>
+
                       </details>
+
                     {% endif %}
 
-                    <!-- REMOVED: Notes + Next (per your request) -->
                   </article>
+
                 {% endfor %}
+
               </div>
+
             {% else %}
+
               <p class="empty-message">
                 Once this vehicle is detailed, its visit history will appear here.
               </p>
+
             {% endif %}
+
           </section>
 
-          <!-- Right: gallery -->
+          <!-- RIGHT -->
+
           <section class="panel">
+
             <div class="panel-header">
-              <div class="panel-title">Service Gallery</div>
-              <div class="panel-sub">Before & After Photos</div>
+
+              <div class="panel-title">
+                Service Gallery
+              </div>
+
+              <div class="panel-sub">
+                Before & After Photos
+              </div>
+
             </div>
 
             {% if embed_url %}
+
               <div class="gallery-frame">
+
                 <iframe
                   src="{{ embed_url }}"
                   loading="lazy"
                   referrerpolicy="no-referrer-when-downgrade"
                 ></iframe>
+
               </div>
+
               <div class="gallery-footer">
+
                 <span>
-                  Photos are stored securely in Google Drive and linked to this vehicle.
+                  Photos are stored securely and linked to this vehicle.
                 </span>
+
                 <a
                   href="{{ vehicle.service_history_link }}"
                   target="_blank"
@@ -510,16 +627,61 @@
                 >
                   Open full folder ↗
                 </a>
+
               </div>
+
             {% else %}
+
               <p class="empty-message">
                 No photo gallery is linked yet for this vehicle.
               </p>
+
             {% endif %}
+
           </section>
+
         </section>
+
       </main>
+
     {% endif %}
+
   </div>
+
+  <script>
+
+    async function shareReport() {
+
+      const shareData = {
+        title: 'PurpleVin Vehicle Report',
+        text: 'View this verified cosmetic history report on PurpleVin.',
+        url: window.location.href
+      };
+
+      if (navigator.share) {
+
+        try {
+          await navigator.share(shareData);
+        } catch (err) {}
+
+      } else {
+
+        try {
+          await navigator.clipboard.writeText(window.location.href);
+          alert('Report link copied.');
+        } catch (err) {
+          alert('Unable to copy link.');
+        }
+
+      }
+
+    }
+
+    function downloadPDF() {
+      window.print();
+    }
+
+  </script>
+
 </body>
-</html> 
+</html>
