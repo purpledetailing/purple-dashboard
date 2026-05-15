@@ -402,7 +402,137 @@
       padding: 18px;
       font-size: 0.9rem;
     }
+.no-record-card {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 42px 34px;
+}
 
+.no-record-logo {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin-bottom: 22px;
+}
+
+.no-record-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--purple);
+  margin-bottom: 12px;
+}
+
+.no-record-title {
+  font-size: 2rem;
+  line-height: 1.12;
+  font-weight: 850;
+  letter-spacing: -0.04em;
+  color: var(--text-main);
+  margin-bottom: 14px;
+}
+
+.no-record-copy {
+  font-size: 0.98rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+  max-width: 620px;
+  margin-bottom: 22px;
+}
+
+.no-record-vin-box {
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: #f9fafb;
+  margin-bottom: 22px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.no-record-vin-box span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.no-record-vin-box strong {
+  font-size: 0.95rem;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.no-record-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+.no-record-primary,
+.no-record-secondary {
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.no-record-primary {
+  background: var(--purple);
+  color: #ffffff;
+  border: 1px solid var(--purple);
+}
+
+.no-record-secondary {
+  background: #ffffff;
+  color: var(--text-main);
+  border: 1px solid var(--border-subtle);
+}
+
+.partner-note {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 18px;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.partner-note a {
+  color: var(--purple);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.partner-note a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 560px) {
+  .no-record-card {
+    padding: 32px 22px;
+  }
+
+  .no-record-title {
+    font-size: 1.65rem;
+  }
+
+  .no-record-primary,
+  .no-record-secondary {
+    width: 100%;
+  }
+}
     @media print {
 
       body {
@@ -453,18 +583,59 @@
 
     </header>
 
-    {% if not_found %}
+  {% if not_found %}
 
-      <div class="card">
+  <main class="card no-record-card">
 
-        <div class="not-found">
-          We couldn’t find a vehicle record for this VIN.
-          If you believe this is an error, please contact PurpleVin.
-        </div>
+    <div class="no-record-logo">
+      <span style="color:#7c3aed;">Purple</span><span style="color:#020617;">Vin</span>
+    </div>
 
-      </div>
+    <div class="no-record-eyebrow">
+      Vehicle Search
+    </div>
 
-    {% else %}
+    <h1 class="no-record-title">
+      No public cosmetic history found.
+    </h1>
+
+    <p class="no-record-copy">
+      PurpleVin did not find a public cosmetic history record for this VIN yet.
+      Cosmetic history records are created by participating detailers, dealerships,
+      and approved partners using the PurpleVin Field.
+    </p>
+
+    <div class="no-record-vin-box">
+      <span>VIN searched</span>
+      <strong>{{ vin }}</strong>
+    </div>
+
+    <div class="no-record-actions">
+
+      <a
+        href="https://purpledetailing.com"
+        class="no-record-primary"
+      >
+        Search Another VIN
+      </a>
+
+      <a
+        href="https://purplevin.com"
+        class="no-record-secondary"
+      >
+        Learn About PurpleVin
+      </a>
+
+    </div>
+
+    <div class="partner-note">
+      Detailers, dealerships, and fleet operators can document vehicle cosmetic history through
+      <a href="https://intel.purplevin.com">Purple Field</a>.
+    </div>
+
+  </main>
+
+  {% else %}
 
       <main class="card">
 
