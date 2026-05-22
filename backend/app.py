@@ -788,7 +788,7 @@ def login():
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Purple Dashboard Login · PurpleVin</title>
+  <title>PurpleVin</title>
 
   <style>
     * {{ box-sizing: border-box; }}
@@ -796,16 +796,28 @@ def login():
     body {{
       margin:0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+
       min-height:100vh;
+
       display:flex;
       align-items:center;
       justify-content:center;
+
       padding:24px;
+
       color:#0f172a;
 
       background:
-        radial-gradient(1200px 800px at 25% 20%, rgba(156,108,255,0.22), transparent 55%),
-        radial-gradient(900px 700px at 80% 70%, rgba(91,31,166,0.26), transparent 55%),
+        radial-gradient(
+          1200px 800px at 25% 20%,
+          rgba(156,108,255,0.22),
+          transparent 55%
+        ),
+        radial-gradient(
+          900px 700px at 80% 70%,
+          rgba(91,31,166,0.26),
+          transparent 55%
+        ),
         #0b1020;
 
       position:relative;
@@ -817,16 +829,15 @@ def login():
       content:"";
       position:absolute;
       inset:-40px;
+
       pointer-events:none;
-      opacity:0.12;
 
-      background-image: url("{bg_url}");
-      background-repeat: repeat;
-      background-size: 420px 420px;
-      background-position: 0px 0px;
+      opacity:0.10;
 
-      transform: rotate(0deg);
-      filter: none;
+      background-image:url("{bg_url}");
+      background-repeat:repeat;
+      background-size:420px 420px;
+      background-position:0px 0px;
     }}
 
     /* subtle grain */
@@ -834,28 +845,33 @@ def login():
       content:"";
       position:absolute;
       inset:0;
+
       pointer-events:none;
+
       opacity:0.04;
 
       background-image:
-        radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px);
+        radial-gradient(
+          rgba(255,255,255,0.8) 1px,
+          transparent 1px
+        );
 
-      background-size: 4px 4px;
+      background-size:4px 4px;
 
-      mix-blend-mode: overlay;
+      mix-blend-mode:overlay;
     }}
 
     .card {{
       width:100%;
-      max-width:500px;
+      max-width:480px;
 
       background:#ffffff;
 
-      border:1px solid rgba(15,23,42,0.10);
+      border:1px solid rgba(15,23,42,0.08);
 
       border-radius:24px;
 
-      padding:36px 30px 24px;
+      padding:26px 30px 24px;
 
       box-shadow:
         0 22px 60px rgba(2,6,23,0.42);
@@ -864,17 +880,36 @@ def login():
       z-index:1;
     }}
 
+    .top-link {{
+      margin-bottom:18px;
+    }}
+
+    .top-link a {{
+      color:#7c3aed;
+      text-decoration:none;
+
+      font-size:13px;
+      font-weight:700;
+
+      opacity:0.9;
+    }}
+
+    .top-link a:hover {{
+      opacity:1;
+      text-decoration:underline;
+    }}
+
     .brand {{
       text-align:center;
 
-      font-size:38px;
+      font-size:36px;
       font-weight:900;
 
       letter-spacing:-0.05em;
 
-      margin-bottom:18px;
-
       line-height:1;
+
+      margin-bottom:20px;
     }}
 
     .purple {{
@@ -886,11 +921,11 @@ def login():
     }}
 
     h1 {{
-      margin:0 0 8px;
+      margin:0;
 
       text-align:center;
 
-      font-size:32px;
+      font-size:30px;
 
       line-height:1.1;
 
@@ -900,62 +935,33 @@ def login():
     }}
 
     p {{
-      margin:0 0 18px;
+      margin:10px 0 26px;
 
       color:#64748b;
 
-      font-size:15px;
+      font-size:14px;
 
-      line-height:1.4;
+      line-height:1.5;
 
       text-align:center;
     }}
 
-    .back-link-wrap {{
-      text-align:center;
-      margin-bottom:24px;
+    form {{
+      margin-top:0;
     }}
 
-    .back-link {{
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-
-      font-size:13px;
-      font-weight:700;
-
-      color:#7c3aed;
-      text-decoration:none;
-
-      padding:8px 14px;
-
-      border-radius:999px;
-
-      background:rgba(124,58,237,0.08);
-
-      transition:
-        background .12s ease,
-        transform .12s ease,
-        opacity .12s ease;
-    }}
-
-    .back-link:hover {{
-      background:rgba(124,58,237,0.14);
-      transform:translateY(-1px);
-    }}
-
-    .back-link:active {{
-      transform:translateY(0px);
+    .field {{
+      margin-bottom:18px;
     }}
 
     label {{
       display:block;
 
-      font-size:12px;
+      font-size:11px;
 
       color:#64748b;
 
-      margin:14px 0 7px;
+      margin:0 0 8px;
 
       text-transform:uppercase;
 
@@ -966,13 +972,12 @@ def login():
 
     input {{
       width:100%;
-      max-width:100%;
 
       height:50px;
 
       border-radius:14px;
 
-      border:1px solid rgba(15,23,42,0.14);
+      border:1px solid rgba(15,23,42,0.12);
 
       background:#f8fafc;
 
@@ -1001,7 +1006,6 @@ def login():
 
     button {{
       width:100%;
-      max-width:100%;
 
       height:52px;
 
@@ -1024,7 +1028,7 @@ def login():
 
       cursor:pointer;
 
-      margin-top:18px;
+      margin-top:6px;
 
       box-shadow:
         0 12px 24px rgba(91,33,182,0.28);
@@ -1035,19 +1039,19 @@ def login():
     }}
 
     button:hover {{
-      filter: brightness(1.04);
+      filter:brightness(1.04);
     }}
 
     button:active {{
-      transform: translateY(1px);
+      transform:translateY(1px);
     }}
 
     .small {{
-      margin-top:18px;
+      margin-top:22px;
 
       padding-top:18px;
 
-      border-top:1px solid rgba(15,23,42,0.10);
+      border-top:1px solid rgba(15,23,42,0.08);
 
       font-size:12px;
 
@@ -1082,21 +1086,17 @@ def login():
       color:#0f172a;
     }}
 
-    @media (max-width: 640px) {{
+    @media (max-width:640px) {{
       .card {{
-        padding:30px 22px 22px;
+        padding:24px 22px 22px;
       }}
 
       .brand {{
-        font-size:34px;
+        font-size:32px;
       }}
 
       h1 {{
-        font-size:28px;
-      }}
-
-      p {{
-        font-size:14px;
+        font-size:26px;
       }}
     }}
   </style>
@@ -1106,43 +1106,47 @@ def login():
 
   <div class="card">
 
+    <div class="top-link">
+      <a href="https://purplevin.com">
+        ← PurpleVin.com
+      </a>
+    </div>
+
     <div class="brand">
       <span class="purple">Purple</span><span class="black">Vin</span>
     </div>
 
-    <h1>Purple Dashboard Login</h1>
+    <h1></h1>
 
     <p>
       Secure access to your PurpleVin dashboard
     </p>
 
-    <div class="back-link-wrap">
-      <a href="https://purplevin.com" class="back-link">
-        ← Back to PurpleVin.com
-      </a>
-    </div>
-
     <form method="POST" action="/login?next={next_url}">
 
-      <label>Email</label>
+      <div class="field">
+        <label>Email</label>
 
-      <input
-        name="email"
-        type="email"
-        placeholder="Enter your email"
-        autocomplete="email"
-        required
-      />
+        <input
+          name="email"
+          type="email"
+          placeholder="Enter your email"
+          autocomplete="email"
+          required
+        />
+      </div>
 
-      <label>Password</label>
+      <div class="field">
+        <label>Password</label>
 
-      <input
-        name="password"
-        type="password"
-        placeholder="Enter your password"
-        autocomplete="current-password"
-        required
-      />
+        <input
+          name="password"
+          type="password"
+          placeholder="Enter your password"
+          autocomplete="current-password"
+          required
+        />
+      </div>
 
       <button type="submit">
         Sign in
