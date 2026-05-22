@@ -788,7 +788,7 @@ def login():
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Purple Dashboard Login · PurpleVin</title>
+  <title>PurpleVin</title>
   <style>
     * {{ box-sizing: border-box; }}
 
@@ -977,7 +977,7 @@ def login():
       <span class="purple">Purple</span><span class="black">Vin</span>
     </div>
 
-    <h1>Purple Dashboard Login</h1>
+    <h1></h1>
     <p>Secure access to your PurpleVin dashboard</p>
 
     <form method="POST" action="/login?next={next_url}">
