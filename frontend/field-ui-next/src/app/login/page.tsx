@@ -206,11 +206,11 @@ export default function LoginPage() {
         </div>
 
         <h1 style={styles.h1}>
-          Purple Dashboard Login
+
         </h1>
 
         <p style={styles.p}>
-          Secure access to your PurpleVin dashboard
+          Secure access to PurpleVin Field Tool
         </p>
 
         <form
