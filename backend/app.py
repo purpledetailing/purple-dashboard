@@ -784,362 +784,158 @@ def login():
         # so ALL CSS braces must be doubled {{ }}.
         return f"""
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Purple Dashboard Login · PurpleVin</title>
-
+  <title>Secure Login · PurpleVin</title>
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      color:#0f172a;
 
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-        sans-serif;
-
-      min-height: 100vh;
-
-      display: flex;
-      align-items: center;
-      justify-content: center;
-
-      padding: 24px;
-
-      overflow: hidden;
-      position: relative;
-
+      /* base */
       background:
-        radial-gradient(
-          circle at top right,
-          rgba(124, 58, 237, 0.35),
-          transparent 35%
-        ),
-        radial-gradient(
-          circle at bottom left,
-          rgba(91, 33, 182, 0.18),
-          transparent 40%
-        ),
-        #09090f;
-    }
+        radial-gradient(1200px 800px at 25% 20%, rgba(156,108,255,0.25), transparent 55%),
+        radial-gradient(900px 700px at 80% 70%, rgba(91,31,166,0.22), transparent 55%),
+        #0b1020;
 
-    /* Elephant Background */
-    body::before {
-      content: "";
-      position: absolute;
-      inset: 0;
+      position:relative;
+      overflow:hidden;
+    }}
+
+    /* ✅ EXACT PNG overlay (matches the image I shared) */
+    body::before {{
+      content:"";
+      position:absolute;
+      inset:-40px;
+      pointer-events:none;
+      opacity:0.28;    
 
       background-image: url("{bg_url}");
-      background-repeat: no-repeat;
-      background-position: left center;
-      background-size: 700px;
-
-      opacity: 0.12;
-      pointer-events: none;
-    }
-
-    .card {
-      width: 100%;
-      max-width: 500px;
-
-      background: #ffffff;
-
-      border-radius: 24px;
-
-      padding: 42px 34px 28px;
-
-      border: 1px solid rgba(15, 23, 42, 0.08);
-
-      box-shadow:
-        0 20px 60px rgba(0, 0, 0, 0.45),
-        0 0 0 1px rgba(255,255,255,0.04);
-
-      position: relative;
-      z-index: 1;
-    }
-
-    .brand {
-      text-align: center;
-
-      font-size: 42px;
-      font-weight: 900;
-
-      letter-spacing: -0.05em;
-
-      margin-bottom: 20px;
-    }
-
-    .purple {
-      color: #7c3aed;
-    }
-
-    .black {
-      color: #111827;
-    }
-
-    h1 {
-      margin: 0;
-
-      text-align: center;
-
-      font-size: 38px;
-      line-height: 1.05;
-
-      letter-spacing: -0.04em;
-
-      color: #0f172a;
-    }
-
-    .subtitle {
-      margin-top: 12px;
-      margin-bottom: 26px;
-
-      text-align: center;
-
-      font-size: 15px;
-      line-height: 1.5;
-
-      color: #64748b;
-    }
-
-    label {
-      display: block;
-
-      margin-bottom: 8px;
-      margin-top: 16px;
-
-      font-size: 12px;
-      font-weight: 700;
-
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-
-      color: #64748b;
-    }
-
-    input {
-      width: 100%;
-      height: 52px;
-
-      border-radius: 14px;
-
-      border: 1px solid rgba(15, 23, 42, 0.10);
-
-      background: #f8fafc;
-
-      padding: 0 16px;
-
-      font-size: 15px;
-
-      color: #0f172a;
-
-      outline: none;
-
-      transition:
-        border-color 0.15s ease,
-        box-shadow 0.15s ease,
-        background 0.15s ease;
-    }
-
-    input:focus {
-      background: #ffffff;
-
-      border-color: rgba(124, 58, 237, 0.45);
-
-      box-shadow:
-        0 0 0 4px rgba(124, 58, 237, 0.12);
-    }
-
-    .actions {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-
-      margin-top: 14px;
-      margin-bottom: 10px;
-    }
-
-    .remember {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-
-      font-size: 14px;
-      color: #64748b;
-    }
-
-    .remember input {
-      width: 16px;
-      height: 16px;
-    }
-
-    .forgot {
-      font-size: 14px;
-      text-decoration: none;
-
-      color: #7c3aed;
-      font-weight: 600;
-    }
-
-    .forgot:hover {
-      opacity: 0.85;
-    }
-
-    button {
-      width: 100%;
-      height: 54px;
-
-      margin-top: 8px;
-
-      border: 0;
-      border-radius: 14px;
-
-      background:
-        linear-gradient(
-          135deg,
-          #7c3aed,
-          #5b21b6
-        );
-
-      color: white;
-
-      font-size: 16px;
-      font-weight: 800;
-
-      cursor: pointer;
-
-      transition:
-        transform 0.12s ease,
-        filter 0.12s ease;
-    }
-
-    button:hover {
-      filter: brightness(1.04);
-    }
-
-    button:active {
-      transform: translateY(1px);
-    }
-
-    .divider {
-      margin: 24px 0 18px;
-
-      height: 1px;
-
-      background:
-        linear-gradient(
-          to right,
-          transparent,
-          rgba(15, 23, 42, 0.12),
-          transparent
-        );
-    }
-
-    .footer {
-      text-align: center;
-
-      font-size: 13px;
-      line-height: 1.5;
-
-      color: #64748b;
-    }
-
-    code {
-      background: #f1f5f9;
-
-      padding: 3px 7px;
-
-      border-radius: 8px;
-
-      border: 1px solid rgba(15,23,42,0.08);
-
-      color: #0f172a;
-
-      font-size: 12px;
-    }
-
-    @media (max-width: 640px) {
-      .card {
-        padding: 34px 24px 24px;
-      }
-
-      h1 {
-        font-size: 30px;
-      }
-
-      .brand {
-        font-size: 36px;
-      }
-    }
+      background-repeat: repeat;
+      background-size: 360px 360px;
+      background-position: 0px 0px; 
+
+      transform: rotate(0deg);
+      filter: none;
+    }}
+
+    /* subtle grain (very light) */
+    body::after {{
+      content:"";
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      opacity:0.05;
+      background-image: radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px);
+      background-size: 4px 4px;
+      mix-blend-mode: overlay;
+    }}
+
+    .card {{
+      width:100%;
+      max-width:460px;
+      background:#ffffff;           /* ✅ not transparent */
+      border:1px solid rgba(15,23,42,0.10);
+      border-radius:18px;
+      padding:22px 22px 18px;
+      box-shadow: 0 18px 50px rgba(2,6,23,0.35);
+      position:relative;
+      z-index:1;
+    }}
+
+    h1 {{
+      margin:0 0 6px;
+      font-size:20px;
+      letter-spacing:0.02em;
+    }}
+    p {{
+      margin:0 0 14px;
+      color:#475569;
+      font-size:13px;
+      line-height:1.35;
+    }}
+
+    label {{
+      display:block;
+      font-size:12px;
+      color:#64748b;
+      margin:10px 0 6px;
+      text-transform:uppercase;
+      letter-spacing:0.12em;
+    }}
+
+    input {{
+      width:100%;
+      max-width:100%;
+      height:46px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,0.14);
+      background:#f8fafc;
+      color:#0f172a;
+      padding:0 12px;
+      outline:none;
+      transition: border .12s ease, box-shadow .12s ease, background .12s ease;
+    }}
+    input:focus {{
+      border-color: rgba(91,31,166,0.45);
+      box-shadow: 0 0 0 3px rgba(156,108,255,0.18);
+      background:#ffffff;
+    }}
+
+    button {{
+      width:100%;
+      max-width:100%;
+      height:46px;
+      border-radius:12px;
+      border:0;
+      background: linear-gradient(135deg, #0f172a, #5b1fa6);
+      color:#ffffff;
+      font-weight:900;
+      cursor:pointer;
+      margin-top:14px;
+      box-shadow: 0 12px 24px rgba(2,6,23,0.25);
+    }}
+    button:hover {{ filter: brightness(1.04); }}
+    button:active {{ transform: translateY(1px); }}
+
+    .small {{
+      margin-top:12px;
+      font-size:12px;
+      color:#64748b;
+    }}
+    code {{
+      background:#f1f5f9;
+      border:1px solid rgba(15,23,42,0.10);
+      padding:2px 6px;
+      border-radius:8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+      color:#0f172a;
+    }}
   </style>
 </head>
-
 <body>
-
   <div class="card">
-
-    <div class="brand">
-      <span class="purple">Purple</span><span class="black">Vin</span>
-    </div>
-
-    <h1>Purple Dashboard Login</h1>
-
-    <div class="subtitle">
-      Secure access to your PurpleVin dashboard
-    </div>
-
+    <h1>Secure Login</h1>
+    <p>Internal access for <b>secure.purplevin.com</b></p>
     <form method="POST" action="/login?next={next_url}">
-
       <label>Email</label>
-
-      <input
-        name="email"
-        type="email"
-        placeholder="Enter your email"
-        autocomplete="email"
-        required
-      />
-
+      <input name="email" type="email" autocomplete="email" required />
       <label>Password</label>
-
-      <input
-        name="password"
-        type="password"
-        placeholder="Enter your password"
-        autocomplete="current-password"
-        required
-      />
-
-      <div class="actions">
-
-        <label class="remember">
-          <input type="checkbox" />
-          Remember me
-        </label>
-
-        <a class="forgot" href="#">
-          Forgot password?
-        </a>
-
-      </div>
-
-      <button type="submit">
-        Sign in
-      </button>
-
+      <input name="password" type="password" autocomplete="current-password" required />
+      <button type="submit">Sign in</button>
     </form>
-
-    <div class="divider"></div>
-
-    <div class="footer">
-      Public VIN reports remain accessible at
-      <code>/vin/&lt;VIN&gt;</code>.
-    </div>
-
+    <div class="small">Public VIN reports remain accessible at <code>/vin/&lt;VIN&gt;</code>.</div>
   </div>
-
 </body>
 </html>
 """.strip()
