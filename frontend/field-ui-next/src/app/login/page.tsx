@@ -19,21 +19,21 @@ export default function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // ✅ Set your elephant asset path here
-  // Put elephant.png in: /public/elephant.png
+  // elephant asset
   const elephantUrl = useMemo(() => "/elephant.png", []);
 
-  // ✅ Control the look here:
-  const ELEPHANT_SIZE_PX = 360; // bigger number = bigger elephants
-  const ELEPHANT_OPACITY = 0.18; // 0.10–0.25 good range
+  // elephant controls
+  const ELEPHANT_SIZE_PX = 420;
+  const ELEPHANT_OPACITY = 0.10;
 
-  // ✅ On load: ONLY redirect if there is an active session
+  // redirect if active session exists
   useEffect(() => {
     let alive = true;
 
     (async () => {
       try {
         const { data, error } = await supabase.auth.getSession();
+
         if (!alive) return;
 
         if (error) {
@@ -43,8 +43,12 @@ export default function LoginPage() {
 
         if (data.session) {
           const ok = await ensureBusiness();
+
           if (!alive) return;
-          if (ok) router.replace("/new-job");
+
+          if (ok) {
+            router.replace("/new-job");
+          }
         }
       } catch (e: any) {
         console.warn("login boot error:", e?.message ?? e);
@@ -54,19 +58,21 @@ export default function LoginPage() {
     return () => {
       alive = false;
     };
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function ensureBusiness(): Promise<boolean> {
-    // 1) get current user
-    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    const { data: userRes, error: userErr } =
+      await supabase.auth.getUser();
+
     if (userErr || !userRes.user) {
       setErr(userErr?.message ?? "Not logged in.");
       return false;
     }
+
     const user = userRes.user;
 
-    // 2) do we already have a business link?
     const { data: link, error: linkErr } = await supabase
       .from("business_users")
       .select("business_id")
@@ -78,19 +84,26 @@ export default function LoginPage() {
       setErr(linkErr.message);
       return false;
     }
-    if (link?.business_id) return true;
 
-    // 3) pull business name from localStorage OR user_metadata
+    if (link?.business_id) {
+      return true;
+    }
+
     let pending: PendingSignup | null = null;
+
     if (typeof window !== "undefined") {
       try {
-        pending = JSON.parse(localStorage.getItem("pv_pending_signup") || "null");
+        pending = JSON.parse(
+          localStorage.getItem("pv_pending_signup") || "null"
+        );
       } catch {}
     }
 
     const bizName =
       pending?.business_name?.trim() ||
-      (user.user_metadata?.business_name as string | undefined)?.trim() ||
+      (user.user_metadata?.business_name as
+        | string
+        | undefined)?.trim() ||
       "";
 
     if (!bizName) {
@@ -98,11 +111,11 @@ export default function LoginPage() {
       return false;
     }
 
-    // 4) create business + link user via RPC (recommended for RLS)
-    const { data: newBizId, error: rpcErr } = await supabase.rpc(
-      "create_business_for_user",
-      { business_name: bizName }
-    );
+    const { data: newBizId, error: rpcErr } =
+      await supabase.rpc(
+        "create_business_for_user",
+        { business_name: bizName }
+      );
 
     if (rpcErr) {
       setErr(rpcErr.message);
@@ -118,14 +131,16 @@ export default function LoginPage() {
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault();
+
     setErr(null);
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+      const { error } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
 
       if (error) {
         setErr(error.message);
@@ -133,17 +148,17 @@ export default function LoginPage() {
       }
 
       const ok = await ensureBusiness();
+
       if (!ok) return;
 
-      // 🔥 check backend status
       const res = await fetch("/api/me");
 
       if (res.status === 403) {
-     router.replace("/pending");
-     return;
-  }
+        router.replace("/pending");
+        return;
+      }
 
-  router.replace("/new-job"); 
+      router.replace("/new-job");
     } catch (e: any) {
       setErr(e?.message ?? "Login failed");
     } finally {
@@ -153,7 +168,7 @@ export default function LoginPage() {
 
   return (
     <div style={styles.page}>
-      {/* 🐘 Elephant layer */}
+      {/* elephant layer */}
       <div
         aria-hidden
         style={{
@@ -164,46 +179,99 @@ export default function LoginPage() {
         }}
       />
 
-      {/* subtle dark vignette so card pops */}
-      <div aria-hidden style={styles.vignette} />
+      {/* vignette */}
+      <div
+        aria-hidden
+        style={styles.vignette}
+      />
 
       <div style={styles.card}>
-        <h1 style={styles.h1}>Business Login</h1>
-        <p style={styles.p}>Sign in to PurpleVin.</p>
+        <div style={styles.topLink}>
+          <a
+            href="https://purplevin.com"
+            style={styles.topLinkAnchor}
+          >
+            ← PurpleVin.com
+          </a>
+        </div>
 
-        <form onSubmit={onLogin} style={styles.form}>
+        <div style={styles.brand}>
+          <span style={styles.brandPurple}>
+            Purple
+          </span>
+
+          <span style={styles.brandBlack}>
+            Vin
+          </span>
+        </div>
+
+        <h1 style={styles.h1}>
+          Purple Dashboard Login
+        </h1>
+
+        <p style={styles.p}>
+          Secure access to your PurpleVin dashboard
+        </p>
+
+        <form
+          onSubmit={onLogin}
+          style={styles.form}
+        >
           <input
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) =>
+              setEmail(e.target.value)
+            }
             placeholder="Email"
             autoComplete="email"
             style={styles.input}
           />
+
           <input
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) =>
+              setPassword(e.target.value)
+            }
             placeholder="Password"
             type="password"
             autoComplete="current-password"
             style={styles.input}
           />
 
-          {err && <div style={styles.err}>{err}</div>}
+          {err && (
+            <div style={styles.err}>
+              {err}
+            </div>
+          )}
 
-          <button disabled={loading} style={{ ...styles.button, opacity: loading ? 0.7 : 1 }}>
-            {loading ? "Signing in..." : "Sign In"}
+          <button
+            disabled={loading}
+            style={{
+              ...styles.button,
+              opacity: loading ? 0.7 : 1,
+            }}
+          >
+            {loading
+              ? "Signing in..."
+              : "Sign In"}
           </button>
         </form>
 
         <div style={styles.footer}>
-          Need an account? <a href="/signup">Create a business account</a>
+          Need an account?{" "}
+          <a href="/signup">
+            Create a business account
+          </a>
         </div>
       </div>
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<
+  string,
+  React.CSSProperties
+> = {
   page: {
     minHeight: "100vh",
     position: "relative",
@@ -212,12 +280,15 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
+
     background:
-      "radial-gradient(1200px 700px at 25% 20%, rgba(156,108,255,0.28), transparent 55%)," +
+      "radial-gradient(1200px 700px at 25% 20%, rgba(156,108,255,0.22), transparent 55%)," +
       "radial-gradient(900px 700px at 80% 70%, rgba(91,31,166,0.24), transparent 55%)," +
       "#0b1020",
+
     color: "#0f172a",
   },
+
   elephants: {
     position: "absolute",
     inset: 0,
@@ -226,47 +297,161 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundPosition: "center",
     filter: "none",
   },
+
   vignette: {
     position: "absolute",
     inset: 0,
     pointerEvents: "none",
+
     background:
-      "radial-gradient(circle at center, rgba(0,0,0,0) 0%, rgba(0,0,0,0.35) 70%, rgba(0,0,0,0.55) 100%)",
+      "radial-gradient(circle at center, rgba(0,0,0,0) 0%, rgba(0,0,0,0.22) 70%, rgba(0,0,0,0.42) 100%)",
   },
+
   card: {
     width: "100%",
-    maxWidth: 460,
-    background: "rgba(255,255,255,0.92)",
-    border: "1px solid rgba(15,23,42,0.10)",
-    borderRadius: 18,
-    padding: "22px 22px 18px",
-    boxShadow: "0 18px 50px rgba(2,6,23,0.35)",
+    maxWidth: 480,
+
+    background: "#ffffff",
+
+    border:
+      "1px solid rgba(15,23,42,0.08)",
+
+    borderRadius: 24,
+
+    padding: "26px 30px 24px",
+
+    boxShadow:
+      "0 22px 60px rgba(2,6,23,0.42)",
+
     position: "relative",
     zIndex: 1,
-    backdropFilter: "blur(6px)",
   },
-  h1: { fontSize: 28, fontWeight: 900, margin: "0 0 6px" },
-  p: { opacity: 0.8, margin: "0 0 12px" },
-  form: { marginTop: 10, display: "grid", gap: 10 },
+
+  topLink: {
+    marginBottom: 18,
+  },
+
+  topLinkAnchor: {
+    color: "#7c3aed",
+    textDecoration: "none",
+    fontSize: 13,
+    fontWeight: 700,
+    opacity: 0.92,
+  },
+
+  brand: {
+    textAlign: "center",
+
+    fontSize: 36,
+    fontWeight: 900,
+
+    letterSpacing: "-0.05em",
+
+    lineHeight: 1,
+
+    marginBottom: 20,
+  },
+
+  brandPurple: {
+    color: "#7c3aed",
+  },
+
+  brandBlack: {
+    color: "#111827",
+  },
+
+  h1: {
+    margin: 0,
+
+    textAlign: "center",
+
+    fontSize: 30,
+    fontWeight: 900,
+
+    lineHeight: 1.1,
+
+    letterSpacing: "-0.04em",
+
+    color: "#0f172a",
+  },
+
+  p: {
+    margin: "10px 0 26px",
+
+    color: "#64748b",
+
+    fontSize: 14,
+
+    lineHeight: 1.5,
+
+    textAlign: "center",
+  },
+
+  form: {
+    display: "grid",
+    gap: 18,
+  },
+
   input: {
-    padding: "12px 12px",
-    borderRadius: 12,
-    border: "1px solid rgba(15,23,42,0.14)",
+    width: "100%",
+
+    height: 50,
+
+    borderRadius: 14,
+
+    border:
+      "1px solid rgba(15,23,42,0.12)",
+
     background: "#f8fafc",
+
+    padding: "0 14px",
+
     outline: "none",
-    height: 46,
+
+    fontSize: 15,
   },
-  err: { color: "crimson", fontSize: 14 },
+
+  err: {
+    color: "crimson",
+    fontSize: 14,
+  },
+
   button: {
-    padding: 12,
-    borderRadius: 999,
+    width: "100%",
+
+    height: 52,
+
+    borderRadius: 14,
+
     border: "none",
-    fontWeight: 800,
+
+    fontWeight: 900,
+
     cursor: "pointer",
-    height: 46,
+
     color: "#fff",
-    background: "linear-gradient(135deg, #0f172a, #5b1fa6)",
-    boxShadow: "0 12px 24px rgba(2,6,23,0.25)",
+
+    fontSize: 15,
+
+    background:
+      "linear-gradient(135deg, #7c3aed, #5b21b6)",
+
+    boxShadow:
+      "0 12px 24px rgba(91,33,182,0.28)",
   },
-  footer: { marginTop: 14, fontSize: 14, opacity: 0.9 },
-}; 
+
+  footer: {
+    marginTop: 22,
+
+    paddingTop: 18,
+
+    borderTop:
+      "1px solid rgba(15,23,42,0.08)",
+
+    fontSize: 13,
+
+    opacity: 0.78,
+
+    textAlign: "center",
+  },
+};
