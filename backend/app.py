@@ -788,9 +788,10 @@ def login():
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Secure Login · PurpleVin</title>
+  <title>Purple Dashboard Login · PurpleVin</title>
   <style>
     * {{ box-sizing: border-box; }}
+
     body {{
       margin:0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -801,40 +802,37 @@ def login():
       padding:24px;
       color:#0f172a;
 
-      /* base */
       background:
-        radial-gradient(1200px 800px at 25% 20%, rgba(156,108,255,0.25), transparent 55%),
-        radial-gradient(900px 700px at 80% 70%, rgba(91,31,166,0.22), transparent 55%),
+        radial-gradient(1200px 800px at 25% 20%, rgba(156,108,255,0.22), transparent 55%),
+        radial-gradient(900px 700px at 80% 70%, rgba(91,31,166,0.26), transparent 55%),
         #0b1020;
 
       position:relative;
       overflow:hidden;
     }}
 
-    /* ✅ EXACT PNG overlay (matches the image I shared) */
     body::before {{
       content:"";
       position:absolute;
       inset:-40px;
       pointer-events:none;
-      opacity:0.28;    
+      opacity:0.12;
 
       background-image: url("{bg_url}");
       background-repeat: repeat;
-      background-size: 360px 360px;
-      background-position: 0px 0px; 
+      background-size: 420px 420px;
+      background-position: 0px 0px;
 
       transform: rotate(0deg);
       filter: none;
     }}
 
-    /* subtle grain (very light) */
     body::after {{
       content:"";
       position:absolute;
       inset:0;
       pointer-events:none;
-      opacity:0.05;
+      opacity:0.04;
       background-image: radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px);
       background-size: 4px 4px;
       mix-blend-mode: overlay;
@@ -842,76 +840,108 @@ def login():
 
     .card {{
       width:100%;
-      max-width:460px;
-      background:#ffffff;           /* ✅ not transparent */
+      max-width:500px;
+      background:#ffffff;
       border:1px solid rgba(15,23,42,0.10);
-      border-radius:18px;
-      padding:22px 22px 18px;
-      box-shadow: 0 18px 50px rgba(2,6,23,0.35);
+      border-radius:24px;
+      padding:36px 30px 24px;
+      box-shadow: 0 22px 60px rgba(2,6,23,0.42);
       position:relative;
       z-index:1;
     }}
 
-    h1 {{
-      margin:0 0 6px;
-      font-size:20px;
-      letter-spacing:0.02em;
+    .brand {{
+      text-align:center;
+      font-size:38px;
+      font-weight:900;
+      letter-spacing:-0.05em;
+      margin-bottom:18px;
+      line-height:1;
     }}
+
+    .purple {{
+      color:#7c3aed;
+    }}
+
+    .black {{
+      color:#111827;
+    }}
+
+    h1 {{
+      margin:0 0 8px;
+      text-align:center;
+      font-size:32px;
+      line-height:1.1;
+      letter-spacing:-0.04em;
+      color:#0f172a;
+    }}
+
     p {{
-      margin:0 0 14px;
-      color:#475569;
-      font-size:13px;
-      line-height:1.35;
+      margin:0 0 24px;
+      color:#64748b;
+      font-size:15px;
+      line-height:1.4;
+      text-align:center;
     }}
 
     label {{
       display:block;
       font-size:12px;
       color:#64748b;
-      margin:10px 0 6px;
+      margin:14px 0 7px;
       text-transform:uppercase;
       letter-spacing:0.12em;
+      font-weight:700;
     }}
 
     input {{
       width:100%;
       max-width:100%;
-      height:46px;
-      border-radius:12px;
+      height:50px;
+      border-radius:14px;
       border:1px solid rgba(15,23,42,0.14);
       background:#f8fafc;
       color:#0f172a;
-      padding:0 12px;
+      padding:0 14px;
       outline:none;
+      font-size:15px;
       transition: border .12s ease, box-shadow .12s ease, background .12s ease;
     }}
+
     input:focus {{
-      border-color: rgba(91,31,166,0.45);
-      box-shadow: 0 0 0 3px rgba(156,108,255,0.18);
+      border-color: rgba(124,58,237,0.48);
+      box-shadow: 0 0 0 4px rgba(124,58,237,0.14);
       background:#ffffff;
     }}
 
     button {{
       width:100%;
       max-width:100%;
-      height:46px;
-      border-radius:12px;
+      height:52px;
+      border-radius:14px;
       border:0;
-      background: linear-gradient(135deg, #0f172a, #5b1fa6);
+      background: linear-gradient(135deg, #7c3aed, #5b21b6);
       color:#ffffff;
       font-weight:900;
+      font-size:15px;
       cursor:pointer;
-      margin-top:14px;
-      box-shadow: 0 12px 24px rgba(2,6,23,0.25);
+      margin-top:18px;
+      box-shadow: 0 12px 24px rgba(91,33,182,0.28);
     }}
+
     button:hover {{ filter: brightness(1.04); }}
     button:active {{ transform: translateY(1px); }}
 
     .small {{
-      margin-top:12px;
+      margin-top:18px;
+      padding-top:18px;
+      border-top:1px solid rgba(15,23,42,0.10);
       font-size:12px;
       color:#64748b;
+      text-align:center;
+      line-height:1.5;
     }}
+
     code {{
       background:#f1f5f9;
       border:1px solid rgba(15,23,42,0.10);
@@ -921,20 +951,48 @@ def login():
       font-size: 11px;
       color:#0f172a;
     }}
+
+    @media (max-width: 640px) {{
+      .card {{
+        padding:30px 22px 22px;
+      }}
+
+      .brand {{
+        font-size:34px;
+      }}
+
+      h1 {{
+        font-size:28px;
+      }}
+
+      p {{
+        font-size:14px;
+      }}
+    }}
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>Secure Login</h1>
-    <p>Internal access for <b>secure.purplevin.com</b></p>
+    <div class="brand">
+      <span class="purple">Purple</span><span class="black">Vin</span>
+    </div>
+
+    <h1>Purple Dashboard Login</h1>
+    <p>Secure access to your PurpleVin dashboard</p>
+
     <form method="POST" action="/login?next={next_url}">
       <label>Email</label>
-      <input name="email" type="email" autocomplete="email" required />
+      <input name="email" type="email" placeholder="Enter your email" autocomplete="email" required />
+
       <label>Password</label>
-      <input name="password" type="password" autocomplete="current-password" required />
+      <input name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required />
+
       <button type="submit">Sign in</button>
     </form>
-    <div class="small">Public VIN reports remain accessible at <code>/vin/&lt;VIN&gt;</code>.</div>
+
+    <div class="small">
+      Public VIN reports remain accessible at <code>/vin/&lt;VIN&gt;</code>.
+    </div>
   </div>
 </body>
 </html>
