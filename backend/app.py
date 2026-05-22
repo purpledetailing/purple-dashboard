@@ -788,7 +788,8 @@ def login():
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PurpleVin</title>
+  <title>Purple Dashboard Login · PurpleVin</title>
+
   <style>
     * {{ box-sizing: border-box; }}
 
@@ -811,6 +812,7 @@ def login():
       overflow:hidden;
     }}
 
+    /* elephant background */
     body::before {{
       content:"";
       position:absolute;
@@ -827,35 +829,51 @@ def login():
       filter: none;
     }}
 
+    /* subtle grain */
     body::after {{
       content:"";
       position:absolute;
       inset:0;
       pointer-events:none;
       opacity:0.04;
-      background-image: radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px);
+
+      background-image:
+        radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px);
+
       background-size: 4px 4px;
+
       mix-blend-mode: overlay;
     }}
 
     .card {{
       width:100%;
       max-width:500px;
+
       background:#ffffff;
+
       border:1px solid rgba(15,23,42,0.10);
+
       border-radius:24px;
+
       padding:36px 30px 24px;
-      box-shadow: 0 22px 60px rgba(2,6,23,0.42);
+
+      box-shadow:
+        0 22px 60px rgba(2,6,23,0.42);
+
       position:relative;
       z-index:1;
     }}
 
     .brand {{
       text-align:center;
+
       font-size:38px;
       font-weight:900;
+
       letter-spacing:-0.05em;
+
       margin-bottom:18px;
+
       line-height:1;
     }}
 
@@ -869,86 +887,198 @@ def login():
 
     h1 {{
       margin:0 0 8px;
+
       text-align:center;
+
       font-size:32px;
+
       line-height:1.1;
+
       letter-spacing:-0.04em;
+
       color:#0f172a;
     }}
 
     p {{
-      margin:0 0 24px;
+      margin:0 0 18px;
+
       color:#64748b;
+
       font-size:15px;
+
       line-height:1.4;
+
       text-align:center;
+    }}
+
+    .back-link-wrap {{
+      text-align:center;
+      margin-bottom:24px;
+    }}
+
+    .back-link {{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+
+      font-size:13px;
+      font-weight:700;
+
+      color:#7c3aed;
+      text-decoration:none;
+
+      padding:8px 14px;
+
+      border-radius:999px;
+
+      background:rgba(124,58,237,0.08);
+
+      transition:
+        background .12s ease,
+        transform .12s ease,
+        opacity .12s ease;
+    }}
+
+    .back-link:hover {{
+      background:rgba(124,58,237,0.14);
+      transform:translateY(-1px);
+    }}
+
+    .back-link:active {{
+      transform:translateY(0px);
     }}
 
     label {{
       display:block;
+
       font-size:12px;
+
       color:#64748b;
+
       margin:14px 0 7px;
+
       text-transform:uppercase;
+
       letter-spacing:0.12em;
+
       font-weight:700;
     }}
 
     input {{
       width:100%;
       max-width:100%;
+
       height:50px;
+
       border-radius:14px;
+
       border:1px solid rgba(15,23,42,0.14);
+
       background:#f8fafc;
+
       color:#0f172a;
+
       padding:0 14px;
+
       outline:none;
+
       font-size:15px;
-      transition: border .12s ease, box-shadow .12s ease, background .12s ease;
+
+      transition:
+        border .12s ease,
+        box-shadow .12s ease,
+        background .12s ease;
     }}
 
     input:focus {{
       border-color: rgba(124,58,237,0.48);
-      box-shadow: 0 0 0 4px rgba(124,58,237,0.14);
+
+      box-shadow:
+        0 0 0 4px rgba(124,58,237,0.14);
+
       background:#ffffff;
     }}
 
     button {{
       width:100%;
       max-width:100%;
+
       height:52px;
+
       border-radius:14px;
+
       border:0;
-      background: linear-gradient(135deg, #7c3aed, #5b21b6);
+
+      background:
+        linear-gradient(
+          135deg,
+          #7c3aed,
+          #5b21b6
+        );
+
       color:#ffffff;
+
       font-weight:900;
+
       font-size:15px;
+
       cursor:pointer;
+
       margin-top:18px;
-      box-shadow: 0 12px 24px rgba(91,33,182,0.28);
+
+      box-shadow:
+        0 12px 24px rgba(91,33,182,0.28);
+
+      transition:
+        filter .12s ease,
+        transform .12s ease;
     }}
 
-    button:hover {{ filter: brightness(1.04); }}
-    button:active {{ transform: translateY(1px); }}
+    button:hover {{
+      filter: brightness(1.04);
+    }}
+
+    button:active {{
+      transform: translateY(1px);
+    }}
 
     .small {{
       margin-top:18px;
+
       padding-top:18px;
+
       border-top:1px solid rgba(15,23,42,0.10);
+
       font-size:12px;
+
       color:#64748b;
+
       text-align:center;
+
       line-height:1.5;
     }}
 
     code {{
       background:#f1f5f9;
+
       border:1px solid rgba(15,23,42,0.10);
+
       padding:2px 6px;
+
       border-radius:8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 11px;
+
+      font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Monaco,
+        Consolas,
+        "Liberation Mono",
+        "Courier New",
+        monospace;
+
+      font-size:11px;
+
       color:#0f172a;
     }}
 
@@ -971,29 +1101,62 @@ def login():
     }}
   </style>
 </head>
+
 <body>
+
   <div class="card">
+
     <div class="brand">
       <span class="purple">Purple</span><span class="black">Vin</span>
     </div>
 
-    <h1></h1>
-    <p>Secure access to your PurpleVin dashboard</p>
+    <h1>Purple Dashboard Login</h1>
+
+    <p>
+      Secure access to your PurpleVin dashboard
+    </p>
+
+    <div class="back-link-wrap">
+      <a href="https://purplevin.com" class="back-link">
+        ← Back to PurpleVin.com
+      </a>
+    </div>
 
     <form method="POST" action="/login?next={next_url}">
+
       <label>Email</label>
-      <input name="email" type="email" placeholder="Enter your email" autocomplete="email" required />
+
+      <input
+        name="email"
+        type="email"
+        placeholder="Enter your email"
+        autocomplete="email"
+        required
+      />
 
       <label>Password</label>
-      <input name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required />
 
-      <button type="submit">Sign in</button>
+      <input
+        name="password"
+        type="password"
+        placeholder="Enter your password"
+        autocomplete="current-password"
+        required
+      />
+
+      <button type="submit">
+        Sign in
+      </button>
+
     </form>
 
     <div class="small">
-      Public VIN reports remain accessible at <code>/vin/&lt;VIN&gt;</code>.
+      Public VIN reports remain accessible at
+      <code>/vin/&lt;VIN&gt;</code>.
     </div>
+
   </div>
+
 </body>
 </html>
 """.strip()
